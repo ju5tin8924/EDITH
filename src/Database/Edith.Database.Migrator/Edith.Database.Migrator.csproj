@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Edith.Database.Migrator</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SQL scripts are embedded so the migrator ships as a single artifact. -->
+    <EmbeddedResource Include="Scripts\**\*.sql" LogicalName="Scripts/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Seeds\**\*.sql" LogicalName="Seeds/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Edith.Database.Migrator.Tests" />
+  </ItemGroup>
+
+</Project>
+

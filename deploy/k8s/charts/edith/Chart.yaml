@@ -1,0 +1,9 @@
+apiVersion: v2
+name: edith-enterprise-platform
+description: High-Throughput Anti-Money Laundering (AML) Screening & Investigation Platform for GCC Institutions
+type: application
+version: 1.0.0
+appVersion: "3.0.400"
+maintainers:
+  - name: EDITH Core Architecture Team
+    email: aml-devops@edith.ae

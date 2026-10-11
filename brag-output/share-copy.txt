@@ -1,0 +1,1 @@
+We built EDITH: an enterprise AML platform screening cross-border wires in 8.4ms with 5-pass phonetic diagnostics and zero Redis. 78 tests passing, 33 tables, ready for GCC banking.

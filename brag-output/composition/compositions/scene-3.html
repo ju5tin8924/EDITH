@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: 'Plus Jakarta Sans';
+          src: local('Segoe UI'), local('Arial');
+        }
+        @font-face {
+          font-family: 'JetBrains Mono';
+          src: local('Consolas'), local('Courier New');
+        }
+        #root {
+          position: absolute;
+          inset: 0;
+          background: #0B0F19;
+          font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+          color: #F8FAFC;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          background-size: 60px 60px;
+          background-image: 
+            linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .card {
+          width: 1100px;
+          background: #131B2E;
+          border: 1px solid #1E293B;
+          border-radius: 20px;
+          padding: 40px;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+      </style>
+
+      <div id="root" data-composition-id="scene-3" data-width="1920" data-height="1080">
+        <div id="s3-badge" class="mono" style="font-size: 15px; color: #22D3EE; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.4); padding: 8px 24px; border-radius: 30px; margin-bottom: 24px; letter-spacing: 2px;">
+          DIAGNOSTIC EXPLAINABILITY
+        </div>
+
+        <h2 id="s3-title" style="font-size: 46px; font-weight: 800; text-align: center; margin-bottom: 12px; color: #FFFFFF;">
+          Phonetic & Sub-Token Alignment Viewer
+        </h2>
+        <p id="s3-subtitle" style="font-size: 18px; color: #94A3B8; text-align: center; max-width: 800px; margin-bottom: 40px;">
+          Eliminating false negatives caused by transliteration variance and patronymic middle name omissions.
+        </p>
+
+        <div id="s3-card" class="card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; border-bottom: 1px solid #1E293B; padding-bottom: 24px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 26px; font-weight: 800; color: #FFFFFF;">BOUT, Viktor Anatolyevich</span>
+                <span class="mono" style="padding: 4px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.2); border: 1px solid #EF4444; color: #FCA5A5; font-size: 12px; font-weight: 800;">OFAC SDN / UN RES 1521</span>
+              </div>
+              <div class="mono" style="font-size: 14px; color: #94A3B8; margin-top: 8px;">
+                DOB: 1967-01-13 • Nationality: RUS • Alias: "Victor Bout" • Category: Arms Trafficking
+              </div>
+            </div>
+
+            <div class="mono" style="text-align: right;">
+              <div style="font-size: 38px; font-weight: 900; color: #EF4444;">96.4%</div>
+              <div style="font-size: 12px; color: #94A3B8;">AGGREGATE MATCH CONFIDENCE</div>
+            </div>
+          </div>
+
+          <div id="s3-row-1" style="display: flex; align-items: center; justify-content: space-between; background: #0B0F19; border: 1px solid #1E293B; border-radius: 12px; padding: 18px 24px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 24px;">
+              <div class="mono" style="font-size: 16px; color: #22D3EE; font-weight: 700;">Query: "VICTOR"</div>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              <div class="mono" style="font-size: 16px; color: #EF4444; font-weight: 700;">Candidate: "VIKTOR"</div>
+            </div>
+            <div class="mono" style="display: flex; align-items: center; gap: 16px;">
+              <span style="color: #94A3B8; font-size: 13px;">Double Metaphone: FKTR / FKTR</span>
+              <span style="background: rgba(239, 68, 68, 0.2); color: #F87171; padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 13px;">94.0% (PHONETIC EQUAL)</span>
+            </div>
+          </div>
+
+          <div id="s3-row-2" style="display: flex; align-items: center; justify-content: space-between; background: #0B0F19; border: 1px solid #1E293B; border-radius: 12px; padding: 18px 24px;">
+            <div style="display: flex; align-items: center; gap: 24px;">
+              <div class="mono" style="font-size: 16px; color: #22D3EE; font-weight: 700;">Query: "BOUT"</div>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              <div class="mono" style="font-size: 16px; color: #EF4444; font-weight: 700;">Candidate: "BOUT"</div>
+            </div>
+            <div class="mono" style="display: flex; align-items: center; gap: 16px;">
+              <span style="color: #94A3B8; font-size: 13px;">Damerau-Levenshtein: Dist 0</span>
+              <span style="background: rgba(16, 185, 129, 0.2); color: #34D399; padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 13px;">100.0% (EXACT MATCH)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#s3-badge", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.4 }, 0.1);
+        tl.fromTo("#s3-title", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4 }, 0.2);
+        tl.fromTo("#s3-subtitle", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 0.3);
+
+        tl.fromTo("#s3-card", { scale: 0.95, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5 }, 0.4);
+        tl.fromTo("#s3-row-1", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.4 }, 1.0);
+        tl.fromTo("#s3-row-2", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.4 }, 1.6);
+
+        tl.to("#root", { opacity: 0, scale: 0.96, duration: 0.4 }, 3.8);
+
+        window.__timelines["scene-3"] = tl;
+        tl.seek(0);
+      </script>
+    </template>
+  </body>
+</html>

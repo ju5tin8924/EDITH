@@ -1,0 +1,126 @@
+global:
+  environment: production
+  tenantScope: "multi-tenant-gcc"
+  region: me-central-1
+  imageRegistry: ecr.me-central-1.amazonaws.com/edith
+  pullPolicy: IfNotPresent
+
+config:
+  postgresHost: "edith-pg17-primary.database.svc.cluster.local"
+  postgresPort: 5432
+  postgresDatabase: "edith_production"
+  kafkaBrokers: "kafka-kraft-0.kafka.svc.cluster.local:9092,kafka-kraft-1.kafka.svc.cluster.local:9092,kafka-kraft-2.kafka.svc.cluster.local:9092"
+  opensearchUri: "https://opensearch-cluster.search.svc.cluster.local:9200"
+  otelCollectorEndpoint: "http://otel-collector.monitoring.svc.cluster.local:4317"
+
+gateway:
+  replicaCount: 3
+  image:
+    repository: ecr.me-central-1.amazonaws.com/edith/gateway
+    tag: 3.0.400
+  service:
+    type: LoadBalancer
+    port: 443
+    targetPort: 5000
+  resources:
+    limits:
+      cpu: "2000m"
+      memory: "2048Mi"
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+screening:
+  replicaCount: 6
+  image:
+    repository: ecr.me-central-1.amazonaws.com/edith/screening-api
+    tag: 3.0.400
+  service:
+    port: 5001
+    targetPort: 5001
+  resources:
+    limits:
+      cpu: "4000m"
+      memory: "4096Mi"
+    requests:
+      cpu: "1000m"
+      memory: "1024Mi"
+  autoscaling:
+    enabled: true
+    minReplicas: 6
+    maxReplicas: 24
+    targetCPUUtilizationPercentage: 65
+
+cases:
+  replicaCount: 3
+  image:
+    repository: ecr.me-central-1.amazonaws.com/edith/cases-service
+    tag: 3.0.400
+  service:
+    port: 5002
+    targetPort: 5002
+  resources:
+    limits:
+      cpu: "2000m"
+      memory: "2048Mi"
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+
+rules:
+  replicaCount: 2
+  image:
+    repository: ecr.me-central-1.amazonaws.com/edith/rules-service
+    tag: 3.0.400
+  service:
+    port: 5003
+    targetPort: 5003
+  resources:
+    limits:
+      cpu: "1000m"
+      memory: "1024Mi"
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+
+addons:
+  replicaCount: 2
+  image:
+    repository: ecr.me-central-1.amazonaws.com/edith/addons-service
+    tag: 3.0.400
+  service:
+    port: 5004
+    targetPort: 5004
+  resources:
+    limits:
+      cpu: "2000m"
+      memory: "2048Mi"
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+
+portal:
+  replicaCount: 3
+  image:
+    repository: ecr.me-central-1.amazonaws.com/edith/portal-web
+    tag: 3.0.400
+  service:
+    port: 80
+    targetPort: 80
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+    requests:
+      cpu: "100m"
+      memory: "128Mi"

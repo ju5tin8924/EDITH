@@ -1,0 +1,41 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: edith-aml-alerts
+  namespace: monitoring
+  labels:
+    role: alert-rules
+    app.kubernetes.io/part-of: edith
+spec:
+  groups:
+    - name: edith.screening.sla
+      rules:
+        - alert: ScreeningLatencyHigh
+          expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{app="edith-screening"}[5m])) by (le)) > 0.020
+          for: 2m
+          labels:
+            severity: critical
+            team: compliance-sre
+          annotations:
+            summary: "Screening P99 Latency SLA breached (> 20ms)"
+            description: "Current P99 evaluation latency is {{ $value }}s on edith-screening. Estimated target is 20ms."
+
+        - alert: HoldRateSurge
+          expr: (sum(rate(edith_screening_decisions_total{decision="HELD"}[5m])) / sum(rate(edith_screening_decisions_total[5m]))) > 0.05
+          for: 3m
+          labels:
+            severity: warning
+            team: compliance-ops
+          annotations:
+            summary: "Statutory Hold Rate Surge (> 5%)"
+            description: "Unusual increase in transaction hold rate. Possible sanction list delta anomaly or false positive spike."
+
+        - alert: KafkaConsumerLagHigh
+          expr: sum(kafka_consumergroup_lag{topic="edith.tx.held.v1"}) by (consumergroup) > 500
+          for: 2m
+          labels:
+            severity: critical
+            team: compliance-sre
+          annotations:
+            summary: "Kafka Consumer Lag exceeded 500 messages"
+            description: "Case autocreator or CBS webhook dispatcher is lagging behind high-speed transaction intercept stream."

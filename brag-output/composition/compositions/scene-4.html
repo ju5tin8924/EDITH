@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: 'Plus Jakarta Sans';
+          src: local('Segoe UI'), local('Arial');
+        }
+        @font-face {
+          font-family: 'JetBrains Mono';
+          src: local('Consolas'), local('Courier New');
+        }
+        #root {
+          position: absolute;
+          inset: 0;
+          background: #0B0F19;
+          font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+          color: #F8FAFC;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          background-size: 60px 60px;
+          background-image: 
+            linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .pane-card {
+          background: #131B2E;
+          border: 1px solid #1E293B;
+          border-radius: 16px;
+          padding: 24px;
+        }
+      </style>
+
+      <div id="root" data-composition-id="scene-4" data-width="1920" data-height="1080">
+        <div id="s4-badge" class="mono" style="font-size: 15px; color: #22D3EE; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.4); padding: 8px 24px; border-radius: 30px; margin-bottom: 24px; letter-spacing: 2px;">
+          ADJUDICATION & AUDIT CANVAS
+        </div>
+
+        <h2 id="s4-title" style="font-size: 46px; font-weight: 800; text-align: center; margin-bottom: 12px; color: #FFFFFF;">
+          Automated SLA Enforcement & goAML Filing
+        </h2>
+        <p id="s4-subtitle" style="font-size: 18px; color: #94A3B8; text-align: center; max-width: 800px; margin-bottom: 40px;">
+          Pessimistic locking prevents analyst collisions while AI copilots draft FATF-compliant STR narratives in seconds.
+        </p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 20px; width: 1260px;">
+          <div id="s4-pane-1" class="pane-card" style="border-top: 3px solid #06B6D4;">
+            <div class="mono" style="font-size: 12px; color: #22D3EE; font-weight: 700;">PANE 1: DOSSIER</div>
+            <div style="font-size: 18px; font-weight: 700; margin: 12px 0 8px 0; color: #F8FAFC;">Intercept Telemetry</div>
+            <div class="mono" style="font-size: 13px; color: #94A3B8; line-height: 1.6;">
+              Amount: $450,000 USD<br>
+              Corridor: UAE -> CHE<br>
+              Case SLA: 72 Hours (EDD)<br>
+              Priority: CRITICAL
+            </div>
+          </div>
+
+          <div id="s4-pane-2" class="pane-card" style="border-top: 3px solid #EF4444;">
+            <div class="mono" style="font-size: 12px; color: #EF4444; font-weight: 700;">PANE 2: LOCKING & DECISION</div>
+            <div style="font-size: 18px; font-weight: 700; margin: 12px 0 8px 0; color: #F8FAFC;">Atomic Lock Active</div>
+            <div class="mono" style="font-size: 13px; color: #94A3B8; line-height: 1.6;">
+              Locked by: Fatima Al-Nuaimi<br>
+              Lease Expiry: 28:44 Remaining<br>
+              Role Authority: MLRO Required<br>
+              Verdict: Confirm Statutory Freeze
+            </div>
+          </div>
+
+          <div id="s4-pane-3" class="pane-card" style="border-top: 3px solid #10B981;">
+            <div class="mono" style="font-size: 12px; color: #34D399; font-weight: 700;">PANE 3: REGULATORY EXPORT</div>
+            <div style="font-size: 18px; font-weight: 700; margin: 12px 0 8px 0; color: #F8FAFC;">1-Click UNODC goAML</div>
+            <div class="mono" style="font-size: 13px; color: #94A3B8; line-height: 1.6;">
+              Schema: goAML v5.0 XML (UAE)<br>
+              AI Copilot: 5-Paragraph STR<br>
+              Status: Validated & Signed<br>
+              Delivery: FIU Gateway Ready
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#s4-badge", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.4 }, 0.1);
+        tl.fromTo("#s4-title", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4 }, 0.2);
+        tl.fromTo("#s4-subtitle", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 0.3);
+
+        tl.fromTo("#s4-pane-1", { opacity: 0, y: 25 }, { opacity: 1, y: 0, duration: 0.4 }, 0.5);
+        tl.fromTo("#s4-pane-2", { opacity: 0, y: 25 }, { opacity: 1, y: 0, duration: 0.4 }, 0.8);
+        tl.fromTo("#s4-pane-3", { opacity: 0, y: 25 }, { opacity: 1, y: 0, duration: 0.4 }, 1.1);
+
+        tl.to("#root", { opacity: 0, y: -20, duration: 0.4 }, 3.1);
+
+        window.__timelines["scene-4"] = tl;
+        tl.seek(0);
+      </script>
+    </template>
+  </body>
+</html>

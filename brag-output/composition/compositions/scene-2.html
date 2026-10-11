@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: 'Plus Jakarta Sans';
+          src: local('Segoe UI'), local('Arial');
+        }
+        @font-face {
+          font-family: 'JetBrains Mono';
+          src: local('Consolas'), local('Courier New');
+        }
+        #root {
+          position: absolute;
+          inset: 0;
+          background: #0B0F19;
+          font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+          color: #F8FAFC;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          background-size: 60px 60px;
+          background-image: 
+            linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .pass-box {
+          background: #131B2E;
+          border: 1px solid #1E293B;
+          border-radius: 16px;
+          padding: 24px 20px;
+          border-top: 4px solid #06B6D4;
+          box-shadow: 0 0 35px rgba(6, 182, 212, 0.2);
+        }
+      </style>
+
+      <div id="root" data-composition-id="scene-2" data-width="1920" data-height="1080">
+        <div id="s2-badge" class="mono" style="font-size: 15px; color: #22D3EE; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.4); padding: 8px 24px; border-radius: 30px; margin-bottom: 24px; letter-spacing: 2px;">
+          ARCHITECTURE BREAKDOWN
+        </div>
+
+        <h2 id="s2-title" style="font-size: 46px; font-weight: 800; text-align: center; margin-bottom: 12px; color: #FFFFFF;">
+          The Deterministic 5-Pass Screening Engine
+        </h2>
+        <p id="s2-subtitle" style="font-size: 18px; color: #94A3B8; text-align: center; max-width: 800px; margin-bottom: 48px;">
+          Zero Redis dependencies. In-memory inverted index + OpenSearch 2.x candidate retrieval executing in microseconds.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; width: 1300px;">
+          <div id="p-card-1" class="pass-box">
+            <div class="mono" style="font-size: 12px; color: #22D3EE; font-weight: 700;">PASS 01</div>
+            <div style="font-size: 18px; font-weight: 700; margin: 12px 0 8px 0; color: #F8FAFC;">Unicode Normalization</div>
+            <div style="font-size: 13px; color: #94A3B8; line-height: 1.4;">Noise stripping, diacritics removal, ASCII transliteration.</div>
+            <div class="mono" style="margin-top: 20px; font-size: 13px; color: #34D399; font-weight: 600;">Latency: 0.2 ms</div>
+          </div>
+
+          <div id="p-card-2" class="pass-box">
+            <div class="mono" style="font-size: 12px; color: #22D3EE; font-weight: 700;">PASS 02</div>
+            <div style="font-size: 18px; font-weight: 700; margin: 12px 0 8px 0; color: #F8FAFC;">Candidate Retrieval</div>
+            <div style="font-size: 13px; color: #94A3B8; line-height: 1.4;">OpenSearch 2.x & high-speed in-memory inverted token index.</div>
+            <div class="mono" style="margin-top: 20px; font-size: 13px; color: #34D399; font-weight: 600;">Latency: 1.4 ms</div>
+          </div>
+
+          <div id="p-card-3" class="pass-box">
+            <div class="mono" style="font-size: 12px; color: #22D3EE; font-weight: 700;">PASS 03</div>
+            <div style="font-size: 18px; font-weight: 700; margin: 12px 0 8px 0; color: #F8FAFC;">Phonetic Matching</div>
+            <div style="font-size: 13px; color: #94A3B8; line-height: 1.4;">Double Metaphone + Jaro-Winkler + Damerau-Levenshtein.</div>
+            <div class="mono" style="margin-top: 20px; font-size: 13px; color: #34D399; font-weight: 600;">Latency: 4.8 ms</div>
+          </div>
+
+          <div id="p-card-4" class="pass-box">
+            <div class="mono" style="font-size: 12px; color: #22D3EE; font-weight: 700;">PASS 04</div>
+            <div style="font-size: 18px; font-weight: 700; margin: 12px 0 8px 0; color: #F8FAFC;">Multi-Role Matrix</div>
+            <div style="font-size: 13px; color: #94A3B8; line-height: 1.4;">Concurrent scoring of Sender, Beneficiary & Intermediaries.</div>
+            <div class="mono" style="margin-top: 20px; font-size: 13px; color: #34D399; font-weight: 600;">Latency: 1.2 ms</div>
+          </div>
+
+          <div id="p-card-5" class="pass-box">
+            <div class="mono" style="font-size: 12px; color: #22D3EE; font-weight: 700;">PASS 05</div>
+            <div style="font-size: 18px; font-weight: 700; margin: 12px 0 8px 0; color: #F8FAFC;">Whitelist Guard</div>
+            <div style="font-size: 13px; color: #94A3B8; line-height: 1.4;">Tenant-scoped suppression & composite threshold resolution.</div>
+            <div class="mono" style="margin-top: 20px; font-size: 13px; color: #34D399; font-weight: 600;">Latency: 0.8 ms</div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#s2-badge", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.4 }, 0.1);
+        tl.fromTo("#s2-title", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4 }, 0.2);
+        tl.fromTo("#s2-subtitle", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 0.3);
+
+        tl.fromTo("#p-card-1", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35 }, 0.5);
+        tl.fromTo("#p-card-2", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35 }, 1.0);
+        tl.fromTo("#p-card-3", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35 }, 1.5);
+        tl.fromTo("#p-card-4", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35 }, 2.0);
+        tl.fromTo("#p-card-5", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35 }, 2.5);
+
+        tl.to("#root", { opacity: 0, y: -20, duration: 0.4 }, 4.2);
+
+        window.__timelines["scene-2"] = tl;
+        tl.seek(0);
+      </script>
+    </template>
+  </body>
+</html>

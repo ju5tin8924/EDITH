@@ -1,0 +1,5 @@
+root = false
+
+[*.cs]
+# Descriptive underscore-separated test names are intentional in test projects.
+dotnet_diagnostic.CA1707.severity = none

@@ -1,0 +1,83 @@
+name: EDITH Enterprise CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, release/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-build-test:
+    name: .NET 10 Build & Test (Zero Warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.100'
+
+      - name: Restore Dependencies
+        run: dotnet restore Edith.slnx
+
+      - name: Build Solution (TreatWarningsAsErrors)
+        run: dotnet build Edith.slnx --configuration Release --no-restore
+
+      - name: Run Automated Test Suites
+        run: dotnet test Edith.slnx --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+
+  database-migration-drift-check:
+    name: PostgreSQL 17 Migration Checksum & Drift Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.100'
+
+      - name: Verify Migration Checksums
+        run: dotnet test tests/Edith.Database.Migrator.Tests --configuration Release
+
+  frontend-build:
+    name: React 19 + Vite Production Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Web/edith-portal
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/Web/edith-portal/package-lock.json
+
+      - name: Install NPM Dependencies
+        run: npm ci
+
+      - name: Typecheck & Production Vite Build
+        run: npm run build
+
+  container-security-scan:
+    name: Container Security & Vulnerability Audit
+    needs: [backend-build-test, frontend-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Security Scan Container Blueprints
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'

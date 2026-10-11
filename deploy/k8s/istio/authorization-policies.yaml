@@ -1,0 +1,40 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all-by-default
+  namespace: default
+spec:
+  {}
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-gateway
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: edith-gateway
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gateway-to-mesh-services
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: edith
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: 
+              - "cluster.local/ns/default/sa/edith-gateway"
+              - "cluster.local/ns/default/sa/edith-screening"
+              - "cluster.local/ns/default/sa/edith-cases"

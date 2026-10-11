@@ -1,0 +1,27 @@
+# --- Secrets & Agent Workspace Tooling (never commit) ---
+.agents/
+.env
+*.env.local
+deploy/local/.env
+
+# --- .NET ---
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+*.trx
+
+# --- Node / Frontend ---
+node_modules/
+dist/
+.vite/
+coverage/
+
+# --- OS / Editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

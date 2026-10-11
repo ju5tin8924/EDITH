@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: 'Plus Jakarta Sans';
+          src: local('Segoe UI'), local('Arial');
+        }
+        @font-face {
+          font-family: 'JetBrains Mono';
+          src: local('Consolas'), local('Courier New');
+        }
+        #root {
+          position: absolute;
+          inset: 0;
+          background: #0B0F19;
+          font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+          color: #F8FAFC;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          background-size: 60px 60px;
+          background-image: 
+            linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .proof-card {
+          background: #131B2E;
+          border: 1px solid #1E293B;
+          padding: 14px 28px;
+          border-radius: 12px;
+          font-size: 16px;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+      </style>
+
+      <div id="root" data-composition-id="scene-5" data-width="1920" data-height="1080">
+        <div id="s5-emblem" style="width: 110px; height: 110px; border-radius: 26px; background: rgba(6, 182, 212, 0.15); border: 2px solid #06B6D4; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; box-shadow: 0 0 45px rgba(6, 182, 212, 0.3);">
+          <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+
+        <h1 id="s5-title" class="mono" style="font-size: 72px; font-weight: 900; letter-spacing: 6px; color: #FFFFFF; margin-bottom: 12px;">
+          EDITH
+        </h1>
+        <div id="s5-tagline" style="font-size: 24px; color: #22D3EE; font-weight: 600; margin-bottom: 40px; letter-spacing: 1.5px;">
+          Next-Generation Enterprise AML Intelligence Platform
+        </div>
+
+        <div style="display: flex; gap: 24px;">
+          <div id="s5-proof-1" class="proof-card mono" style="color: #34D399;">
+            <span>✓</span> 78/78 Tests Passing (0 Warnings)
+          </div>
+          <div id="s5-proof-2" class="proof-card mono" style="color: #22D3EE;">
+            <span>✓</span> Zero Redis Dependency
+          </div>
+          <div id="s5-proof-3" class="proof-card mono" style="color: #F8FAFC;">
+            <span>✓</span> .NET 10 LTS • React 19 • PG17
+          </div>
+        </div>
+
+        <div id="s5-footer" class="mono" style="font-size: 14px; color: #94A3B8; margin-top: 54px; letter-spacing: 3px;">
+          ENGINEERED FOR TIER-1 FINANCIAL INSTITUTIONS
+        </div>
+      </div>
+
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#s5-emblem", { scale: 0.75, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.5)" }, 0.2);
+        tl.fromTo("#s5-title", { opacity: 0, y: 25 }, { opacity: 1, y: 0, duration: 0.5 }, 0.4);
+        tl.fromTo("#s5-tagline", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0.6);
+
+        tl.fromTo("#s5-proof-1", { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.4 }, 0.9);
+        tl.fromTo("#s5-proof-2", { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.4 }, 1.2);
+        tl.fromTo("#s5-proof-3", { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.4 }, 1.5);
+
+        tl.fromTo("#s5-footer", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 1.8);
+
+        window.__timelines["scene-5"] = tl;
+        tl.seek(0);
+      </script>
+    </template>
+  </body>
+</html>
