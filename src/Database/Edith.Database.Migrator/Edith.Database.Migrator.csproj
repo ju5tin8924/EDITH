@@ -3,6 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>Edith.Database.Migrator</RootNamespace>
+    <Configurations>Debug;Release;test</Configurations>
   </PropertyGroup>
 
   <ItemGroup>
