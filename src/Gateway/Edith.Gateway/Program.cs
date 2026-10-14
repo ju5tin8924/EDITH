@@ -1,8 +1,26 @@
 using System.Text;
+using Edith.Addons.AiCopilot;
+using Edith.Addons.GoAml;
+using Edith.Addons.Graph;
+using Edith.Cases.Hubs;
+using Edith.Cases.Locking;
+using Edith.Cases.Services;
 using Edith.Gateway.Endpoints;
+using Edith.Gateway.Hubs;
 using Edith.Gateway.Middleware;
 using Edith.Gateway.Models;
 using Edith.Gateway.Services;
+using Edith.Rules.Engine;
+using Edith.Rules.Repository;
+using Edith.Rules.Sandbox;
+using Edith.Screening.Api.Endpoints;
+using Edith.Screening.Api.Services;
+using Edith.Screening.Bulk.Delta;
+using Edith.Screening.Bulk.Processing;
+using Edith.Screening.Core.Engine;
+using Edith.Screening.Core.Normalization;
+using Edith.Screening.Core.Scoring;
+using Edith.Screening.Core.Search;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -37,41 +55,99 @@ builder.Services.AddAuthorizationBuilder()
         policy.RequireAuthenticatedUser();
     });
 
-// 3. IAM & Tenant Resolution Services
+// 3. CORS Policy for React Vite Frontend & SignalR
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowVitePortal", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
+// 4. SignalR WebSockets
+builder.Services.AddSignalR();
+
+// 5. IAM & Tenant Resolution Services
 builder.Services.AddSingleton<ITenantRegistry, InMemoryTenantRegistry>();
 builder.Services.AddScoped<ITenantContextAccessor, TenantContextAccessor>();
 builder.Services.AddSingleton<ITokenService, JwtTokenService>();
 builder.Services.AddSingleton<IEntitlementsService, EntitlementsService>();
 
-// 4. YARP Reverse Proxy
+// 6. Screening Engine Services
+builder.Services.AddSingleton<ITextNormalizer, TextNormalizer>();
+builder.Services.AddSingleton<INameSimilarityScorer, NameSimilarityScorer>();
+builder.Services.AddSingleton<IWatchlistSearchEngine, InMemoryWatchlistSearchEngine>();
+builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
+builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+builder.Services.AddSingleton<IWhitelistService, InMemoryWhitelistService>();
+
+// 7. Case Management & Collision Locking
+builder.Services.AddSingleton<ICaseLockManager, CaseLockManager>();
+builder.Services.AddSingleton<ICaseService, CaseService>();
+
+// 8. AML Rules & Backtesting Sandbox
+builder.Services.AddSingleton<IRuleEngine, RuleEngine>();
+builder.Services.AddSingleton<IRuleRepository, InMemoryRuleRepository>();
+builder.Services.AddSingleton<IRuleBacktester, RuleBacktester>();
+
+// 9. Bulk Screening & Delta Sync Services
+builder.Services.AddScoped<IBulkScreeningProcessor, BulkScreeningProcessor>();
+builder.Services.AddSingleton<IDeltaRescreeningService, DeltaRescreeningService>();
+
+// 10. Add-on Services (goAML, AI Copilot, Entity Graph)
+builder.Services.AddSingleton<IGoAmlExporter, GoAmlExporter>();
+builder.Services.AddSingleton<IStrNarrativeCopilot, StrNarrativeCopilot>();
+builder.Services.AddSingleton<IEntityGraphVisualizer, EntityGraphVisualizer>();
+
+// 11. Background Seed Service for Development
+builder.Services.AddHostedService<DevelopmentSeedService>();
+
+// 12. YARP Reverse Proxy (used in containerized production mode)
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
 var app = builder.Build();
 
+// 13. Pipeline Configuration
+app.UseCors("AllowVitePortal");
 app.UseRouting();
-
-// 5. Auth and Tenant Pipeline
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TenantResolutionMiddleware>();
 
-// 6. Map Endpoints
+// 14. Map All Modular Minimal API Endpoints
 app.MapIamEndpoints();
+app.MapScreeningEndpoints(includeHealth: false);
+app.MapCaseEndpoints();
+app.MapRuleEndpoints();
+app.MapBulkScreeningEndpoints();
+app.MapAddonEndpoints();
+app.MapKycEndpoints();
+app.MapSettingsEndpoints();
+
+// 15. Map Real-Time SignalR WebSockets Hubs
+app.MapHub<CaseHub>("/hubs/cases");
+app.MapHub<JobHub>("/hubs/jobs");
 
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "Healthy",
     service = "Edith.Gateway",
     version = "1.0.0",
+    modules = Edith.Gateway.Program.ActiveModules,
     timestamp = DateTimeOffset.UtcNow
 })).AllowAnonymous();
 
-app.MapReverseProxy();
-
 app.Run();
 
-public partial class Program
+namespace Edith.Gateway
 {
-    protected Program() { }
+    public partial class Program
+    {
+        protected Program() { }
+        internal static readonly string[] ActiveModules = ["IAM", "Screening", "Cases", "Rules", "Bulk", "Addons", "KYC", "Settings"];
+    }
 }

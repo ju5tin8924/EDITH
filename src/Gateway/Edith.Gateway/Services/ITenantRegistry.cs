@@ -16,6 +16,7 @@ public sealed class InMemoryTenantRegistry : ITenantRegistry
 
     public static readonly Guid DefaultTenantId = Guid.Parse("01931000-0000-7000-8000-000000000000");
     public static readonly Guid SecondaryTenantId = Guid.Parse("01931000-0000-7000-8000-000000000002");
+    public static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     public InMemoryTenantRegistry()
     {
@@ -35,8 +36,17 @@ public sealed class InMemoryTenantRegistry : ITenantRegistry
             IsActive = true
         };
 
+        var demoTenant = new TenantContext
+        {
+            TenantId = DemoTenantId,
+            TenantCode = "ADCB_DEMO",
+            TenantName = "ADCB Compliance Unit 04",
+            IsActive = true
+        };
+
         _tenants[primaryTenant.TenantId] = primaryTenant;
         _tenants[secondaryTenant.TenantId] = secondaryTenant;
+        _tenants[demoTenant.TenantId] = demoTenant;
     }
 
     public TenantContext? FindTenant(Guid tenantId)

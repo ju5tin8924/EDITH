@@ -8,12 +8,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Edith.Gateway.Tests;
 
-public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gateway.Program>>
 {
     private readonly HttpClient _client;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    public GatewayTests(WebApplicationFactory<Program> factory)
+    public GatewayTests(WebApplicationFactory<Edith.Gateway.Program> factory)
     {
         _client = factory.CreateClient();
     }

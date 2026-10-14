@@ -13,4 +13,13 @@
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Cases\Edith.Cases\Edith.Cases.csproj" />
+    <ProjectReference Include="..\..\Rules\Edith.Rules\Edith.Rules.csproj" />
+    <ProjectReference Include="..\..\Addons\Edith.Addons\Edith.Addons.csproj" />
+    <ProjectReference Include="..\..\Screening\Edith.Screening.Core\Edith.Screening.Core.csproj" />
+    <ProjectReference Include="..\..\Screening\Edith.Screening.Bulk\Edith.Screening.Bulk.csproj" />
+    <ProjectReference Include="..\..\Screening\Edith.Screening.Api\Edith.Screening.Api.csproj" />
+  </ItemGroup>
+
 </Project>

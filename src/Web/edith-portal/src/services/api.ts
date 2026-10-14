@@ -125,6 +125,19 @@ export const EdithApi = {
   async screenTransaction(request: TransactionScreeningRequest): Promise<ScreeningResult> {
     const idempotencyKey = `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const startTime = performance.now();
+    const sender = request.parties?.find(p => p.role === 'SENDER') || request.parties?.[0];
+    const beneficiary = request.parties?.find(p => p.role === 'BENEFICIARY') || request.parties?.[1] || request.parties?.[0];
+
+    const backendPayload = {
+      transactionRefNo: request.transactionId || `TX-${Date.now()}`,
+      amount: request.amount,
+      currency: request.currency,
+      senderName: sender?.fullName || 'Commercial Remitter',
+      senderCountry: request.originatingCountry || 'AE',
+      beneficiaryName: beneficiary?.fullName || 'Commercial Payee',
+      beneficiaryCountry: request.destinationCountry || 'US'
+    };
+
     try {
       const res = await fetch(`${API_BASE}/screen/transaction`, {
         method: 'POST',
@@ -132,10 +145,45 @@ export const EdithApi = {
           ...getAuthHeaders(),
           'Idempotency-Key': idempotencyKey
         },
-        body: JSON.stringify(request)
+        body: JSON.stringify(backendPayload)
       });
       if (res.ok) {
-        return await res.json();
+        const data = await res.json();
+        const partyRole = beneficiary?.role || 'BENEFICIARY';
+        const partyName = beneficiary?.fullName || 'Unknown Party';
+        
+        return {
+          decision: (data.decision || data.status || 'CLEARED'),
+          riskScore: Number(data.overallScore || 0),
+          primaryHitReason: data.holdReason,
+          evaluationLatencyMs: data.latencyMs || Math.round(performance.now() - startTime),
+          matchCount: data.matches?.length || 0,
+          isCached: false,
+          replayedFromIdempotency: !!data.idempotencyReplayed,
+          partyEvaluations: [
+            {
+              role: partyRole,
+              queryName: partyName,
+              matchFound: (data.matches && data.matches.length > 0) || false,
+              maxScore: Number(data.overallScore || 0),
+              matchedCandidates: (data.matches || []).map((m: any) => ({
+                candidateId: m.matchedEntityId || 'SDN-001',
+                canonicalName: m.matchedEntityName,
+                matchedName: m.matchedEntityName,
+                category: (m.category || 'SANCTIONS'),
+                confidenceScore: m.score,
+                stringSimilarity: m.nameSimilarity ? m.nameSimilarity / 100 : 0.9,
+                phoneticSimilarity: m.phoneticSimilarity ? m.phoneticSimilarity / 100 : 1.0,
+                sanctionsList: m.sourceList || 'OFAC / UN',
+                isSuppressedByWhitelist: false,
+                designationDetails: m.matchDetails,
+                tokenBreakdown: [
+                  { queryToken: partyName.split(' ')[0] || '', candidateToken: m.matchedEntityName.split(' ')[0] || '', tokenScore: 95, matchType: 'FUZZY' }
+                ]
+              }))
+            }
+          ]
+        };
       }
     } catch {
       // Fallback local screening simulation

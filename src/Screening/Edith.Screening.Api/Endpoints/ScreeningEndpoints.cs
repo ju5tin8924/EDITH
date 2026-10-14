@@ -15,7 +15,7 @@ public static class ScreeningEndpoints
 {
     private static readonly Guid DefaultTenantId = Guid.Parse("01931000-0000-7000-8000-000000000000");
 
-    public static IEndpointRouteBuilder MapScreeningEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapScreeningEndpoints(this IEndpointRouteBuilder app, bool includeHealth = true)
     {
         var group = app.MapGroup("/api/v1");
 
@@ -197,13 +197,16 @@ public static class ScreeningEndpoints
             return Results.Ok(new { indexedCount = entities.Count, timestamp = DateTimeOffset.UtcNow });
         });
 
-        app.MapGet("/health", () => Results.Ok(new
+        if (includeHealth)
         {
-            status = "Healthy",
-            service = "Edith.Screening.Api",
-            version = "1.0.0",
-            timestamp = DateTimeOffset.UtcNow
-        }));
+            app.MapGet("/health", () => Results.Ok(new
+            {
+                status = "Healthy",
+                service = "Edith.Screening.Api",
+                version = "1.0.0",
+                timestamp = DateTimeOffset.UtcNow
+            }));
+        }
 
         return app;
     }
