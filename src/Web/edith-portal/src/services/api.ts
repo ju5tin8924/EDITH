@@ -97,14 +97,27 @@ export const EdithApi = {
       username: currentSession.username,
       role: currentSession.role,
       menuItems: [
-        { code: 'SCREENING', label: 'Screening Console', path: '/screening', icon: 'ShieldAlert', enabled: true },
-        { code: 'CASES', label: 'Case Workspace', path: '/cases', icon: 'Briefcase', enabled: true },
-        { code: 'BULK', label: 'Bulk & Delta Hub', path: '/bulk', icon: 'Layers', enabled: true },
-        { code: 'RULES', label: 'Rule Engine Sandbox', path: '/rules', icon: 'Sliders', enabled: true },
-        { code: 'GOAML', label: 'GCC goAML & AI Reports', path: '/goaml', icon: 'FileText', enabled: true },
-        { code: 'ANALYTICS', label: 'Executive Dashboard', path: '/dashboard', icon: 'BarChart3', enabled: true }
+        // Group 1: Operational Screening & Ingestion
+        { code: 'DASHBOARD', label: 'Executive Dashboard', path: '/dashboard', icon: 'BarChart3', enabled: true },
+        { code: 'SCREENING', label: 'Single Entity Screening', path: '/screening', icon: 'ShieldAlert', enabled: true },
+        { code: 'BULK', label: 'Bulk File Screening', path: '/bulk', icon: 'Layers', enabled: true },
+        { code: 'DELTA', label: 'Delta Rescreening Hub', path: '/delta', icon: 'RefreshCw', enabled: true },
+        { code: 'WHITELIST', label: 'Whitelist Governance', path: '/whitelist', icon: 'ShieldCheck', enabled: true },
+
+        // Group 2: Case Investigation & Regulatory
+        { code: 'CASES', label: '3-Pane Case Workspace', path: '/cases', icon: 'Briefcase', enabled: true },
+        { code: 'KYC360', label: 'Customer KYC 360', path: '/kyc360', icon: 'UserCheck', enabled: true },
+        { code: 'GOAML', label: 'goAML Reporting Studio', path: '/goaml', icon: 'FileText', enabled: true },
+
+        // Group 3: Rules, Analytics & Administration
+        { code: 'RULES', label: 'Visual Rule Builder', path: '/rules', icon: 'Sliders', enabled: true },
+        { code: 'SANDBOX', label: 'Rule Sandbox & Backtest', path: '/sandbox', icon: 'FlaskConical', enabled: true },
+        { code: 'REPORTS', label: 'Reports & Audit Ledger', path: '/reports', icon: 'FileSpreadsheet', enabled: true },
+        { code: 'NOTIFICATIONS', label: 'Dynamic Notifications', path: '/notifications', icon: 'BellRing', enabled: true },
+        { code: 'SETTINGS', label: 'System Masters Settings', path: '/settings', icon: 'Settings', enabled: true },
+        { code: 'IAM', label: 'IAM & Access Governance', path: '/iam', icon: 'Users', enabled: true }
       ],
-      features: ['REALTIME_SCREENING', 'CASE_WORKFLOW', 'AI_COPILOT', 'GOAML_EXPORT', 'AUDIT_TRAIL']
+      features: ['REALTIME_SCREENING', 'CASE_WORKFLOW', 'AI_COPILOT', 'GOAML_EXPORT', 'AUDIT_TRAIL', 'DELTA_SYNC', 'WORM_LEDGER']
     };
   },
 

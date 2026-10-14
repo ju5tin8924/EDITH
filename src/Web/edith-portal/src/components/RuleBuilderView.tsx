@@ -44,11 +44,11 @@ export const RuleBuilderView: React.FC = () => {
       {/* Title */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-surface p-4 rounded-xl border border-border">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2.5">
+          <h1 className="text-xl font-bold text-ink flex items-center gap-2.5">
             <Sliders className="w-6 h-6 text-primary" />
             P8 AML Rule Engine Sandbox & Historical Backtesting
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-muted mt-1">
             Dynamic rule definition and historical calibration simulating trigger rates against 150k+ transactions.
           </p>
         </div>
@@ -57,7 +57,7 @@ export const RuleBuilderView: React.FC = () => {
           <button
             onClick={handleRunBacktest}
             disabled={runningBacktest}
-            className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-slate-950 font-mono text-xs font-bold flex items-center gap-2 transition disabled:opacity-50 shadow-[0_0_12px_rgba(6,182,212,0.3)]"
+            className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white font-mono text-xs font-bold flex items-center gap-2 transition disabled:opacity-50 shadow-sm"
           >
             {runningBacktest ? (
               <>
@@ -66,7 +66,7 @@ export const RuleBuilderView: React.FC = () => {
               </>
             ) : (
               <>
-                <Play className="w-4 h-4 fill-slate-950" />
+                <Play className="w-4 h-4 fill-white" />
                 Run Backtest on 150k Transactions
               </>
             )}
@@ -77,7 +77,7 @@ export const RuleBuilderView: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Rules Catalog (5 cols) */}
         <div className="lg:col-span-5 bg-surface rounded-xl border border-border p-5 space-y-4">
-          <h2 className="text-xs font-mono uppercase tracking-wider font-semibold text-slate-300 pb-2 border-b border-border">
+          <h2 className="text-xs font-mono uppercase tracking-wider font-semibold text-ink pb-2 border-b border-border">
             Configured Tenant Rules ({rules.length})
           </h2>
 
@@ -93,13 +93,13 @@ export const RuleBuilderView: React.FC = () => {
                   }}
                   className={`p-4 rounded-lg border cursor-pointer transition-all ${
                     isSelected
-                      ? 'bg-slate-900 border-primary shadow-[0_0_12px_rgba(6,182,212,0.15)]'
-                      : 'bg-slate-950/60 border-border hover:border-slate-700'
+                      ? 'bg-surface-muted border-primary shadow-sm'
+                      : 'bg-canvas-subtle/60 border-border hover:border-border-light'
                   }`}
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <div className="font-semibold text-slate-100 text-sm">{r.ruleName}</div>
+                      <div className="font-semibold text-ink text-sm">{r.ruleName}</div>
                       <div className="text-[11px] font-mono text-primary-light mt-0.5">{r.ruleCode}</div>
                     </div>
                     <span
@@ -112,7 +112,7 @@ export const RuleBuilderView: React.FC = () => {
                       {r.severity}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-2 line-clamp-2">{r.description}</p>
+                  <p className="text-xs text-muted mt-2 line-clamp-2">{r.description}</p>
                 </div>
               );
             })}
@@ -125,8 +125,8 @@ export const RuleBuilderView: React.FC = () => {
             <div className="bg-surface rounded-xl border border-border p-5 space-y-5">
               <div className="flex justify-between items-center pb-3 border-b border-border">
                 <div>
-                  <h3 className="font-semibold text-slate-200 text-base">{selectedRule.ruleName}</h3>
-                  <div className="text-xs font-mono text-slate-500">Type: {selectedRule.ruleType}</div>
+                  <h3 className="font-semibold text-ink text-base">{selectedRule.ruleName}</h3>
+                  <div className="text-xs font-mono text-muted">Type: {selectedRule.ruleType}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-accent" />
@@ -136,20 +136,20 @@ export const RuleBuilderView: React.FC = () => {
 
               {/* Parameters JSON View */}
               <div className="space-y-1.5">
-                <div className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+                <div className="text-xs font-mono text-muted flex items-center gap-1.5">
                   <Code className="w-3.5 h-3.5 text-primary" />
                   Parameters JSON Schema
                 </div>
-                <pre className="p-3.5 rounded-lg bg-slate-950 border border-border text-xs font-mono text-slate-200 overflow-x-auto">
+                <pre className="p-3.5 rounded-lg bg-canvas-subtle border border-border text-xs font-mono text-ink overflow-x-auto">
                   {JSON.stringify(JSON.parse(selectedRule.parametersJson), null, 2)}
                 </pre>
               </div>
 
               {/* Backtest Diagnostics Report */}
               {backtestResult ? (
-                <div className="p-4 rounded-xl bg-slate-900 border border-primary/40 space-y-4 shadow-[0_0_16px_rgba(6,182,212,0.1)]">
+                <div className="p-4 rounded-xl bg-surface-muted border border-primary/40 space-y-4 shadow-sm">
                   <div className="flex justify-between items-center pb-2 border-b border-border">
-                    <span className="font-mono text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-ink uppercase tracking-wider flex items-center gap-2">
                       <BarChart2 className="w-4 h-4 text-primary" />
                       Historical Simulation Report
                     </span>
@@ -157,42 +157,42 @@ export const RuleBuilderView: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                    <div className="p-3 rounded-lg bg-slate-950 border border-border">
-                      <div className="text-[10px] font-mono uppercase text-slate-500">Evaluated</div>
-                      <div className="text-base font-bold font-mono text-slate-100 mt-1">
+                    <div className="p-3 rounded-lg bg-canvas-subtle border border-border">
+                      <div className="text-[10px] font-mono uppercase text-muted">Evaluated</div>
+                      <div className="text-base font-bold font-mono text-ink mt-1">
                         {backtestResult.simulatedTransactions.toLocaleString()}
                       </div>
                     </div>
-                    <div className="p-3 rounded-lg bg-slate-950 border border-border">
-                      <div className="text-[10px] font-mono uppercase text-slate-500">Triggered Hits</div>
-                      <div className="text-base font-bold font-mono text-amber-400 mt-1">
+                    <div className="p-3 rounded-lg bg-canvas-subtle border border-border">
+                      <div className="text-[10px] font-mono uppercase text-muted">Triggered Hits</div>
+                      <div className="text-base font-bold font-mono text-warning mt-1">
                         {backtestResult.triggeredAlerts}
                       </div>
                     </div>
-                    <div className="p-3 rounded-lg bg-slate-950 border border-border">
-                      <div className="text-[10px] font-mono uppercase text-slate-500">Estimated FP Rate</div>
-                      <div className="text-base font-bold font-mono text-emerald-400 mt-1">
+                    <div className="p-3 rounded-lg bg-canvas-subtle border border-border">
+                      <div className="text-[10px] font-mono uppercase text-muted">Estimated FP Rate</div>
+                      <div className="text-base font-bold font-mono text-accent mt-1">
                         {backtestResult.falsePositiveRateEstimate}%
                       </div>
                     </div>
-                    <div className="p-3 rounded-lg bg-slate-950 border border-border">
-                      <div className="text-[10px] font-mono uppercase text-slate-500">Latency / Tx</div>
+                    <div className="p-3 rounded-lg bg-canvas-subtle border border-border">
+                      <div className="text-[10px] font-mono uppercase text-muted">Latency / Tx</div>
                       <div className="text-base font-bold font-mono text-primary mt-1">
                         {backtestResult.averageEvaluationLatencyUs} µs
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-lg bg-slate-950 border border-border text-xs text-slate-300 flex items-start gap-2.5">
+                  <div className="p-3 rounded-lg bg-canvas-subtle border border-border text-xs text-ink flex items-start gap-2.5">
                     <CheckCircle className="w-4 h-4 text-accent shrink-0 mt-0.5" />
                     <div>
-                      <strong className="text-slate-100">Performance Verdict:</strong> This rule satisfies the SLA target with under 150 µs overhead per transaction, generating an optimal 0.22% alert rate with negligible false positive impact.
+                      <strong className="text-ink">Performance Verdict:</strong> This rule satisfies the SLA target with under 150 µs overhead per transaction, generating an optimal 0.22% alert rate with negligible false positive impact.
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="p-6 rounded-lg bg-slate-950/60 border border-dashed border-border text-center space-y-2">
-                  <div className="text-xs text-slate-400">
+                <div className="p-6 rounded-lg bg-canvas-subtle/60 border border-dashed border-border text-center space-y-2">
+                  <div className="text-xs text-muted">
                     No backtest run for this rule yet. Click "Run Backtest on 150k Transactions" to evaluate alert volume and latency impact.
                   </div>
                 </div>

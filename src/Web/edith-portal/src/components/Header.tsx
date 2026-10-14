@@ -1,92 +1,92 @@
 import React from 'react';
-import { Shield, Activity, User, Bell, RefreshCw } from 'lucide-react';
-import { UserRole } from '../types';
+import { Shield, Activity, Bell, RefreshCw, Terminal, Layers } from 'lucide-react';
 
 interface HeaderProps {
-  currentRole: UserRole;
-  onRoleChange: (role: UserRole) => void;
+  onOpenCommandPalette: () => void;
   activeLatencyMs?: number;
+  shiftStatus?: 'ON_DUTY' | 'OFF_DUTY';
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentRole, onRoleChange, activeLatencyMs = 8.4 }) => {
+export const Header: React.FC<HeaderProps> = ({ 
+  onOpenCommandPalette, 
+  activeLatencyMs = 8.4,
+  shiftStatus = 'ON_DUTY'
+}) => {
   return (
-    <header className="h-16 border-b border-border bg-surface px-6 flex items-center justify-between sticky top-0 z-50">
-      {/* Brand & System Status */}
-      <div className="flex items-center gap-4">
+    <header className="h-[52px] border-b border-[#283593] bg-primary text-white px-4 flex items-center justify-between sticky top-0 z-40 shadow-md select-none">
+      {/* Brand & Global Search */}
+      <div className="flex items-center gap-5">
         <div className="flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_12px_rgba(6,182,212,0.25)]">
-            <Shield className="w-5 h-5 text-primary" />
+          <div className="w-7 h-7 rounded bg-[#283593] border border-[#7986cb]/40 flex items-center justify-center text-[#ffd54f] shadow-xs">
+            <Shield className="w-4 h-4 fill-[#ffd54f]/20 text-[#ffd54f]" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-lg tracking-wider text-white">EDITH</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/20 text-primary-light border border-primary/30 uppercase tracking-widest font-semibold">
-                GCC v3.0
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 font-medium">Enterprise AML Screening & Intelligence Platform</p>
+          <div className="flex items-baseline gap-2">
+            <span className="font-bold text-sm tracking-widest uppercase text-white font-mono">EDITH // AML-OS</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#283593] text-[#c5cae9] border border-[#3949ab] font-bold">
+              v3.0-LTS
+            </span>
           </div>
         </div>
 
-        <div className="hidden md:flex items-center gap-2 pl-6 border-l border-border/80">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-border text-[11px] font-mono">
-            <Activity className="w-3.5 h-3.5 text-accent animate-pulse" />
-            <span className="text-slate-400">P99 Latency:</span>
-            <span className="text-accent font-semibold">{activeLatencyMs.toFixed(1)}ms</span>
-            <span className="text-slate-500 text-[10px]">(Target: &lt;20ms)</span>
-          </div>
+        <div className="h-4 w-[1px] bg-white/20 hidden md:block" />
 
-          <div className="px-2.5 py-1 rounded bg-slate-900/80 border border-border text-[11px] font-mono text-slate-400">
-            Tenant: <span className="text-slate-200 font-medium">Abu Dhabi Commercial Bank (AE)</span>
-          </div>
+        {/* Global Terminal Search Trigger */}
+        <div 
+          onClick={onOpenCommandPalette}
+          className="relative hidden sm:flex items-center cursor-pointer group"
+        >
+          <Terminal className="w-3.5 h-3.5 absolute left-2.5 text-[#9fa8da] group-hover:text-white transition-colors" />
+          <input 
+            type="text" 
+            readOnly
+            placeholder="Search screens, entities, SWIFT wires... (Ctrl+K)" 
+            className="bg-[#121858] text-white text-xs pl-8 pr-12 py-1 h-[30px] w-[300px] lg:w-[380px] rounded border border-[#3949ab] group-hover:border-[#9fa8da] cursor-pointer placeholder:text-[#9fa8da]/60 font-mono transition-colors"
+          />
+          <kbd className="absolute right-2 px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-[#1a237e] border border-[#3949ab] text-[#c5cae9] rounded">
+            ⌘K
+          </kbd>
         </div>
       </div>
 
-      {/* Quick Actions & Role Switcher */}
+      {/* System Telemetry & Global Hub */}
       <div className="flex items-center gap-3">
-        {/* Role Preview Switcher for Development & Demonstration */}
-        <div className="flex items-center gap-1.5 bg-slate-900/90 border border-border rounded-lg p-1 text-xs">
-          <span className="text-slate-400 pl-2 text-[11px] font-medium hidden sm:inline">Role:</span>
-          {(['ANALYST', 'MLRO', 'SUPER_ADMIN', 'AUDITOR'] as UserRole[]).map((role) => (
-            <button
-              key={role}
-              onClick={() => onRoleChange(role)}
-              className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all ${
-                currentRole === role
-                  ? 'bg-primary text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.4)]'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-surface'
-              }`}
-            >
-              {role}
-            </button>
-          ))}
+        {/* SignalR 202 Background Job Pill */}
+        <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded bg-[#121858] border border-[#3949ab] text-[11px] font-mono text-[#c5cae9]">
+          <Layers className="w-3.5 h-3.5 text-[#ffd54f]" />
+          <span className="text-white font-semibold">Job #8820:</span>
+          <span className="text-[#a7f3d0]">Bulk_Wire_20261014.csv (68%)</span>
         </div>
 
-        <button 
-          title="System Sync Status"
-          className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition border border-transparent hover:border-border"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
+        {/* System Health Status */}
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#121858] border border-[#3949ab] text-[11px] font-mono text-[#a7f3d0]">
+          <Activity className="w-3.5 h-3.5 text-accent animate-pulse" />
+          <span className="text-white font-medium">SLA: {activeLatencyMs.toFixed(1)}ms</span>
+          <span className="text-[#9fa8da] hidden md:inline">(P99 &lt; 20ms)</span>
+        </div>
 
-        <button 
-          title="Critical Alerts"
-          className="relative p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition border border-transparent hover:border-border"
-        >
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-critical animate-ping" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-critical" />
-        </button>
+        {/* Shift Presence Indicator */}
+        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#121858] border border-[#3949ab] text-[11px] font-mono text-[#c5cae9]">
+          <span className={`w-2 h-2 rounded-full ${shiftStatus === 'ON_DUTY' ? 'bg-accent' : 'bg-slate-400'}`} />
+          <span className="text-white font-medium">{shiftStatus === 'ON_DUTY' ? 'On-Shift' : 'Standby'}</span>
+        </div>
 
-        {/* User Identity */}
-        <div className="flex items-center gap-2 pl-3 border-l border-border">
-          <div className="w-8 h-8 rounded-full bg-slate-800 border border-border flex items-center justify-center text-slate-300">
-            <User className="w-4 h-4" />
-          </div>
-          <div className="hidden lg:block text-left text-xs leading-tight">
-            <div className="font-semibold text-slate-200">Fatima Al-Nuaimi</div>
-            <div className="text-[10px] text-slate-400 font-mono">ID: AE-ADCB-8092</div>
-          </div>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1">
+          <button 
+            title="System Sync Status"
+            className="w-7 h-7 flex items-center justify-center text-[#c5cae9] hover:text-white hover:bg-[#283593] rounded transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+
+          <button 
+            title="Alert Feed"
+            className="relative w-7 h-7 flex items-center justify-center text-[#c5cae9] hover:text-white hover:bg-[#283593] rounded transition-colors"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-critical animate-ping" />
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-critical" />
+          </button>
         </div>
       </div>
     </header>

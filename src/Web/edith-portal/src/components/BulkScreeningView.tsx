@@ -62,11 +62,11 @@ export const BulkScreeningView: React.FC = () => {
       {/* Title Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-surface p-4 rounded-xl border border-border">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2.5">
+          <h1 className="text-xl font-bold text-ink flex items-center gap-2.5">
             <Layers className="w-6 h-6 text-primary" />
             P6 High-Throughput Bulk & Delta Rescreening Hub
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-muted mt-1">
             Asynchronous streaming batch ingestion with HTTP 202 submission, zero Redis dependency, and delta re-indexing.
           </p>
         </div>
@@ -84,35 +84,35 @@ export const BulkScreeningView: React.FC = () => {
       {/* Upload Drag & Drop Sandbox */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 bg-surface rounded-xl border border-border p-5 space-y-4">
-          <h2 className="text-xs font-mono uppercase tracking-wider font-semibold text-slate-300 pb-2 border-b border-border flex items-center gap-2">
+          <h2 className="text-xs font-mono uppercase tracking-wider font-semibold text-ink pb-2 border-b border-border flex items-center gap-2">
             <UploadCloud className="w-4 h-4 text-primary" />
             Submit Batch Screening
           </h2>
 
           <div 
             onClick={handleSimulateUpload}
-            className={`border-2 border-dashed border-border hover:border-primary/50 transition rounded-xl p-8 text-center cursor-pointer space-y-3 bg-slate-950/40 ${isSubmitting ? 'opacity-50 pointer-events-none' : ''}`}
+            className={`border-2 border-dashed border-border hover:border-primary/50 transition rounded-xl p-8 text-center cursor-pointer space-y-3 bg-canvas-subtle/40 ${isSubmitting ? 'opacity-50 pointer-events-none' : ''}`}
           >
             <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto">
               <FileSpreadsheet className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-slate-200">Click to Ingest Sample CSV</p>
-              <p className="text-xs text-slate-400 mt-0.5">Supports CSV, TSV (up to 500k rows/file)</p>
+              <p className="text-sm font-semibold text-ink">Click to Ingest Sample CSV</p>
+              <p className="text-xs text-muted mt-0.5">Supports CSV, TSV (up to 500k rows/file)</p>
             </div>
-            <div className="text-[10px] font-mono text-slate-500">
+            <div className="text-[10px] font-mono text-muted">
               Columns: CustomerId, FullName, Country, DOB, NationalId
             </div>
           </div>
 
-          <div className="p-3 bg-slate-900/60 rounded-lg border border-border text-xs text-slate-400 space-y-1.5 font-mono">
+          <div className="p-3 bg-surface-muted/60 rounded-lg border border-border text-xs text-muted space-y-1.5 font-mono">
             <div className="flex justify-between">
               <span>Streaming Chunk:</span>
-              <span className="text-slate-200">5,000 records</span>
+              <span className="text-ink">5,000 records</span>
             </div>
             <div className="flex justify-between">
               <span>Worker Concurrency:</span>
-              <span className="text-slate-200">8 Parallels</span>
+              <span className="text-ink">8 Parallels</span>
             </div>
             <div className="flex justify-between">
               <span>Estimated Throughput:</span>
@@ -123,23 +123,23 @@ export const BulkScreeningView: React.FC = () => {
 
         {/* Jobs Progress Table */}
         <div className="lg:col-span-2 bg-surface rounded-xl border border-border p-5 space-y-4">
-          <h2 className="text-xs font-mono uppercase tracking-wider font-semibold text-slate-300 pb-2 border-b border-border flex items-center justify-between">
+          <h2 className="text-xs font-mono uppercase tracking-wider font-semibold text-ink pb-2 border-b border-border flex items-center justify-between">
             <span>Active & Historic Bulk Ingestion Jobs</span>
-            <span className="text-[11px] font-mono text-slate-500">Live Progress Stream</span>
+            <span className="text-[11px] font-mono text-muted">Live Progress Stream</span>
           </h2>
 
           <div className="space-y-3">
             {jobs.map((j) => (
-              <div key={j.jobId} className="p-4 rounded-lg bg-slate-900 border border-border space-y-3">
+              <div key={j.jobId} className="p-4 rounded-lg bg-surface-muted border border-border space-y-3">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-200 text-sm">{j.fileName}</span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                      <span className="font-semibold text-ink text-sm">{j.fileName}</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-hover text-muted">
                         {j.jobId}
                       </span>
                     </div>
-                    <div className="text-[11px] font-mono text-slate-500 mt-0.5 flex items-center gap-2">
+                    <div className="text-[11px] font-mono text-muted mt-0.5 flex items-center gap-2">
                       <Clock className="w-3 h-3" />
                       Started: {new Date(j.startedAtUtc).toLocaleTimeString()}
                     </div>
@@ -160,7 +160,7 @@ export const BulkScreeningView: React.FC = () => {
 
                 {/* Progress Bar */}
                 <div className="space-y-1">
-                  <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-border">
+                  <div className="w-full bg-canvas-subtle rounded-full h-2 overflow-hidden border border-border">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
                         j.status === 'COMPLETED' ? 'bg-accent' : 'bg-primary'
@@ -169,9 +169,9 @@ export const BulkScreeningView: React.FC = () => {
                     />
                   </div>
 
-                  <div className="flex justify-between items-center text-[11px] font-mono text-slate-400 pt-1">
+                  <div className="flex justify-between items-center text-[11px] font-mono text-muted pt-1">
                     <span>
-                      Processed: <strong className="text-slate-200">{j.processedRecords.toLocaleString()}</strong> / {j.totalRecords.toLocaleString()}
+                      Processed: <strong className="text-ink">{j.processedRecords.toLocaleString()}</strong> / {j.totalRecords.toLocaleString()}
                     </span>
                     <span className="flex items-center gap-1 text-critical font-bold">
                       <AlertTriangle className="w-3 h-3" />

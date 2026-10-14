@@ -1,4 +1,5 @@
 /** @type {import('tailwindcss').Config} */
+// Investment Indigo AML Terminal — tokens from the Stitch "EDITH Design System" project.
 export default {
   content: [
     "./index.html",
@@ -7,27 +8,45 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#0B0F19',
+        background: '#f4f6fc', // canvas
+        'canvas-subtle': '#eaedfa',
         surface: {
-          DEFAULT: '#131B2E',
-          hover: '#1B253D',
-          muted: '#0F1626'
+          DEFAULT: '#ffffff',
+          hover: '#eef1fb',
+          muted: '#faf8ff'
         },
         border: {
-          DEFAULT: '#1E293B',
-          light: '#334155'
+          DEFAULT: '#c5cae9',
+          light: '#9fa8da'
         },
         primary: {
-          DEFAULT: '#06B6D4', // Cyan
-          hover: '#0891B2',
-          light: '#22D3EE'
+          DEFAULT: '#1a237e', // deep navy shell
+          hover: '#283593',
+          light: '#3949ab',
+          container: '#e8eaf6'
         },
+        secondary: '#3949ab',
+        tertiary: '#5c6bc0',
+        ink: '#0d1333',
+        muted: '#5c6bc0',
+        disabled: '#9fa8da',
         accent: {
-          DEFAULT: '#10B981', // Emerald
-          hover: '#059669'
+          DEFAULT: '#059669', // signal-success
+          hover: '#047857'
         },
-        critical: '#EF4444',
-        warning: '#F59E0B'
+        critical: '#dc2626',
+        warning: '#d97706',
+        info: '#2563eb'
+      },
+      borderRadius: {
+        DEFAULT: '0.125rem',
+        md: '0.25rem',
+        lg: '0.25rem',
+        xl: '0.5rem'
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace']
       }
     },
   },
