@@ -1,0 +1,90 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "1s"
+    },
+    "analysis": {
+      "filter": {
+        "name_edge_ngram": {
+          "type": "edge_ngram",
+          "min_gram": 2,
+          "max_gram": 15
+        }
+      },
+      "analyzer": {
+        "name_clean_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "asciifolding"
+          ]
+        },
+        "name_ngram_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "asciifolding",
+            "name_edge_ngram"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "id": { "type": "keyword" },
+      "tenant_id": { "type": "keyword" },
+      "customer_code": { "type": "keyword" },
+      "customer_type": { "type": "keyword" },
+      "full_name": {
+        "type": "text",
+        "analyzer": "name_clean_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "normalizer": "lowercase"
+          },
+          "ngram": {
+            "type": "text",
+            "analyzer": "name_ngram_analyzer",
+            "search_analyzer": "name_clean_analyzer"
+          }
+        }
+      },
+      "aliases": {
+        "type": "text",
+        "analyzer": "name_clean_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "normalizer": "lowercase"
+          },
+          "ngram": {
+            "type": "text",
+            "analyzer": "name_ngram_analyzer",
+            "search_analyzer": "name_clean_analyzer"
+          }
+        }
+      },
+      "phonetic_tokens": {
+        "type": "keyword"
+      },
+      "date_of_birth": {
+        "type": "date",
+        "format": "yyyy-MM-dd||yyyy||epoch_millis"
+      },
+      "nationality": { "type": "keyword" },
+      "country": { "type": "keyword" },
+      "national_id": { "type": "keyword" },
+      "passport_number": { "type": "keyword" },
+      "risk_category": { "type": "keyword" },
+      "risk_score": { "type": "float" },
+      "is_active": { "type": "boolean" },
+      "updated_at": { "type": "date" }
+    }
+  }
+}

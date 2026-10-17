@@ -100,6 +100,16 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
     await EdithApi.resolveCase(selectedCaseId, resolveType, resolveRationale);
     setModalType(null);
     setResolveRationale('');
+    const list = await EdithApi.fetchCases();
+    setCases(list);
+    handleSelectCase(selectedCaseId);
+  };
+
+  const handleEscalateToMlro = async () => {
+    if (!selectedCaseId) return;
+    await EdithApi.transitionCase(selectedCaseId, 'PendingApproval', 'Escalated by Analyst to MLRO senior review queue');
+    const list = await EdithApi.fetchCases();
+    setCases(list);
     handleSelectCase(selectedCaseId);
   };
 
@@ -363,7 +373,7 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                 </div>
               ) : (
                 <button
-                  onClick={() => alert('Case escalated to MLRO senior review queue.')}
+                  onClick={handleEscalateToMlro}
                   className="w-full py-2 rounded bg-warning/10 text-warning border border-warning/40 hover:bg-warning/20 transition text-xs font-semibold flex items-center justify-center gap-1.5"
                 >
                   <Send className="w-3.5 h-3.5" />

@@ -39,6 +39,7 @@ public sealed record BulkProgressUpdate
     public required string Status { get; init; }
     public required int ProcessedRows { get; init; }
     public required int TotalRows { get; init; }
+    public int SkippedCount { get; init; }
     public required double Percentage { get; init; }
     public required int HitCount { get; init; }
     public required int CleanCount { get; init; }
@@ -53,6 +54,7 @@ public sealed class BulkScreeningJob
     public required string FileName { get; init; }
     public int TotalRows { get; set; }
     public int ProcessedRows { get; set; }
+    public int SkippedCount { get; set; }
     public int HitCount { get; set; }
     public int CleanCount { get; set; }
     public BulkJobStatus Status { get; set; } = BulkJobStatus.Submitted;

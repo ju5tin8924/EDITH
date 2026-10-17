@@ -1,18 +1,24 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Edith.Screening.Api.Contracts;
+using Edith.Screening.Bulk.Models;
+using Edith.Screening.Bulk.Repository;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Edith.Screening.Api.Tests;
 
 public sealed class ScreeningApiTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly HttpClient _client;
+    private readonly WebApplicationFactory<Program> _factory;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public ScreeningApiTests(WebApplicationFactory<Program> factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -109,6 +115,10 @@ public sealed class ScreeningApiTests : IClassFixture<WebApplicationFactory<Prog
         Assert.Equal("OFAC_SDN", result.TriggeredList);
         Assert.NotEmpty(result.Matches);
         Assert.Contains(result.Matches, m => m.MatchedEntityId == "OFAC-9812");
+
+        var caseService = _factory.Services.GetRequiredService<Edith.Cases.Services.ICaseService>();
+        var cases = await caseService.ListCasesAsync(Guid.Parse("01931000-0000-7000-8000-000000000000"));
+        Assert.Contains(cases, c => c.CaseNumber == result.CaseNumber && c.Priority == Edith.Cases.Models.CasePriority.Critical);
     }
 
     [Fact]
@@ -282,4 +292,166 @@ public sealed class ScreeningApiTests : IClassFixture<WebApplicationFactory<Prog
         Assert.True(result.IsHeld);
         Assert.Contains(result.Matches, m => m.MatchedEntityId == "DYNAMIC-999");
     }
+
+    [Fact]
+    public async Task BulkUpload_CsvFile_Returns_202Accepted_And_CreatesJob()
+    {
+        var csvContent = """
+        AML_TYPE,AML_FULLNAME,AML_IDDETAILS,AML_CATEGORY,AML_DATEOFBIRTH,AML_REMARKS,AML_NATIONALITY,AML_PROGRAM,AML_ALIASNAME
+        INDIVIDUAL,VIKTOR ANATOLYEVICH BOUT,PASSPORT-RU-882190,SANCTION,1967-01-13,Arms,RU,OFAC_SDN,Victor Bout
+        INDIVIDUAL,AHMED AL-MANSOOR,PASSPORT-AE-102938,CLEAN,1985-02-10,Commercial,AE,NONE,
+        """;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/bulk/upload")
+        {
+            Content = new StringContent(csvContent, Encoding.UTF8, "text/csv")
+        };
+        request.Headers.Add("X-File-Name", "batch_test.csv");
+        request.Headers.Add("X-Tenant-ID", Guid.NewGuid().ToString());
+
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<BulkUploadAcceptedResponse>(JsonOptions);
+        Assert.NotNull(result);
+        Assert.NotEqual(Guid.Empty, result.JobId);
+        Assert.Equal("batch_test.csv", result.FileName);
+        Assert.Equal("CSV", result.Format);
+        Assert.Equal("ACCEPTED", result.Status);
+        Assert.Contains($"/api/v1/bulk/jobs/{result.JobId}", result.ProgressUrl);
+
+        // Fetch job status
+        var statusRes = await _client.GetAsync($"/api/v1/bulk/jobs/{result.JobId}");
+        Assert.Equal(HttpStatusCode.OK, statusRes.StatusCode);
+        var status = await statusRes.Content.ReadFromJsonAsync<BulkJobStatusResponse>(JsonOptions);
+        Assert.NotNull(status);
+        Assert.Equal(result.JobId, status.JobId);
+    }
+
+    [Fact]
+    public async Task BulkUpload_JsonFile_Returns_202Accepted()
+    {
+        var jsonContent = """
+        [
+          {
+            "AML_TYPE": "INDIVIDUAL",
+            "AML_FULLNAME": "VIKTOR ANATOLYEVICH BOUT",
+            "AML_CATEGORY": "SANCTION"
+          }
+        ]
+        """;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/bulk/upload")
+        {
+            Content = new StringContent(jsonContent, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("X-File-Name", "sanctions.json");
+
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<BulkUploadAcceptedResponse>(JsonOptions);
+        Assert.NotNull(result);
+        Assert.Equal("JSON", result.Format);
+        Assert.Equal("ACCEPTED", result.Status);
+    }
+
+    [Fact]
+    public async Task BulkUpload_UnsupportedFormat_Returns_400BadRequest()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/bulk/upload")
+        {
+            Content = new StringContent("some text content", Encoding.UTF8, "text/plain")
+        };
+        request.Headers.Add("X-File-Name", "unsupported.pdf");
+
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task BulkUpload_WithKeepSkipped_And_DownloadSkippedEndpoint()
+    {
+        var csvContent = """
+        AML_TYPE,AML_FULLNAME,AML_IDDETAILS,AML_CATEGORY,AML_DATEOFBIRTH,AML_REMARKS,AML_NATIONALITY,AML_PROGRAM,AML_ALIASNAME
+        INDIVIDUAL,VIKTOR ANATOLYEVICH BOUT,PASSPORT-RU-882190,SANCTION,1967-01-13,Arms,RU,OFAC_SDN,Victor Bout
+        """;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/bulk/upload?keepSkipped=true&skippedFormat=json")
+        {
+            Content = new StringContent(csvContent, Encoding.UTF8, "text/csv")
+        };
+        request.Headers.Add("X-File-Name", "test_skipped.csv");
+
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<BulkUploadAcceptedResponse>(JsonOptions);
+        Assert.NotNull(result);
+        Assert.True(result.KeepSkipped);
+        Assert.Equal("JSON", result.SkippedFormat);
+        Assert.NotNull(result.SkippedDownloadUrl);
+        Assert.Contains($"/api/v1/bulk/jobs/{result.JobId}/skipped", result.SkippedDownloadUrl);
+
+        // Fetch job status
+        var statusRes = await _client.GetAsync($"/api/v1/bulk/jobs/{result.JobId}");
+        Assert.Equal(HttpStatusCode.OK, statusRes.StatusCode);
+        var status = await statusRes.Content.ReadFromJsonAsync<BulkJobStatusResponse>(JsonOptions);
+        Assert.NotNull(status);
+        Assert.Equal(result.JobId, status.JobId);
+    }
+
+    [Fact]
+    public async Task DownloadSkippedRecords_Returns_File_With_Requested_Format()
+    {
+        var repo = _factory.Services.GetRequiredService<IBulkJobRepository>();
+        var jobId = Guid.NewGuid();
+        var userId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+
+        await repo.CreateJobAsync(new BulkJobRecord
+        {
+            Id = jobId,
+            UserId = userId,
+            FileName = "skipped_test.csv",
+            TotalRecords = 1,
+            ProcessedRecords = 1,
+            SkippedRecords = 1,
+            Status = "COMPLETED",
+            KeepSkipped = true,
+            SkippedFormat = "csv"
+        });
+
+        await repo.SaveSkippedRecordsAsync(jobId, [
+            new AmlEntityRecord
+            {
+                AmlType = "INDIVIDUAL",
+                AmlFullName = "VIKTOR BOUT",
+                AmlNationality = "RU",
+                AmlCategory = "SANCTION"
+            }
+        ]);
+
+        // 1. Download default (csv)
+        var csvResponse = await _client.GetAsync($"/api/v1/bulk/jobs/{jobId}/skipped");
+        Assert.Equal(HttpStatusCode.OK, csvResponse.StatusCode);
+        Assert.Equal("text/csv", csvResponse.Content.Headers.ContentType?.MediaType);
+        var csvContent = await csvResponse.Content.ReadAsStringAsync();
+        Assert.Contains("VIKTOR BOUT", csvContent);
+        Assert.Contains("AML_FULLNAME", csvContent);
+
+        // 2. Download with format query parameter override (json)
+        var jsonResponse = await _client.GetAsync($"/api/v1/bulk/jobs/{jobId}/skipped?format=json");
+        Assert.Equal(HttpStatusCode.OK, jsonResponse.StatusCode);
+        Assert.Equal("application/json", jsonResponse.Content.Headers.ContentType?.MediaType);
+        var jsonContent = await jsonResponse.Content.ReadAsStringAsync();
+        Assert.Contains("VIKTOR BOUT", jsonContent);
+
+        // 3. Download with format query parameter override (xml)
+        var xmlResponse = await _client.GetAsync($"/api/v1/bulk/jobs/{jobId}/skipped?format=xml");
+        Assert.Equal(HttpStatusCode.OK, xmlResponse.StatusCode);
+        Assert.Equal("application/xml", xmlResponse.Content.Headers.ContentType?.MediaType);
+        var xmlContent = await xmlResponse.Content.ReadAsStringAsync();
+        Assert.Contains("<AML_FULLNAME>VIKTOR BOUT</AML_FULLNAME>", xmlContent);
+    }
 }
+

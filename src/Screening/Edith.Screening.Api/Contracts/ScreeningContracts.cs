@@ -150,3 +150,31 @@ public sealed record WatchlistEntityDto
 
     public bool IsActive { get; init; } = true;
 }
+
+public sealed record BulkUploadAcceptedResponse
+{
+    public required Guid JobId { get; init; }
+    public required string FileName { get; init; }
+    public required string Format { get; init; }
+    public required string Status { get; init; }
+    public required string Message { get; init; }
+    public required string ProgressUrl { get; init; }
+    public bool KeepSkipped { get; init; } = true;
+    public string? SkippedFormat { get; init; }
+    public string? SkippedDownloadUrl { get; init; }
+    public string StreamHub { get; init; } = "/hubs/screening-jobs";
+    public DateTimeOffset SubmittedAt { get; init; } = DateTimeOffset.UtcNow;
+}
+
+public sealed record BulkJobStatusResponse
+{
+    public required Guid JobId { get; init; }
+    public required string FileName { get; init; }
+    public required string Status { get; init; }
+    public required int TotalRecords { get; init; }
+    public required int ProcessedRecords { get; init; }
+    public int SkippedRecords { get; init; }
+    public string? SkippedDownloadUrl { get; init; }
+    public double ProgressPercentage => TotalRecords > 0 ? Math.Round((double)(ProcessedRecords + SkippedRecords) / TotalRecords * 100.0, 2) : 0.0;
+}
+

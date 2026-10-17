@@ -16,6 +16,7 @@ public interface ICaseService
     Task<bool> ReleaseLockAsync(Guid tenantId, Guid caseId, Guid userId, bool force = false, CancellationToken ct = default);
     Task<CaseDetail> TransitionStatusAsync(Guid tenantId, Guid caseId, CaseStatus newStatus, Guid userId, string userName, string userRole, CaseResolution? resolution = null, string? reason = null, CancellationToken ct = default);
     Task<CaseNote> AddNoteAsync(Guid tenantId, Guid caseId, Guid authorId, string authorName, string content, string noteType = "INVESTIGATION", CancellationToken ct = default);
+    Task<IReadOnlyList<CaseNote>> GetNotesAsync(Guid tenantId, Guid caseId, CancellationToken ct = default);
     Task<IReadOnlyList<CaseAuditEntry>> GetAuditTrailAsync(Guid tenantId, Guid caseId, CancellationToken ct = default);
 }
 
@@ -207,6 +208,19 @@ public sealed class CaseService : ICaseService
         }
 
         return note;
+    }
+
+    public Task<IReadOnlyList<CaseNote>> GetNotesAsync(Guid tenantId, Guid caseId, CancellationToken ct = default)
+    {
+        if (_notes.TryGetValue(caseId, out var notes))
+        {
+            lock (notes)
+            {
+                return Task.FromResult<IReadOnlyList<CaseNote>>(notes.ToList());
+            }
+        }
+
+        return Task.FromResult<IReadOnlyList<CaseNote>>([]);
     }
 
     public Task<IReadOnlyList<CaseAuditEntry>> GetAuditTrailAsync(Guid tenantId, Guid caseId, CancellationToken ct = default)

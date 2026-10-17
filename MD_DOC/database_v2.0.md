@@ -1,8 +1,9 @@
-# EDITH AML Intelligence Platform: Database Architecture & UML Specification (v1.0)
+# EDITH AML Intelligence Platform: Database Architecture & OpenSearch Specification (v2.0)
 
 **Project:** EDITH Next-Gen AML Intelligence Platform  
-**Target Architecture:** PostgreSQL 17, .NET 10 Microservices, OpenSearch 2.x  
-**Version:** 1.0
+**Target Architecture:** PostgreSQL 17 (`edith_aml`), OpenSearch 2.12 (`edith_watchlist_v1`, `edith_customers_v1`), .NET 10 Microservices  
+**Version:** 2.0  
+**Last Updated:** October 2026  
 
 ---
 
@@ -241,6 +242,9 @@ CREATE TABLE screening.bulk_screening_jobs (
     file_name VARCHAR(255) NOT NULL,
     total_records INT NOT NULL DEFAULT 0,
     processed_records INT NOT NULL DEFAULT 0,
+    skipped_records INT NOT NULL DEFAULT 0,
+    keep_skipped BOOLEAN NOT NULL DEFAULT true,
+    skipped_format VARCHAR(10) NOT NULL DEFAULT 'csv',
     status VARCHAR(30) NOT NULL DEFAULT 'PENDING'
 );
 
@@ -251,6 +255,21 @@ CREATE TABLE screening.bulk_screening_items (
     input_name VARCHAR(255) NOT NULL,
     match_score NUMERIC(5,2) NOT NULL DEFAULT 0.00,
     match_found BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE TABLE screening.bulk_job_skipped (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NOT NULL REFERENCES screening.bulk_screening_jobs(id) ON DELETE CASCADE,
+    aml_type VARCHAR(30) NOT NULL,
+    aml_fullname VARCHAR(255) NOT NULL,
+    aml_iddetails VARCHAR(100) NULL,
+    aml_category VARCHAR(50) NULL,
+    aml_dateofbirth VARCHAR(30) NULL,
+    aml_remarks TEXT NULL,
+    aml_nationality VARCHAR(10) NULL,
+    aml_program VARCHAR(100) NULL,
+    aml_aliasname TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE screening.delta_sync_batches (
@@ -284,8 +303,11 @@ CREATE TABLE cases.aml_cases (
     priority VARCHAR(10) NOT NULL,
     stage VARCHAR(30) NOT NULL DEFAULT 'TRIAGE',
     status VARCHAR(30) NOT NULL DEFAULT 'OPEN',
+    resolution VARCHAR(40) NULL,
+    resolution_reason TEXT NULL,
     assigned_analyst_id UUID NULL REFERENCES core.users(id) ON DELETE SET NULL,
     locked_by_user_id UUID NULL REFERENCES core.users(id) ON DELETE SET NULL,
+    lock_expires_at TIMESTAMPTZ NULL,
     edd_deadline TIMESTAMPTZ NULL,
     mlro_deadline TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -304,6 +326,7 @@ CREATE TABLE cases.case_activities (
     case_id UUID NOT NULL REFERENCES cases.aml_cases(id) ON DELETE CASCADE,
     actor_id UUID NULL REFERENCES core.users(id) ON DELETE SET NULL,
     action_type VARCHAR(50) NOT NULL,
+    note_type VARCHAR(30) NOT NULL DEFAULT 'INVESTIGATION',
     comments TEXT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -356,11 +379,21 @@ CREATE TABLE notifications.user_shifts (
 );
 ```
 
-## 2. Comprehensive Entity-Relationship Diagram (Mermaid)
+---
+
+## 2. OpenSearch 2.12 Index Mappings (`edith_watchlist_v1` & `edith_customers_v1`)
+
+* **Custom Analyzers (`deploy/opensearch/`):**
+  * `edith_name_analyzer`: Standard tokenizer, lowercase, ASCII folding, corporate suffix stop-word filter.
+  * `edith_ngram_analyzer`: Edge n-gram tokenizer (`min_gram: 3`, `max_gram: 10`) for partial token matching.
+  * `phonetic_tokens`: Pre-computed Double Metaphone primary and alternate keys indexed as `keyword` array for zero-latency phonetic DisMax queries.
+
+---
+
+## 3. Comprehensive Entity-Relationship Diagram (Mermaid)
 
 ```mermaid
 erDiagram
-    %% Core Schemas
     TENANTS ||--o{ USERS : houses
     TENANTS ||--o{ USER_GROUPS : defines
     TENANTS ||--o{ CUSTOMERS : partitions
@@ -375,7 +408,6 @@ erDiagram
     MENUS ||--o{ GROUP_MENU_PERMISSIONS : grants
     MENUS ||--o{ MENUS : contains_submenu
 
-    %% Rules & Masters
     NATIONALITY_MASTERS ||--o{ CUSTOMERS : assigns_nationality
     COUNTRY_MASTERS ||--o{ CUSTOMERS : assigns_residence
     NATIONALITY_MASTERS ||--o{ TRANSACTIONS : sender_nationality
@@ -384,7 +416,6 @@ erDiagram
     AML_RULES ||--|{ AML_RULE_CONDITIONS : contains
     AML_RULES ||--o{ CASE_RULE_MATCHES : violates
 
-    %% Screening & Ingestion
     CUSTOMERS ||--o{ TRANSACTIONS : originates
     CUSTOMERS ||--o{ CUSTOMER_DOCUMENTS : owns_vault
     CUSTOMERS ||--o{ CUSTOMER_SCREENING_HISTORY : logs_checks
@@ -397,13 +428,13 @@ erDiagram
     WATCHLIST_ENTITIES ||--o{ DELTA_AUTHORIZATIONS : matches_target
 
     BULK_SCREENING_JOBS ||--|{ BULK_SCREENING_ITEMS : processes
+    BULK_SCREENING_JOBS ||--o{ BULK_JOB_SKIPPED : retains_skipped
     WATCHLIST_ENTITIES ||--o{ BULK_SCREENING_ITEMS : matches_record
 
     TRANSACTIONS ||--o| AML_CASES : triggers
     TRANSACTIONS ||--o{ SCREENING_LOGS : produces
     TRANSACTIONS ||--o{ ACCOUNT_FREEZES : freezes_remittance
 
-    %% Cases & Lifecycles
     AML_CASES ||--|{ CASE_ACTIVITIES : logs_timeline
     AML_CASES ||--o{ CASE_RULE_MATCHES : records_trips
     AML_CASES ||--o{ ACCOUNT_FREEZES : executes_freeze
@@ -414,57 +445,5 @@ erDiagram
     USERS ||--o{ CASE_ACTIVITIES : performs_action
     USERS ||--o{ USER_SHIFTS : schedules
 
-    %% Notifications
     NOTIFICATION_RULES ||--o{ DELIVERY_LEDGERS : dispatches
-```
-
-## 3. Core Workflow Sequence Diagram (PlantUML)
-
-```plantuml
-@startuml
-autonumber
-actor "Core Banking System" as CBS
-participant "API Gateway (.NET 10)" as Gateway
-participant "Screening Service" as Screening
-database "OpenSearch 2.x" as OS
-database "PostgreSQL 17" as PG
-participant "Event Bus (Kafka)" as Bus
-participant "Notification Engine" as Notif
-
-CBS -> Gateway: POST /api/v1/screen/transaction (Idempotency-Key)
-Gateway -> PG: Check Idempotency Key & Insert PENDING Tx
-Gateway -> Screening: Execute 5-Pass Screening Pipeline
-Screening -> OS: Pass 2 & 3: Broad Retrieval & Phonetic Scoring
-OS --> Screening: Return Candidate Match Scores
-Screening -> PG: Evaluate Thresholds & Save Screening Log
-
-alt Critical Match / Sanction Hit (>= 90%)
-    Screening -> PG: Update Tx STATUS = HELD, Create AMLCase (P1)
-    PG --> Gateway: Return HELD Status Response
-    Gateway --> CBS: HTTP 200 OK (Status: HELD)
-    Screening -> Bus: Publish TransactionHeldEvent
-    Bus -> Notif: Consume Event & Dispatch P1 Alert
-else Cleared
-    Screening -> PG: Update Tx STATUS = CLEARED
-    PG --> Gateway: Return CLEARED Status Response
-    Gateway --> CBS: HTTP 200 OK (Status: CLEARED)
-end
-@enduml
-```
-
-## 4. Entity State Machine Diagram (PlantUML)
-
-```plantuml
-@startuml
-[*] --> OPEN : Transaction Tripped Rule / Hit
-OPEN --> EDD_ASSIGNED : Analyst Claims Case [Lock Acquired]
-EDD_ASSIGNED --> MLRO_REVIEW : Escalated by Analyst [SLA Expiry or Suspicious]
-EDD_ASSIGNED --> DISPOSED : False Positive Cleared
-MLRO_REVIEW --> SUSPICIOUS : Confirmed STR Filing Required
-MLRO_REVIEW --> DISPOSED : MLRO Dismisses Hit
-SUSPICIOUS --> FROZEN : MLRO Executes Account Freeze
-FROZEN --> CLOSED : goAML Regulatory XML Dispatched
-DISPOSED --> [*]
-CLOSED --> [*]
-@enduml
 ```

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL 17 - System of Record & Audit
+  edith-postgres:
+    image: postgres:17
+    container_name: edith_postgres_17
+    environment:
+      POSTGRES_USER: edith_admin
+      POSTGRES_PASSWORD: EdithSecurePassword2026!
+      POSTGRES_DB: edith_aml
+    ports:
+      - "5432:5432"
+    volumes:
+      - edith_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edith_admin -d edith_aml"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. OpenSearch 2.x - Screening Engine
+  edith-opensearch:
+    image: opensearchproject/opensearch:2.12.0
+    container_name: edith_opensearch_2
+    environment:
+      - cluster.name=edith-screening-cluster
+      - node.name=edith-os-node
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms1024m -Xmx1024m"
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Tr@ns@ct10n$2026!#
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200" 
+      - "9600:9600" 
+    volumes:
+      - edith_osdata:/usr/share/opensearch/data
+
+volumes:
+  edith_pgdata:
+  edith_osdata:

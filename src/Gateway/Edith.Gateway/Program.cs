@@ -5,6 +5,7 @@ using Edith.Addons.Graph;
 using Edith.Cases.Hubs;
 using Edith.Cases.Locking;
 using Edith.Cases.Services;
+using Edith.Events.Webhooks;
 using Edith.Gateway.Endpoints;
 using Edith.Gateway.Hubs;
 using Edith.Gateway.Middleware;
@@ -16,12 +17,16 @@ using Edith.Rules.Sandbox;
 using Edith.Screening.Api.Endpoints;
 using Edith.Screening.Api.Services;
 using Edith.Screening.Bulk.Delta;
+using Edith.Screening.Bulk.Notifications;
+using Edith.Screening.Bulk.Parsing;
 using Edith.Screening.Bulk.Processing;
+using Edith.Screening.Bulk.Repository;
 using Edith.Screening.Core.Engine;
 using Edith.Screening.Core.Normalization;
 using Edith.Screening.Core.Scoring;
 using Edith.Screening.Core.Search;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -57,15 +62,15 @@ builder.Services.AddAuthorizationBuilder()
 
 // 3. CORS Policy for React Vite Frontend & SignalR
 builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowVitePortal", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        options.AddPolicy("AllowVitePortal", policy =>
+        {
+            policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        });
     });
-});
 
 // 4. SignalR WebSockets
 builder.Services.AddSignalR();
@@ -87,6 +92,7 @@ builder.Services.AddSingleton<IWhitelistService, InMemoryWhitelistService>();
 // 7. Case Management & Collision Locking
 builder.Services.AddSingleton<ICaseLockManager, CaseLockManager>();
 builder.Services.AddSingleton<ICaseService, CaseService>();
+builder.Services.AddHttpClient<ICbsWebhookDispatcher, CbsWebhookDispatcher>();
 
 // 8. AML Rules & Backtesting Sandbox
 builder.Services.AddSingleton<IRuleEngine, RuleEngine>();
@@ -96,6 +102,23 @@ builder.Services.AddSingleton<IRuleBacktester, RuleBacktester>();
 // 9. Bulk Screening & Delta Sync Services
 builder.Services.AddScoped<IBulkScreeningProcessor, BulkScreeningProcessor>();
 builder.Services.AddSingleton<IDeltaRescreeningService, DeltaRescreeningService>();
+builder.Services.AddSingleton<IAmlStreamingParser, AmlStreamingParser>();
+builder.Services.AddSingleton<IBulkJobChannel, ChannelBulkJobDispatcher>();
+builder.Services.AddSingleton<IBulkProgressNotifier>(sp =>
+{
+    var hub = sp.GetRequiredService<IHubContext<JobHub, IJobClient>>();
+    return new CallbackProgressNotifier(update =>
+    {
+        _ = hub.Clients.All.JobProgressUpdated(update.JobId.ToString(), update.ProcessedRows, update.TotalRows, update.HitCount, update.Percentage);
+        if (update.Status == "COMPLETED")
+        {
+            _ = hub.Clients.All.JobCompleted(update.JobId.ToString(), update.HitCount);
+        }
+    });
+});
+builder.Services.AddSingleton<IBulkJobRepository>(_ => new InMemoryBulkJobRepository(seedBaseline: true));
+builder.Services.AddScoped<IBulkIngestionPipeline, BulkIngestionPipeline>();
+builder.Services.AddHostedService<BulkScreeningBackgroundWorker>();
 
 // 10. Add-on Services (goAML, AI Copilot, Entity Graph)
 builder.Services.AddSingleton<IGoAmlExporter, GoAmlExporter>();

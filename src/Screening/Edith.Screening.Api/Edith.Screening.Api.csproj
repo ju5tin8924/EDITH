@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Edith.Screening.Core\Edith.Screening.Core.csproj" />
+    <ProjectReference Include="..\Edith.Screening.Bulk\Edith.Screening.Bulk.csproj" />
+    <ProjectReference Include="..\..\Cases\Edith.Cases\Edith.Cases.csproj" />
   </ItemGroup>
 
 </Project>

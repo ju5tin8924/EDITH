@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\Screening\Edith.Screening.Core\Edith.Screening.Core.csproj" />
     <ProjectReference Include="..\..\Screening\Edith.Screening.Bulk\Edith.Screening.Bulk.csproj" />
     <ProjectReference Include="..\..\Screening\Edith.Screening.Api\Edith.Screening.Api.csproj" />
+    <ProjectReference Include="..\..\Events\Edith.Events\Edith.Events.csproj" />
   </ItemGroup>
 
 </Project>

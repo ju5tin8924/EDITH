@@ -163,4 +163,115 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("Tenant Access Denied", body);
     }
+
+    [Fact]
+    public async Task Case_Investigation_Workflow_EndToEnd_From_Hold_To_Resolution()
+    {
+        // 1. Screen blacklisted transaction (Viktor Anatolyevich Bout)
+        var screenReq = new
+        {
+            transactionRefNo = "TX-CASE-E2E-001",
+            amount = 750000m,
+            currency = "USD",
+            senderName = "Al-Hilal Trading LLC",
+            beneficiaryName = "Viktor Anatolyevich Bout",
+            beneficiaryCountry = "RU"
+        };
+
+        using var screenHttp = new HttpRequestMessage(HttpMethod.Post, "/api/v1/screen/transaction")
+        {
+            Content = JsonContent.Create(screenReq)
+        };
+        screenHttp.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        screenHttp.Headers.Add("X-Tenant-ID", InMemoryTenantRegistry.DefaultTenantId.ToString());
+        var screenRes = await _client.SendAsync(screenHttp);
+        Assert.Equal(HttpStatusCode.OK, screenRes.StatusCode);
+
+        // 2. Analyst views cases list
+        var casesRes = await _client.GetAsync("/api/v1/cases");
+        Assert.Equal(HttpStatusCode.OK, casesRes.StatusCode);
+        var casesJson = await casesRes.Content.ReadAsStringAsync();
+        using var casesDoc = JsonDocument.Parse(casesJson);
+        var caseItem = casesDoc.RootElement.EnumerateArray().First(c =>
+            c.GetProperty("primarySubjectName").GetString() == "Viktor Anatolyevich Bout" &&
+            c.GetProperty("status").GetString() == "Open");
+        var caseId = Guid.Parse(caseItem.GetProperty("id").GetString()!);
+
+        // 3. Analyst acquires pessimistic 15-minute lease lock
+        var lockRes = await _client.PostAsync($"/api/v1/cases/{caseId}/acquire-lock", null);
+        Assert.Equal(HttpStatusCode.OK, lockRes.StatusCode);
+
+        // 4. Analyst adds multi-type comment
+        var noteReq = new { content = "Verified OFAC SDN hit on Viktor Bout. Escalating to MLRO for freeze.", noteType = "INVESTIGATION" };
+        var noteRes = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/comments", noteReq);
+        Assert.Equal(HttpStatusCode.OK, noteRes.StatusCode);
+
+        // 5. Transition to UnderReview then PendingApproval
+        var transReview = new { newStatus = "UnderReview", userRole = "ANALYST", reason = "Analyst started EDD" };
+        var reviewRes = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/transition", transReview);
+        Assert.Equal(HttpStatusCode.OK, reviewRes.StatusCode);
+
+        var transApprove = new { newStatus = "PendingApproval", userRole = "ANALYST", reason = "Four-eyes escalation to MLRO" };
+        var approveRes = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/transition", transApprove);
+        Assert.Equal(HttpStatusCode.OK, approveRes.StatusCode);
+
+        // 6. MLRO resolves case with ReportedStrFreeze
+        var resolveReq = new { resolution = "ReportedStrFreeze", rationale = "True match confirmed. Funds frozen under UAE UNSC resolutions." };
+        var resolveRes = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/resolve", resolveReq);
+        Assert.Equal(HttpStatusCode.OK, resolveRes.StatusCode);
+
+        // 7. Verify case detail reflects Resolved state, audit entries, and added comments
+        var detailRes = await _client.GetAsync($"/api/v1/cases/{caseId}");
+        Assert.Equal(HttpStatusCode.OK, detailRes.StatusCode);
+        var detailJson = await detailRes.Content.ReadAsStringAsync();
+        using var detailDoc = JsonDocument.Parse(detailJson);
+        Assert.Equal("Resolved", detailDoc.RootElement.GetProperty("status").GetString());
+        Assert.True(detailDoc.RootElement.GetProperty("comments").GetArrayLength() >= 2);
+    }
+
+    [Fact]
+    public async Task Portal_BulkUpload_And_Direct_CaseResolution_Succeed_Via_Gateway()
+    {
+        // 1. Upload CSV via Gateway /api/v1/bulk/upload with keepSkipped=true
+        var csv = "AML_TYPE,AML_FULLNAME,AML_IDDETAILS,AML_CATEGORY,AML_NATIONALITY\nINDIVIDUAL,VIKTOR ANATOLYEVICH BOUT,OFAC-9812,SANCTION,RU\nINDIVIDUAL,SALEM AL-MANSOORI,ID-9991,CLEAN,AE\n";
+        using var form = new MultipartFormDataContent();
+        form.Add(new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes(csv)), "file", "portal_test.csv");
+
+        var uploadRes = await _client.PostAsync("/api/v1/bulk/upload?keepSkipped=true&skippedFormat=json", form);
+        Assert.Equal(HttpStatusCode.Accepted, uploadRes.StatusCode);
+
+        // 2. Screen a distinct hit to create an Open case and resolve it directly using UI string 'FalsePositive'
+        using var screenHttp = new HttpRequestMessage(HttpMethod.Post, "/api/v1/screen/transaction")
+        {
+            Content = JsonContent.Create(new
+            {
+                transactionRefNo = "TX-PORTAL-UI-002",
+                amount = 120000m,
+                currency = "AED",
+                senderName = "Gulf Traders",
+                beneficiaryName = "Tariq Aziz",
+                beneficiaryCountry = "IQ",
+                minThresholdScore = 60m
+            })
+        };
+        screenHttp.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        screenHttp.Headers.Add("X-Tenant-ID", InMemoryTenantRegistry.DemoTenantId.ToString());
+        var screenRes = await _client.SendAsync(screenHttp);
+        Assert.Equal(HttpStatusCode.OK, screenRes.StatusCode);
+
+        var casesRes = await _client.GetAsync("/api/v1/cases");
+        var casesJson = await casesRes.Content.ReadAsStringAsync();
+        using var casesDoc = JsonDocument.Parse(casesJson);
+        var openCase = casesDoc.RootElement.EnumerateArray().First(c =>
+            c.GetProperty("primarySubjectName").GetString() == "Tariq Aziz" &&
+            c.GetProperty("status").GetString() == "Open");
+
+        var openCaseId = openCase.GetProperty("id").GetString();
+        var resolveRes = await _client.PostAsJsonAsync($"/api/v1/cases/{openCaseId}/resolve", new
+        {
+            resolution = "FalsePositive",
+            rationale = "Cleared via UI portal MLRO sign-off"
+        });
+        Assert.Equal(HttpStatusCode.OK, resolveRes.StatusCode);
+    }
 }

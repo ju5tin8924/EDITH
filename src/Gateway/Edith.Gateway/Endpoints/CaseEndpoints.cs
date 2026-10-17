@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Edith.Cases.Models;
 using Edith.Cases.Services;
+using Edith.Events.Contracts;
+using Edith.Events.Webhooks;
 using Edith.Gateway.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -68,6 +70,27 @@ public static class CaseEndpoints
             }
 
             var auditTrail = await caseService.GetAuditTrailAsync(tenantId, caseId, ct);
+            var storedNotes = await caseService.GetNotesAsync(tenantId, caseId, ct);
+
+            var comments = new List<object>
+            {
+                new
+                {
+                    id = "c-init",
+                    timestampUtc = c.CreatedAt.ToString("o"),
+                    authorName = "System Screening Core",
+                    authorRole = "SYSTEM",
+                    content = $"Case generated from screening hit: {c.HoldReason}"
+                }
+            };
+            comments.AddRange(storedNotes.Select(n => (object)new
+            {
+                id = n.Id.ToString(),
+                timestampUtc = n.CreatedAt.ToString("o"),
+                authorName = n.AuthorName,
+                authorRole = n.NoteType,
+                content = n.Content
+            }));
 
             var detail = new
             {
@@ -126,17 +149,7 @@ public static class CaseEndpoints
                     action = a.Action,
                     notes = a.Metadata ?? $"{a.PreviousStatus} -> {a.NewStatus}"
                 }).ToList(),
-                comments = new[]
-                {
-                    new
-                    {
-                        id = "c-init",
-                        timestampUtc = c.CreatedAt.ToString("o"),
-                        authorName = "System Screening Core",
-                        authorRole = "SYSTEM",
-                        content = $"Case generated from screening hit: {c.HoldReason}"
-                    }
-                }
+                comments
             };
 
             return Results.Ok(detail);
@@ -184,15 +197,18 @@ public static class CaseEndpoints
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             ClaimsPrincipal principal,
             [FromServices] ICaseService caseService,
+            [FromServices] ICbsWebhookDispatcher? webhookDispatcher,
             CancellationToken ct) =>
         {
             var tenantId = ResolveTenant(tenantHeader);
             var (userId, userName) = ExtractUser(principal);
 
-            CaseResolution? resolution = null;
-            if (!string.IsNullOrWhiteSpace(req.Resolution) && Enum.TryParse<CaseResolution>(req.Resolution, true, out var resEnum))
+            CaseResolution? resolution = ParseResolution(req.Resolution) ?? CaseResolution.ClearedFalsePositive;
+
+            var existing = await caseService.GetCaseByIdAsync(tenantId, caseId, ct);
+            if (existing?.Status == CaseStatus.Open)
             {
-                resolution = resEnum;
+                await caseService.TransitionStatusAsync(tenantId, caseId, CaseStatus.UnderReview, userId, userName, "MLRO", null, "Auto-moved to UnderReview for direct MLRO resolution", ct);
             }
 
             var updated = await caseService.TransitionStatusAsync(
@@ -205,6 +221,33 @@ public static class CaseEndpoints
                 resolution,
                 req.Rationale ?? "Case resolved by officer",
                 ct);
+
+            if (webhookDispatcher != null && !string.IsNullOrWhiteSpace(req.CbsWebhookUrl))
+            {
+                var decision = resolution == CaseResolution.ReportedStrFreeze ? "FREEZE" : "RELEASE";
+                var payload = new AmlDecisionWebhookPayload
+                {
+                    TenantId = tenantId,
+                    TransactionRefNo = updated.TransactionRefNo,
+                    Decision = decision,
+                    Reason = req.Rationale ?? $"Case resolved as {resolution}",
+                    CaseNumber = updated.CaseNumber,
+                    DecidedBy = userName,
+                    Timestamp = DateTimeOffset.UtcNow
+                };
+
+                var webhookResult = await webhookDispatcher.DispatchDecisionWebhookAsync(
+                    payload,
+                    req.CbsWebhookUrl,
+                    req.SharedSecret ?? "edith-cbs-secret-2026",
+                    ct);
+
+                return Results.Ok(new
+                {
+                    caseDetail = updated,
+                    cbsWebhook = webhookResult
+                });
+            }
 
             return Results.Ok(updated);
         }).AllowAnonymous();
@@ -226,10 +269,12 @@ public static class CaseEndpoints
                 return Results.BadRequest(new { error = $"Invalid status '{req.NewStatus}'" });
             }
 
-            CaseResolution? resolution = null;
-            if (!string.IsNullOrWhiteSpace(req.Resolution) && Enum.TryParse<CaseResolution>(req.Resolution, true, out var resEnum))
+            CaseResolution? resolution = ParseResolution(req.Resolution);
+
+            var existing = await caseService.GetCaseByIdAsync(tenantId, caseId, ct);
+            if (existing?.Status == CaseStatus.Open && newStatus == CaseStatus.PendingApproval)
             {
-                resolution = resEnum;
+                await caseService.TransitionStatusAsync(tenantId, caseId, CaseStatus.UnderReview, userId, userName, req.UserRole ?? "ANALYST", null, "Started review prior to escalation", ct);
             }
 
             var updated = await caseService.TransitionStatusAsync(
@@ -289,8 +334,21 @@ public static class CaseEndpoints
         var userName = principal.FindFirst(ClaimTypes.Name)?.Value ?? "Fatima Al-Nuaimi";
         return (userId, userName);
     }
+
+    private static CaseResolution? ParseResolution(string? resolution)
+    {
+        if (string.IsNullOrWhiteSpace(resolution)) return null;
+        if (Enum.TryParse<CaseResolution>(resolution, true, out var resEnum)) return resEnum;
+        return resolution.Trim().ToUpperInvariant() switch
+        {
+            "FALSEPOSITIVE" or "FALSE_POSITIVE" => CaseResolution.ClearedFalsePositive,
+            "TRUEPOSITIVEREPORTED" or "TRUE_POSITIVE_REPORTED" or "STR_FREEZE" => CaseResolution.ReportedStrFreeze,
+            "TRUEPOSITIVEREMEDIATED" or "TRUE_POSITIVE_REMEDIATED" or "STR_RELEASE" => CaseResolution.ReportedStrRelease,
+            _ => null
+        };
+    }
 }
 
-public sealed record ResolveCaseDto(string? Resolution, string? Rationale);
+public sealed record ResolveCaseDto(string? Resolution, string? Rationale, string? CbsWebhookUrl = null, string? SharedSecret = null);
 public sealed record TransitionCaseDto(string NewStatus, string? UserRole, string? Resolution, string? Reason);
 public sealed record AddCommentDto(string Content, string? NoteType);

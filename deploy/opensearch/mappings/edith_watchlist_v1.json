@@ -1,0 +1,93 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "1s"
+    },
+    "analysis": {
+      "filter": {
+        "name_edge_ngram": {
+          "type": "edge_ngram",
+          "min_gram": 2,
+          "max_gram": 15
+        }
+      },
+      "analyzer": {
+        "name_clean_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "asciifolding"
+          ]
+        },
+        "name_ngram_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "asciifolding",
+            "name_edge_ngram"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "id": { "type": "keyword" },
+      "entity_external_id": { "type": "keyword" },
+      "tenant_id": { "type": "keyword" },
+      "entity_type": { "type": "keyword" },
+      "full_name": {
+        "type": "text",
+        "analyzer": "name_clean_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "normalizer": "lowercase"
+          },
+          "ngram": {
+            "type": "text",
+            "analyzer": "name_ngram_analyzer",
+            "search_analyzer": "name_clean_analyzer"
+          }
+        }
+      },
+      "aliases": {
+        "type": "text",
+        "analyzer": "name_clean_analyzer",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "normalizer": "lowercase"
+          },
+          "ngram": {
+            "type": "text",
+            "analyzer": "name_ngram_analyzer",
+            "search_analyzer": "name_clean_analyzer"
+          }
+        }
+      },
+      "phonetic_tokens": {
+        "type": "keyword"
+      },
+      "date_of_birth": {
+        "type": "date",
+        "format": "yyyy-MM-dd||yyyy||epoch_millis"
+      },
+      "birth_year": {
+        "type": "integer"
+      },
+      "nationality": { "type": "keyword" },
+      "country": { "type": "keyword" },
+      "source_list": { "type": "keyword" },
+      "category": { "type": "keyword" },
+      "designation_details": { "type": "text" },
+      "is_blocked": { "type": "boolean" },
+      "is_active": { "type": "boolean" },
+      "updated_at": { "type": "date" }
+    }
+  }
+}

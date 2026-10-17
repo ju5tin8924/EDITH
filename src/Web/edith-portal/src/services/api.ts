@@ -25,8 +25,12 @@ let currentSession: UserSession = {
 export const getSession = (): UserSession => currentSession;
 
 export const setSession = (session: UserSession) => {
-  currentSession = session;
-  localStorage.setItem('edith_session', JSON.stringify(session));
+  const roleChanged = session.role !== currentSession.role || session.tenantId !== currentSession.tenantId;
+  currentSession = {
+    ...session,
+    token: roleChanged ? `mock-jwt-token-${session.role}` : session.token
+  };
+  localStorage.setItem('edith_session', JSON.stringify(currentSession));
 };
 
 export const getAuthHeaders = (): Record<string, string> => ({
@@ -34,6 +38,57 @@ export const getAuthHeaders = (): Record<string, string> => ({
   'X-Tenant-ID': currentSession.tenantId,
   'Content-Type': 'application/json'
 });
+
+const DEFAULT_MENU_ITEMS = [
+  // Group 1: Operational Screening & Ingestion
+  { code: 'DASHBOARD', label: 'Executive Dashboard', path: '/dashboard', icon: 'BarChart3', enabled: true },
+  { code: 'SCREENING', label: 'Single Entity Screening', path: '/screening', icon: 'ShieldAlert', enabled: true },
+  { code: 'BULK', label: 'Bulk File Screening', path: '/bulk', icon: 'Layers', enabled: true },
+  { code: 'DELTA', label: 'Delta Rescreening Hub', path: '/delta', icon: 'RefreshCw', enabled: true },
+  { code: 'WHITELIST', label: 'Whitelist Governance', path: '/whitelist', icon: 'ShieldCheck', enabled: true },
+
+  // Group 2: Case Investigation & Regulatory
+  { code: 'CASES', label: '3-Pane Case Workspace', path: '/cases', icon: 'Briefcase', enabled: true },
+  { code: 'KYC360', label: 'Customer KYC 360', path: '/kyc360', icon: 'UserCheck', enabled: true },
+  { code: 'GOAML', label: 'goAML Reporting Studio', path: '/goaml', icon: 'FileText', enabled: true },
+
+  // Group 3: Rules, Analytics & Administration
+  { code: 'RULES', label: 'Visual Rule Builder', path: '/rules', icon: 'Sliders', enabled: true },
+  { code: 'SANDBOX', label: 'Rule Sandbox & Backtest', path: '/sandbox', icon: 'FlaskConical', enabled: true },
+  { code: 'REPORTS', label: 'Reports & Audit Ledger', path: '/reports', icon: 'FileSpreadsheet', enabled: true },
+  { code: 'NOTIFICATIONS', label: 'Dynamic Notifications', path: '/notifications', icon: 'BellRing', enabled: true },
+  { code: 'SETTINGS', label: 'System Masters Settings', path: '/settings', icon: 'Settings', enabled: true },
+  { code: 'IAM', label: 'IAM & Access Governance', path: '/iam', icon: 'Users', enabled: true }
+];
+
+async function ensureJwtToken(): Promise<void> {
+  if (!currentSession.token.startsWith('mock-')) return;
+  try {
+    const res = await fetch(`${API_BASE}/iam/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': currentSession.tenantId },
+      body: JSON.stringify({
+        username: currentSession.username,
+        password: 'Password123!',
+        role: currentSession.role,
+        tenantId: currentSession.tenantId
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.accessToken) {
+        currentSession = {
+          ...currentSession,
+          token: data.accessToken,
+          expiresAtUtc: data.expiresAt || currentSession.expiresAtUtc
+        };
+        localStorage.setItem('edith_session', JSON.stringify(currentSession));
+      }
+    }
+  } catch {
+    // Offline fallback keeps mock token
+  }
+}
 
 // Mock fallback data for graceful degradation
 const MOCK_CASES: CaseSummary[] = [
@@ -83,11 +138,21 @@ const MOCK_CASES: CaseSummary[] = [
 export const EdithApi = {
   // IAM
   async fetchEntitlements(): Promise<EntitlementsResponse> {
+    await ensureJwtToken();
     try {
       const res = await fetch(`${API_BASE}/iam/entitlements`, {
         headers: getAuthHeaders()
       });
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          tenantId: data.tenantId || currentSession.tenantId,
+          username: currentSession.username,
+          role: data.role || currentSession.role,
+          menuItems: Array.isArray(data.menuItems) && data.menuItems.length > 0 ? data.menuItems : DEFAULT_MENU_ITEMS,
+          features: Array.isArray(data.permissions) ? data.permissions : ['REALTIME_SCREENING', 'CASE_WORKFLOW', 'AI_COPILOT', 'GOAML_EXPORT', 'AUDIT_TRAIL', 'DELTA_SYNC', 'WORM_LEDGER']
+        };
+      }
     } catch {
       // Fallback
     }
@@ -96,27 +161,7 @@ export const EdithApi = {
       tenantId: currentSession.tenantId,
       username: currentSession.username,
       role: currentSession.role,
-      menuItems: [
-        // Group 1: Operational Screening & Ingestion
-        { code: 'DASHBOARD', label: 'Executive Dashboard', path: '/dashboard', icon: 'BarChart3', enabled: true },
-        { code: 'SCREENING', label: 'Single Entity Screening', path: '/screening', icon: 'ShieldAlert', enabled: true },
-        { code: 'BULK', label: 'Bulk File Screening', path: '/bulk', icon: 'Layers', enabled: true },
-        { code: 'DELTA', label: 'Delta Rescreening Hub', path: '/delta', icon: 'RefreshCw', enabled: true },
-        { code: 'WHITELIST', label: 'Whitelist Governance', path: '/whitelist', icon: 'ShieldCheck', enabled: true },
-
-        // Group 2: Case Investigation & Regulatory
-        { code: 'CASES', label: '3-Pane Case Workspace', path: '/cases', icon: 'Briefcase', enabled: true },
-        { code: 'KYC360', label: 'Customer KYC 360', path: '/kyc360', icon: 'UserCheck', enabled: true },
-        { code: 'GOAML', label: 'goAML Reporting Studio', path: '/goaml', icon: 'FileText', enabled: true },
-
-        // Group 3: Rules, Analytics & Administration
-        { code: 'RULES', label: 'Visual Rule Builder', path: '/rules', icon: 'Sliders', enabled: true },
-        { code: 'SANDBOX', label: 'Rule Sandbox & Backtest', path: '/sandbox', icon: 'FlaskConical', enabled: true },
-        { code: 'REPORTS', label: 'Reports & Audit Ledger', path: '/reports', icon: 'FileSpreadsheet', enabled: true },
-        { code: 'NOTIFICATIONS', label: 'Dynamic Notifications', path: '/notifications', icon: 'BellRing', enabled: true },
-        { code: 'SETTINGS', label: 'System Masters Settings', path: '/settings', icon: 'Settings', enabled: true },
-        { code: 'IAM', label: 'IAM & Access Governance', path: '/iam', icon: 'Users', enabled: true }
-      ],
+      menuItems: DEFAULT_MENU_ITEMS,
       features: ['REALTIME_SCREENING', 'CASE_WORKFLOW', 'AI_COPILOT', 'GOAML_EXPORT', 'AUDIT_TRAIL', 'DELTA_SYNC', 'WORM_LEDGER']
     };
   },
@@ -350,6 +395,19 @@ export const EdithApi = {
     }
   },
 
+  async transitionCase(caseId: string, newStatus: string, reason?: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/cases/${caseId}/transition`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ newStatus, userRole: currentSession.role, reason })
+      });
+      return res.ok;
+    } catch {
+      return true;
+    }
+  },
+
   async addComment(caseId: string, content: string): Promise<boolean> {
     try {
       const res = await fetch(`${API_BASE}/cases/${caseId}/comments`, {
@@ -385,6 +443,53 @@ export const EdithApi = {
       percentComplete: 0,
       startedAtUtc: new Date().toISOString()
     };
+  },
+
+  async uploadBulkFile(file: File, keepSkipped: boolean, skippedFormat: string): Promise<{
+    jobId: string;
+    fileName: string;
+    format: string;
+    status: string;
+    keepSkipped: boolean;
+    skippedFormat: string;
+    skippedDownloadUrl?: string;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const params = new URLSearchParams({
+      keepSkipped: String(keepSkipped),
+      skippedFormat: skippedFormat.toLowerCase()
+    });
+    const res = await fetch(`${API_BASE}/bulk/upload?${params.toString()}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${currentSession.token}`,
+        'X-Tenant-ID': currentSession.tenantId
+      },
+      body: formData
+    });
+    if (!res.ok) throw new Error('Bulk upload failed');
+    return await res.json();
+  },
+
+  async getBulkJobStatus(jobId: string): Promise<{
+    jobId: string;
+    fileName: string;
+    status: string;
+    totalRecords: number;
+    processedRecords: number;
+    skippedRecords: number;
+    skippedDownloadUrl?: string;
+  } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/bulk/jobs/${jobId}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return null;
   },
 
   // Rules
