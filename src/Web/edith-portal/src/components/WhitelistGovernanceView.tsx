@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   FileText, 
@@ -8,6 +8,7 @@ import {
   Hash, 
   Search
 } from 'lucide-react';
+import { EdithApi } from '../services/api';
 
 interface WhitelistEntry {
   id: string;
@@ -84,18 +85,53 @@ export const WhitelistGovernanceView: React.FC = () => {
     rationale: ''
   });
 
-  const handleCreate = (e: React.FormEvent) => {
+  useEffect(() => {
+    EdithApi.fetchWhitelists().then(dbList => {
+      if (dbList.length > 0) {
+        const mapped: WhitelistEntry[] = dbList.map(w => {
+          const expDate = w.expiresAt ? new Date(w.expiresAt) : new Date(Date.now() + 86400000 * 365);
+          const remDays = Math.max(1, Math.round((expDate.getTime() - Date.now()) / 86400000));
+          return {
+            id: w.id,
+            entityName: w.entityIdentifier,
+            accountNumber: w.matchScope === 'EXACT' ? `ID/SCOPE: ${w.entityIdentifier}` : w.matchScope,
+            category: 'SOVEREIGN_WEALTH',
+            authorizedBy: 'Fatima Al-Nuaimi (MLRO)',
+            approvedDate: new Date().toISOString().split('T')[0],
+            expiresAt: expDate.toISOString().split('T')[0],
+            remainingDays: remDays,
+            totalDays: Math.max(remDays, 365),
+            status: !w.isActive ? 'REVOKED' : (remDays < 30 ? 'EXPIRING_SOON' : 'ACTIVE'),
+            rationale: w.reason,
+            auditHash: `0x${w.id.replace(/-/g, '')}${w.tenantId.replace(/-/g, '')}`
+          };
+        });
+        setEntries([...mapped, ...MOCK_WHITELIST]);
+        setActiveEntry(mapped[0]);
+      }
+    });
+  }, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEntity.entityName || !newEntity.accountNumber || !newEntity.rationale) return;
 
+    const expDate = new Date(Date.now() + newEntity.ttlDays * 86400000);
+    const saved = await EdithApi.createWhitelist({
+      entityIdentifier: newEntity.entityName,
+      matchScope: 'EXACT',
+      reason: newEntity.rationale,
+      expiresAt: expDate.toISOString()
+    });
+
     const created: WhitelistEntry = {
-      id: `wl-00${entries.length + 1}`,
+      id: saved?.id || `wl-00${entries.length + 1}`,
       entityName: newEntity.entityName,
       accountNumber: newEntity.accountNumber,
       category: newEntity.category,
       authorizedBy: 'Fatima Al-Nuaimi (MLRO)',
-      approvedDate: '2026-10-14',
-      expiresAt: '2027-10-14',
+      approvedDate: new Date().toISOString().split('T')[0],
+      expiresAt: expDate.toISOString().split('T')[0],
       remainingDays: newEntity.ttlDays,
       totalDays: newEntity.ttlDays,
       status: 'ACTIVE',
@@ -109,7 +145,8 @@ export const WhitelistGovernanceView: React.FC = () => {
     setNewEntity({ entityName: '', accountNumber: '', category: 'CORPORATE_PAYROLL', ttlDays: 365, rationale: '' });
   };
 
-  const handleRevoke = (id: string) => {
+  const handleRevoke = async (id: string) => {
+    await EdithApi.deleteWhitelist(id);
     setEntries(prev => prev.map(entry => entry.id === id ? { ...entry, status: 'REVOKED' } : entry));
     if (activeEntry?.id === id) {
       setActiveEntry(prev => prev ? { ...prev, status: 'REVOKED' } : null);

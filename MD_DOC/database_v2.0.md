@@ -1,9 +1,9 @@
-# EDITH AML Intelligence Platform: Database Architecture & OpenSearch Specification (v2.0)
+# EDITH AML Intelligence Platform: Database Architecture & OpenSearch Specification (v2.1)
 
 **Project:** EDITH Next-Gen AML Intelligence Platform  
 **Target Architecture:** PostgreSQL 17 (`edith_aml`), OpenSearch 2.12 (`edith_watchlist_v1`, `edith_customers_v1`), .NET 10 Microservices  
-**Version:** 2.0  
-**Last Updated:** October 2026  
+**Version:** 2.1  
+**Last Updated:** October 19, 2026  
 
 ---
 

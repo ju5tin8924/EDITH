@@ -18,7 +18,8 @@ import {
   Settings,
   Users,
   ChevronUp,
-  BadgeCheck
+  BadgeCheck,
+  Search
 } from 'lucide-react';
 import { MenuItemEntitlement, UserRole } from '../types';
 import { UserProfileDrawer } from './UserProfileDrawer';
@@ -43,6 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const getIcon = (iconName: string) => {
     switch (iconName) {
       case 'BarChart3': return <BarChart3 className="w-4 h-4" />;
+      case 'Search': return <Search className="w-4 h-4" />;
       case 'ShieldAlert': return <ShieldAlert className="w-4 h-4" />;
       case 'Layers': return <Layers className="w-4 h-4" />;
       case 'RefreshCw': return <RefreshCw className="w-4 h-4" />;
@@ -64,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const menuGroups = [
     {
       title: 'OPERATIONAL SCREENING',
-      codes: ['DASHBOARD', 'SCREENING', 'BULK', 'DELTA', 'WHITELIST']
+      codes: ['DASHBOARD', 'NAME_SEARCH', 'SCREENING', 'BULK', 'DELTA', 'WHITELIST']
     },
     {
       title: 'CASE INVESTIGATION',
@@ -146,6 +148,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </div>
 
                             {/* Contextual Badges */}
+                            {item.code === 'NAME_SEARCH' && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-mono bg-accent/15 text-accent rounded font-bold border border-accent/30 shrink-0">
+                                ALL ROLES
+                              </span>
+                            )}
                             {item.code === 'SCREENING' && (
                               <span className="px-1.5 py-0.2 text-[9px] font-mono bg-primary text-white rounded font-bold shrink-0">
                                 LIVE

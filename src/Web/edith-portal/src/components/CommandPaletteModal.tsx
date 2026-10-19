@@ -41,6 +41,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ isOpen
   const commands: CommandItem[] = [
     // Operational
     { id: 'p1', title: 'Executive AML Dashboard', group: 'Operational Screening', path: '/dashboard', icon: <BarChart3 className="w-4 h-4 text-primary" />, hint: 'Page 1' },
+    { id: 'p_ns', title: 'Universal Name & ID Sanctions Search', group: 'Operational Screening', path: '/name-search', icon: <Search className="w-4 h-4 text-accent" />, hint: 'All Users' },
     { id: 'p2', title: 'Single Entity Screening Console', group: 'Operational Screening', path: '/screening', icon: <ShieldAlert className="w-4 h-4 text-critical" />, hint: 'Page 2' },
     { id: 'p3', title: 'Bulk File Screening Engine', group: 'Operational Screening', path: '/bulk', icon: <Layers className="w-4 h-4 text-primary" />, hint: 'Page 3' },
     { id: 'p14', title: 'Delta Rescreening & Watchlist Sync', group: 'Operational Screening', path: '/delta', icon: <RefreshCw className="w-4 h-4 text-accent" />, hint: 'Page 14' },

@@ -1,80 +1,131 @@
+using Edith.Gateway.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 
 namespace Edith.Gateway.Endpoints;
 
 public static class SettingsEndpoints
 {
-    private static readonly string[] BlackListCountries = ["IR", "KP", "MM"];
-    private static readonly string[] GreyListCountries = ["SY", "YE", "SS", "CD"];
-    private static readonly string[] MonitoredCountries = ["RU", "BY", "VE"];
+    private static readonly Guid DefaultTenantId = Guid.Parse("01931000-0000-7000-8000-000000000000");
 
     public static IEndpointRouteBuilder MapSettingsEndpoints(this IEndpointRouteBuilder app)
     {
         var settingsGroup = app.MapGroup("/api/v1/settings");
         var reportsGroup = app.MapGroup("/api/v1/reports");
 
-        // 1. System Masters
-        settingsGroup.MapGet("/masters", () =>
+        // 1. System Masters: Read from PostgreSQL
+        settingsGroup.MapGet("/masters", async (
+            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromServices] ISystemMastersService mastersService,
+            CancellationToken ct) =>
         {
+            var tenantId = ResolveTenant(tenantHeader);
+            var masters = await mastersService.GetMastersAsync(tenantId, ct);
             return Results.Ok(new
             {
-                fatfTiers = new[]
-                {
-                    new { tier = "BLACK_LIST", countries = BlackListCountries, riskFactor = 100 },
-                    new { tier = "GREY_LIST", countries = GreyListCountries, riskFactor = 75 },
-                    new { tier = "MONITORED", countries = MonitoredCountries, riskFactor = 60 }
-                },
-                currencyThresholds = new[]
-                {
-                    new { currency = "AED", mandatoryReportingThreshold = 55000, highRiskApprovalThreshold = 500000 },
-                    new { currency = "USD", mandatoryReportingThreshold = 10000, highRiskApprovalThreshold = 100000 },
-                    new { currency = "EUR", mandatoryReportingThreshold = 10000, highRiskApprovalThreshold = 100000 }
-                },
+                fatfTiers = masters.FatfTiers.Select(t => new { tier = t.Tier, countries = t.Countries, riskFactor = t.RiskFactor }),
+                currencyThresholds = masters.CurrencyThresholds.Select(c => new { currency = c.Currency, mandatoryReportingThreshold = (double)c.MandatoryReportingThreshold, highRiskApprovalThreshold = (double)c.HighRiskApprovalThreshold }),
                 scoringWeights = new
                 {
-                    nameWeightage = 60.0,
-                    nationalityWeightage = 10.0,
-                    dobWeightage = 15.0,
-                    idWeightage = 15.0,
-                    defaultThreshold = 80.0
+                    nameWeightage = masters.ScoringWeights.NameWeightage,
+                    nationalityWeightage = masters.ScoringWeights.NationalityWeightage,
+                    dobWeightage = masters.ScoringWeights.DobWeightage,
+                    idWeightage = masters.ScoringWeights.IdWeightage,
+                    defaultThreshold = masters.ScoringWeights.DefaultThreshold
                 }
             });
         }).AllowAnonymous();
 
-        // 2. WORM Immutable Audit Trail
-        reportsGroup.MapGet("/audit", () =>
+        // 2. System Masters: Update Scoring Weights
+        settingsGroup.MapPut("/scoring-weights", async (
+            [FromBody] UpdateScoringWeightsRequest req,
+            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromServices] ISystemMastersService mastersService,
+            [FromServices] IAuditLedgerService auditService,
+            CancellationToken ct) =>
         {
-            return Results.Ok(new[]
+            var tenantId = ResolveTenant(tenantHeader);
+            var success = await mastersService.UpdateScoringWeightsAsync(tenantId, req, ct);
+
+            // Audit the change in WORM ledger
+            await auditService.RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
+                "Compliance Officer",
+                "SCORING_WEIGHTS_UPDATE",
+                "System Masters Configuration",
+                null,
+                $"Updated weights: Name={req.NameWeightage}%, Nationality={req.NationalityWeightage}%, DOB={req.DobWeightage}%, ID={req.IdWeightage}%, Threshold={req.DefaultThreshold}%"
+            ), ct);
+
+            return Results.Ok(new { success, message = "Screening score weights updated successfully." });
+        }).AllowAnonymous();
+
+        // 3. System Masters: Upsert Country Risk
+        settingsGroup.MapPost("/countries", async (
+            [FromBody] UpdateCountryRiskRequest req,
+            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromServices] ISystemMastersService mastersService,
+            [FromServices] IAuditLedgerService auditService,
+            CancellationToken ct) =>
+        {
+            var tenantId = ResolveTenant(tenantHeader);
+            var success = await mastersService.UpsertCountryAsync(req, ct);
+
+            await auditService.RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
+                "Compliance Officer",
+                "COUNTRY_RISK_MASTER_UPDATE",
+                $"{req.Code} - {req.CountryName}",
+                null,
+                $"Updated country risk: HighRisk={req.IsHighRisk}, Score={req.RiskScore}"
+            ), ct);
+
+            return Results.Ok(new { success, message = $"Country '{req.Code}' master updated successfully." });
+        }).AllowAnonymous();
+
+        // 4. WORM Immutable Audit Trail: Query from PostgreSQL
+        reportsGroup.MapGet("/audit", async (
+            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromServices] IAuditLedgerService auditService,
+            CancellationToken ct) =>
+        {
+            var tenantId = ResolveTenant(tenantHeader);
+            var logs = await auditService.GetAuditLogsAsync(tenantId, limit: 50, ct: ct);
+            return Results.Ok(logs.Select(l => new
             {
-                new
-                {
-                    id = "aud-worm-001",
-                    timestampUtc = DateTimeOffset.UtcNow.AddHours(-1).ToString("o"),
-                    actor = "Fatima Al-Nuaimi (MLRO)",
-                    action = "ASSET_FREEZE_ORDER",
-                    targetEntity = "Viktor Anatolyevich Bout",
-                    caseNumber = "EDITH-CAS-2026-0042",
-                    sha256Hash = "8e98f7e2a9c3d4f1084b6f9a0c2e4f6a8b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e",
-                    previousBlockHash = "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b",
-                    isTamperEvident = true
-                },
-                new
-                {
-                    id = "aud-worm-002",
-                    timestampUtc = DateTimeOffset.UtcNow.AddHours(-3).ToString("o"),
-                    actor = "SYSTEM_SCREENING_CORE",
-                    action = "SANCTIONS_HOLD_INTERCEPT",
-                    targetEntity = "Acme Global Trading LLC",
-                    caseNumber = "EDITH-CAS-2026-0042",
-                    sha256Hash = "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b",
-                    previousBlockHash = "1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e",
-                    isTamperEvident = true
-                }
-            });
+                id = l.Id,
+                timestampUtc = l.TimestampUtc,
+                actor = l.Actor,
+                action = l.Action,
+                targetEntity = l.TargetEntity,
+                caseNumber = l.CaseNumber,
+                sha256Hash = l.Sha256Hash,
+                previousBlockHash = l.PreviousBlockHash,
+                details = l.Details
+            }));
+        }).AllowAnonymous();
+
+        // 5. Append Audit Entry
+        reportsGroup.MapPost("/audit", async (
+            [FromBody] RecordAuditRequest req,
+            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromServices] IAuditLedgerService auditService,
+            CancellationToken ct) =>
+        {
+            var tenantId = ResolveTenant(tenantHeader);
+            var entry = await auditService.RecordAuditEntryAsync(tenantId, req, ct);
+            return Results.Created($"/api/v1/reports/audit/{entry.Id}", entry);
         }).AllowAnonymous();
 
         return app;
+    }
+
+    private static Guid ResolveTenant(string? tenantHeader)
+    {
+        if (!string.IsNullOrWhiteSpace(tenantHeader) && Guid.TryParse(tenantHeader, out var parsed))
+        {
+            return parsed;
+        }
+        return DefaultTenantId;
     }
 }

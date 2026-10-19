@@ -5,8 +5,9 @@ import { Sidebar } from './components/Sidebar';
 import { Footer } from './components/Footer';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 
-// Master 14 Views
+// Master Views
 import { DashboardView } from './components/DashboardView';
+import { NameSearchView } from './components/NameSearchView';
 import { ScreeningConsole } from './components/ScreeningConsole';
 import { BulkScreeningView } from './components/BulkScreeningView';
 import { DeltaRescreeningView } from './components/DeltaRescreeningView';
@@ -90,6 +91,7 @@ export const AppContent: React.FC = () => {
             
             {/* Group 1: Operational Screening & Ingestion */}
             <Route path="/dashboard" element={<DashboardView />} />
+            <Route path="/name-search" element={<NameSearchView />} />
             <Route path="/screening" element={<ScreeningPageWrapper />} />
             <Route path="/bulk" element={<BulkScreeningView />} />
             <Route path="/delta" element={<DeltaRescreeningView />} />

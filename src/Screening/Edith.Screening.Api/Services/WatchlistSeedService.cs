@@ -1,3 +1,4 @@
+using Edith.Screening.Bulk.Repository;
 using Edith.Screening.Core.Models;
 using Edith.Screening.Core.Search;
 using Microsoft.Extensions.Hosting;
@@ -8,11 +9,16 @@ namespace Edith.Screening.Api.Services;
 public sealed partial class WatchlistSeedService : IHostedService
 {
     private readonly IWatchlistSearchEngine _searchEngine;
+    private readonly IBulkJobRepository _bulkJobRepo;
     private readonly ILogger<WatchlistSeedService> _logger;
 
-    public WatchlistSeedService(IWatchlistSearchEngine searchEngine, ILogger<WatchlistSeedService> logger)
+    public WatchlistSeedService(
+        IWatchlistSearchEngine searchEngine,
+        IBulkJobRepository bulkJobRepo,
+        ILogger<WatchlistSeedService> logger)
     {
         _searchEngine = searchEngine;
+        _bulkJobRepo = bulkJobRepo;
         _logger = logger;
     }
 
@@ -92,6 +98,19 @@ public sealed partial class WatchlistSeedService : IHostedService
             Category = "PEP",
             IsBlocked = false,
             IsActive = true
+        },
+        new WatchlistEntity
+        {
+            Id = Guid.Parse("01931000-0000-7000-8000-000000000007"),
+            EntityExternalId = "UN-CORP-4412",
+            EntityType = "CORPORATE",
+            FullName = "AL-QUDS LOGISTICS LLC",
+            Nationality = "IR",
+            IdDetails = "TL-DXB-889120",
+            SourceList = "UN_CONSOLIDATED",
+            Category = "SANCTION",
+            IsBlocked = true,
+            IsActive = true
         }
     ];
 
@@ -104,6 +123,7 @@ public sealed partial class WatchlistSeedService : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         LogSeedingStarted(_logger, BaselineWatchlist.Count);
+        await _bulkJobRepo.UpsertWatchlistEntitiesBatchAsync(BaselineWatchlist, cancellationToken);
         await _searchEngine.IndexBatchAsync(BaselineWatchlist, cancellationToken);
         LogSeedingCompleted(_logger);
     }

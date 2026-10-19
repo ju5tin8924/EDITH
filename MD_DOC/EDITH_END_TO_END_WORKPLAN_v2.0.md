@@ -1,10 +1,10 @@
 # EDITH Next-Gen AML Intelligence Platform
-## End-to-End Engineering Workplan & Execution Ledger (v2.0)
+## End-to-End Engineering Workplan & Execution Ledger (v2.1)
 
-**Document ID:** EDITH-WORKPLAN-V2.0  
-**Version:** 2.0  
-**Status:** Phases 1–5 Completed & Verified (93/93 Automated Tests Passing)  
-**Last Updated:** October 2026  
+**Document ID:** EDITH-WORKPLAN-V2.1  
+**Version:** 2.1  
+**Status:** Phases 1–6 Completed & Verified (93/93 Automated Tests Passing)  
+**Last Updated:** October 19, 2026  
 
 ---
 

@@ -115,7 +115,16 @@ public sealed class NameSimilarityScorer : INameSimilarityScorer
             var bestTokenMatch = 0.0;
             foreach (var t2 in tokens2)
             {
-                var match = DoubleMetaphone.Compare(t1, t2);
+                double match;
+                if (t1.Length <= 2 || t2.Length <= 2)
+                {
+                    match = string.Equals(t1, t2, StringComparison.OrdinalIgnoreCase) ? 1.0 : 0.0;
+                }
+                else
+                {
+                    match = DoubleMetaphone.Compare(t1, t2);
+                }
+
                 if (match > bestTokenMatch)
                 {
                     bestTokenMatch = match;

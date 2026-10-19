@@ -13,7 +13,7 @@ namespace Edith.Gateway.Endpoints;
 
 public static class CaseEndpoints
 {
-    private static readonly Guid DefaultTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid DefaultTenantId = Guid.Parse("01931000-0000-7000-8000-000000000000");
 
     public static IEndpointRouteBuilder MapCaseEndpoints(this IEndpointRouteBuilder app)
     {
@@ -33,7 +33,12 @@ public static class CaseEndpoints
                 filter = parsedStatus;
             }
 
-            var cases = await caseService.ListCasesAsync(tenantId, filter, ct);
+            var cases = (await caseService.ListCasesAsync(tenantId, filter, ct)).ToList();
+            if (string.IsNullOrWhiteSpace(tenantHeader))
+            {
+                var altCases = await caseService.ListCasesAsync(Edith.Gateway.Services.InMemoryTenantRegistry.DemoTenantId, filter, ct);
+                cases = cases.Concat(altCases).DistinctBy(c => c.Id).OrderByDescending(c => c.CreatedAt).ToList();
+            }
 
             var dtos = cases.Select(c => new
             {
@@ -62,7 +67,7 @@ public static class CaseEndpoints
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
             var c = await caseService.GetCaseByIdAsync(tenantId, caseId, ct);
             if (c == null)
             {
@@ -163,7 +168,7 @@ public static class CaseEndpoints
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
             var (userId, userName) = ExtractUser(principal);
 
             var result = await caseService.AcquireLockAsync(tenantId, caseId, userId, userName, TimeSpan.FromMinutes(15), ct);
@@ -183,7 +188,7 @@ public static class CaseEndpoints
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
             var (userId, _) = ExtractUser(principal);
 
             var released = await caseService.ReleaseLockAsync(tenantId, caseId, userId, force: true, ct);
@@ -200,7 +205,7 @@ public static class CaseEndpoints
             [FromServices] ICbsWebhookDispatcher? webhookDispatcher,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
             var (userId, userName) = ExtractUser(principal);
 
             CaseResolution? resolution = ParseResolution(req.Resolution) ?? CaseResolution.ClearedFalsePositive;
@@ -261,7 +266,7 @@ public static class CaseEndpoints
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
             var (userId, userName) = ExtractUser(principal);
 
             if (!Enum.TryParse<CaseStatus>(req.NewStatus, true, out var newStatus))
@@ -300,7 +305,7 @@ public static class CaseEndpoints
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
             var (userId, userName) = ExtractUser(principal);
 
             var note = await caseService.AddNoteAsync(
@@ -324,6 +329,28 @@ public static class CaseEndpoints
         {
             return parsed;
         }
+        return DefaultTenantId;
+    }
+
+    private static async Task<Guid> ResolveCaseTenantAsync(ICaseService caseService, Guid caseId, string? tenantHeader, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(tenantHeader) && Guid.TryParse(tenantHeader, out var parsed))
+        {
+            return parsed;
+        }
+
+        var defaultCase = await caseService.GetCaseByIdAsync(DefaultTenantId, caseId, ct);
+        if (defaultCase != null)
+        {
+            return DefaultTenantId;
+        }
+
+        var demoCase = await caseService.GetCaseByIdAsync(InMemoryTenantRegistry.DemoTenantId, caseId, ct);
+        if (demoCase != null)
+        {
+            return InMemoryTenantRegistry.DemoTenantId;
+        }
+
         return DefaultTenantId;
     }
 

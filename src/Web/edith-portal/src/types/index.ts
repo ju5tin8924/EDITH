@@ -180,3 +180,48 @@ export interface BacktestResult {
   falsePositiveRateEstimate: number;
   averageEvaluationLatencyUs: number;
 }
+
+export type NameSearchMode = 'EXACT' | 'FUZZY' | 'EXACT_NAME_AND_ID';
+
+export interface NameSearchRequest {
+  name?: string;
+  idNumber?: string;
+  searchMode: NameSearchMode;
+  minScore?: number;
+  maxResults?: number;
+}
+
+export interface NameSearchMatch {
+  entityId: string;
+  externalId: string;
+  fullName: string;
+  normalizedTargetName: string;
+  entityType: string;
+  aliasName?: string;
+  idDetails?: string;
+  nationality?: string;
+  dob?: string;
+  sanctionsList: string;
+  sanctionsAuthority: string;
+  category: string;
+  isBlocked: boolean;
+  score: number;
+  stringSimilarity: number;
+  phoneticSimilarity: number;
+  matchModeUsed: NameSearchMode;
+  whySanctioned: string;
+  whyMatched: string;
+  technicalBreakdown: string;
+}
+
+export interface NameSearchResponse {
+  queryName: string;
+  normalizedQueryName: string;
+  queryId?: string;
+  searchMode: NameSearchMode;
+  totalMatches: number;
+  latencyMs: number;
+  matches: NameSearchMatch[];
+  evaluatedAt: string;
+}
+

@@ -3,7 +3,7 @@ using Edith.Database.Migrator;
 // Usage:
 //   dotnet run --project src/Database/Edith.Database.Migrator -- [--connection "<npgsql conn string>"] [--seed]
 // Connection string precedence: --connection, then EDITH_PG_CONNECTION, then the local Docker Compose default.
-const string LocalDevDefault = "Host=localhost;Port=5432;Database=edith;Username=edith;Password=edith_dev_only";
+const string LocalDevDefault = "Host=localhost;Port=5432;Database=edith_aml;Username=edith_admin;Password=EdithSecurePassword2026!";
 
 var includeSeed = args.Contains("--seed");
 var connIndex = Array.IndexOf(args, "--connection");

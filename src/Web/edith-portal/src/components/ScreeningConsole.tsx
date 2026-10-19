@@ -9,7 +9,12 @@ import {
   ArrowRight,
   ShieldCheck,
   Building,
-  UserCheck
+  UserCheck,
+  RotateCcw,
+  GitBranch,
+  ChevronDown,
+  ChevronUp,
+  FileWarning
 } from 'lucide-react';
 import { 
   TransactionScreeningRequest, 
@@ -20,6 +25,28 @@ import { EdithApi } from '../services/api';
 interface ScreeningConsoleProps {
   onOpenCase?: (caseId: string) => void;
 }
+
+const DEFAULT_BLANK_PAYLOAD: TransactionScreeningRequest = {
+  sourceAccount: '',
+  destinationAccount: '',
+  amount: 0,
+  currency: 'AED',
+  originatingCountry: 'AE',
+  destinationCountry: 'AE',
+  parties: [
+    {
+      role: 'BENEFICIARY',
+      fullName: '',
+      country: 'AE',
+      dateOfBirth: ''
+    },
+    {
+      role: 'SENDER',
+      fullName: '',
+      country: 'AE'
+    }
+  ]
+};
 
 export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }) => {
   const [loading, setLoading] = useState(false);
@@ -46,8 +73,29 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
   });
 
   const [result, setResult] = useState<ScreeningResult | null>(null);
+  const [activeDiagramCandidateId, setActiveDiagramCandidateId] = useState<string | null>(null);
+
+  const toggleCandidateDiagram = (id: string) => {
+    setActiveDiagramCandidateId(prev => (prev === id ? null : id));
+  };
+
+  const handleReset = () => {
+    setFormData(DEFAULT_BLANK_PAYLOAD);
+    setResult(null);
+    setActiveDiagramCandidateId(null);
+  };
+
+  const updateFormData = (updater: (prev: TransactionScreeningRequest) => TransactionScreeningRequest) => {
+    if (result) {
+      setResult(null);
+      setActiveDiagramCandidateId(null);
+    }
+    setFormData(updater);
+  };
 
   const applyPreset = (presetType: 'sanction' | 'clean' | 'high_amount') => {
+    setResult(null);
+    setActiveDiagramCandidateId(null);
     if (presetType === 'sanction') {
       setFormData({
         sourceAccount: 'AE820330000001234567890',
@@ -98,11 +146,11 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
         amount: 850000,
         currency: 'AED',
         originatingCountry: 'AE',
-        destinationCountry: 'GB',
+        destinationCountry: 'IR',
         parties: [
           {
             role: 'BENEFICIARY',
-            fullName: 'Caspian Petrochemical Logistics',
+            fullName: 'Al-Quds Logistics LLC',
             country: 'IR'
           },
           {
@@ -117,6 +165,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
 
   const handleScreen = async (e: React.FormEvent) => {
     e.preventDefault();
+    setResult(null);
     setLoading(true);
     try {
       const res = await EdithApi.screenTransaction(formData);
@@ -186,6 +235,14 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
           >
             High Risk Corridor
           </button>
+          <button
+            onClick={handleReset}
+            className="px-2.5 py-1 text-xs rounded bg-surface-muted text-ink border border-border hover:bg-border/30 transition font-medium flex items-center gap-1"
+            title="Clear all fields to default blank state"
+          >
+            <RotateCcw className="w-3 h-3 text-muted" />
+            Clear Form
+          </button>
         </div>
       </div>
 
@@ -216,7 +273,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                   onChange={(e) => {
                     const newParties = [...formData.parties];
                     newParties[0].fullName = e.target.value;
-                    setFormData({ ...formData, parties: newParties });
+                    updateFormData(prev => ({ ...prev, parties: newParties }));
                   }}
                   className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
                 />
@@ -232,7 +289,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                     onChange={(e) => {
                       const newParties = [...formData.parties];
                       newParties[0].country = e.target.value.toUpperCase();
-                      setFormData({ ...formData, parties: newParties });
+                      updateFormData(prev => ({ ...prev, parties: newParties }));
                     }}
                     className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono uppercase focus:border-primary focus:outline-none"
                   />
@@ -245,7 +302,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                     onChange={(e) => {
                       const newParties = [...formData.parties];
                       newParties[0].dateOfBirth = e.target.value;
-                      setFormData({ ...formData, parties: newParties });
+                      updateFormData(prev => ({ ...prev, parties: newParties }));
                     }}
                     className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
                   />
@@ -267,7 +324,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                   onChange={(e) => {
                     const newParties = [...formData.parties];
                     newParties[1].fullName = e.target.value;
-                    setFormData({ ...formData, parties: newParties });
+                    updateFormData(prev => ({ ...prev, parties: newParties }));
                   }}
                   className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
                 />
@@ -283,7 +340,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                   step="any"
                   required
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => updateFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
                   className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none font-semibold"
                 />
               </div>
@@ -291,7 +348,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 <label className="text-muted block mb-1">Currency</label>
                 <select
                   value={formData.currency}
-                  onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                  onChange={(e) => updateFormData(prev => ({ ...prev, currency: e.target.value }))}
                   className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
                 >
                   <option value="AED">AED</option>
@@ -310,7 +367,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 <input
                   type="text"
                   value={formData.sourceAccount}
-                  onChange={(e) => setFormData({ ...formData, sourceAccount: e.target.value })}
+                  onChange={(e) => updateFormData(prev => ({ ...prev, sourceAccount: e.target.value }))}
                   className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono text-[11px] focus:border-primary focus:outline-none"
                 />
               </div>
@@ -319,29 +376,40 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 <input
                   type="text"
                   value={formData.destinationAccount}
-                  onChange={(e) => setFormData({ ...formData, destinationAccount: e.target.value })}
+                  onChange={(e) => updateFormData(prev => ({ ...prev, destinationAccount: e.target.value }))}
                   className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono text-[11px] focus:border-primary focus:outline-none"
                 />
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold font-mono text-xs flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <Clock className="w-4 h-4 animate-spin" />
-                  Running 5-Pass Screening Pipeline...
-                </>
-              ) : (
-                <>
-                  <Zap className="w-4 h-4 fill-white" />
-                  Execute Real-Time Screening (Pass 1-5)
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleReset}
+                className="py-2.5 px-3 rounded-lg bg-surface-muted hover:bg-border text-ink font-semibold font-mono text-xs flex items-center justify-center gap-1.5 transition-all border border-border shrink-0"
+                title="Clear transaction payload"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-muted" />
+                Clear
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold font-mono text-xs flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <Clock className="w-4 h-4 animate-spin" />
+                    Running 5-Pass Screening Pipeline...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 fill-white" />
+                    Execute Real-Time Screening (Pass 1-5)
+                  </>
+                )}
+              </button>
+            </div>
           </form>
         </div>
 
@@ -369,6 +437,16 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                     <span>Latency:</span>{' '}
                     <span className="text-primary font-bold">{result.evaluationLatencyMs}ms</span>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition flex items-center gap-1.5 shadow-xs"
+                    title="Clear current result and screen next transaction"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Screen Next</span>
+                  </button>
                 </div>
               </div>
 
@@ -402,12 +480,27 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
               {/* Matches List */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-ink">
-                    Candidate Matches Found ({result.matchCount})
+                  <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-ink flex items-center gap-2">
+                    {result.matchCount > 0 ? (
+                      <span className="text-critical flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4" />
+                        Candidate Matches Found ({result.matchCount})
+                      </span>
+                    ) : (
+                      <span className="text-accent flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Candidate Matches Found (0)
+                      </span>
+                    )}
                   </h3>
-                  {result.primaryHitReason && (
+                  {result.primaryHitReason ? (
                     <span className="text-[11px] font-mono text-critical bg-critical/10 px-2 py-0.5 rounded border border-critical/30">
                       Hit: {result.primaryHitReason}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-mono text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/30 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      Clean Transaction
                     </span>
                   )}
                 </div>
@@ -415,67 +508,199 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 {result.partyEvaluations.map((evalParty, pIdx) => (
                   <div key={pIdx} className="space-y-2">
                     {evalParty.matchedCandidates.length === 0 ? (
-                      <div className="p-4 rounded-lg bg-surface-muted/40 border border-dashed border-border text-center text-xs text-muted">
-                        No sanctions, PEP, or adverse media hits detected for "{evalParty.queryName}".
+                      <div className="p-4 rounded-lg bg-accent/5 border border-accent/30 text-center text-xs space-y-1">
+                        <div className="font-bold text-accent flex items-center justify-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4" />
+                          Zero Adverse Matches Detected
+                        </div>
+                        <p className="text-[11px] text-muted">
+                          Party "{evalParty.queryName}" ({evalParty.role}) cleared deterministic sanctions & PEP screening with 0 over-threshold hits.
+                        </p>
                       </div>
                     ) : (
-                      evalParty.matchedCandidates.map((cand) => (
-                        <div
-                          key={cand.candidateId}
-                          className="p-4 rounded-lg bg-surface-muted border border-border hover:border-border-light transition space-y-3"
-                        >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-ink text-sm">{cand.canonicalName}</span>
-                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-critical/20 text-critical border border-critical/40 uppercase font-bold">
-                                  {cand.category}
-                                </span>
+                      evalParty.matchedCandidates.map((cand) => {
+                        const isDiagramOpen = activeDiagramCandidateId === cand.candidateId;
+                        return (
+                          <div
+                            key={cand.candidateId}
+                            className="p-4 rounded-lg bg-surface-muted border border-border hover:border-border-light transition space-y-3"
+                          >
+                            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-3">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-ink text-sm">{cand.canonicalName}</span>
+                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-critical/20 text-critical border border-critical/40 uppercase font-bold">
+                                    {cand.category}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-muted font-mono mt-0.5">
+                                  List: {cand.sanctionsList || 'OFAC / UN'} • DOB: {cand.dateOfBirth || 'N/A'} • Nat: {cand.nationality || 'N/A'}
+                                </div>
                               </div>
-                              <div className="text-[11px] text-muted font-mono mt-0.5">
-                                List: {cand.sanctionsList || 'OFAC / UN'} • DOB: {cand.dateOfBirth || 'N/A'} • Nat: {cand.nationality || 'N/A'}
-                              </div>
-                            </div>
 
-                            <div className="text-right font-mono">
-                              <div className="text-lg font-bold text-critical">
-                                {cand.confidenceScore.toFixed(1)}%
-                              </div>
-                              <div className="text-[10px] text-muted">Match Confidence</div>
-                            </div>
-                          </div>
-
-                          {/* Diagnostic Token Comparison */}
-                          {cand.tokenBreakdown && cand.tokenBreakdown.length > 0 && (
-                            <div className="p-2.5 rounded bg-canvas-subtle border border-border/80 space-y-1.5">
-                              <div className="text-[10px] font-mono uppercase tracking-wider text-muted">
-                                Token Alignment & Phonetics Diagnostic
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {cand.tokenBreakdown.map((token, tIdx) => (
-                                  <div
-                                    key={tIdx}
-                                    className="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-muted border border-border text-[11px] font-mono"
-                                  >
-                                    <span className="text-primary-light font-medium">"{token.queryToken}"</span>
-                                    <ArrowRight className="w-3 h-3 text-disabled" />
-                                    <span className="text-ink font-medium">"{token.candidateToken}"</span>
-                                    <span className="text-[10px] px-1 rounded bg-critical/20 text-critical font-bold">
-                                      {token.tokenScore}% ({token.matchType})
-                                    </span>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="text-right font-mono">
+                                  <div className="text-lg font-bold text-critical">
+                                    {cand.confidenceScore.toFixed(1)}%
                                   </div>
-                                ))}
+                                  <div className="text-[10px] text-muted">Match Confidence</div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCandidateDiagram(cand.candidateId)}
+                                  className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold border transition flex items-center gap-1.5 ${
+                                    isDiagramOpen
+                                      ? 'bg-primary text-white border-primary shadow-xs'
+                                      : 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20'
+                                  }`}
+                                  title="View interactive step-by-step match attribution diagram"
+                                >
+                                  <GitBranch className="w-3.5 h-3.5" />
+                                  <span>{isDiagramOpen ? 'Hide Diagram' : 'Explain Match Diagram'}</span>
+                                  {isDiagramOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                </button>
                               </div>
                             </div>
-                          )}
 
-                          {cand.designationDetails && (
-                            <p className="text-xs text-muted italic bg-canvas-subtle/60 p-2 rounded border border-border/50">
-                              "{cand.designationDetails}"
-                            </p>
-                          )}
-                        </div>
-                      ))
+                            {/* Diagnostic Token Comparison */}
+                            {cand.tokenBreakdown && cand.tokenBreakdown.length > 0 && (
+                              <div className="p-2.5 rounded bg-canvas-subtle border border-border/80 space-y-1.5">
+                                <div className="text-[10px] font-mono uppercase tracking-wider text-muted">
+                                  Token Alignment & Phonetics Diagnostic
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {cand.tokenBreakdown.map((token, tIdx) => (
+                                    <div
+                                      key={tIdx}
+                                      className="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-muted border border-border text-[11px] font-mono"
+                                    >
+                                      <span className="text-primary-light font-medium">"{token.queryToken}"</span>
+                                      <ArrowRight className="w-3 h-3 text-disabled" />
+                                      <span className="text-ink font-medium">"{token.candidateToken}"</span>
+                                      <span className="text-[10px] px-1 rounded bg-critical/20 text-critical font-bold">
+                                        {token.tokenScore}% ({token.matchType})
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {cand.designationDetails && (
+                              <p className="text-xs text-muted italic bg-canvas-subtle/60 p-2 rounded border border-border/50">
+                                "{cand.designationDetails}"
+                              </p>
+                            )}
+
+                            {/* ON-CLICK MATCH DIAGRAM (Only rendered when user clicks "Explain Match Diagram") */}
+                            {isDiagramOpen && (
+                              <div className="p-4 rounded-xl bg-surface border-2 border-primary/30 space-y-3 animate-in fade-in duration-150 mt-2">
+                                <div className="flex items-center justify-between border-b border-border pb-2">
+                                  <div className="text-xs font-mono font-bold uppercase text-primary flex items-center gap-2">
+                                    <GitBranch className="w-4 h-4" />
+                                    <span>Decision Pipeline Trace • {cand.candidateId}</span>
+                                  </div>
+                                  <span className="text-[10px] font-mono text-muted">
+                                    {evalParty.role} Target Attribution
+                                  </span>
+                                </div>
+
+                                {/* Visual 4-Step Diagram Flow */}
+                                <div className="grid grid-cols-1 md:grid-cols-7 gap-2 items-center text-xs font-mono">
+                                  {/* Step 1 */}
+                                  <div className="md:col-span-1 p-2.5 rounded-lg bg-surface-muted border border-border space-y-0.5">
+                                    <div className="text-[9px] uppercase text-muted font-bold">1. Query Input</div>
+                                    <div className="font-bold text-ink truncate" title={evalParty.queryName}>
+                                      "{evalParty.queryName}"
+                                    </div>
+                                    <div className="text-[10px] text-primary">Role: {evalParty.role}</div>
+                                  </div>
+
+                                  <div className="hidden md:flex justify-center text-primary">
+                                    <ArrowRight className="w-4 h-4" />
+                                  </div>
+
+                                  {/* Step 2 */}
+                                  <div className="md:col-span-1 p-2.5 rounded-lg bg-surface-muted border border-border space-y-0.5">
+                                    <div className="text-[9px] uppercase text-muted font-bold">2. Target Entity</div>
+                                    <div className="font-bold text-ink truncate" title={cand.canonicalName}>
+                                      "{cand.canonicalName}"
+                                    </div>
+                                    <div className="text-[10px] text-muted">Nat: {cand.nationality || 'N/A'}</div>
+                                  </div>
+
+                                  <div className="hidden md:flex justify-center text-primary">
+                                    <ArrowRight className="w-4 h-4" />
+                                  </div>
+
+                                  {/* Step 3 */}
+                                  <div className="md:col-span-1 p-2.5 rounded-lg bg-surface-muted border border-primary/40 space-y-0.5">
+                                    <div className="text-[9px] uppercase text-primary font-bold">3. Multi-Pass Score</div>
+                                    <div className="font-bold text-critical">
+                                      {cand.confidenceScore.toFixed(1)}%
+                                    </div>
+                                    <div className="text-[10px] text-muted">
+                                      Str {Math.round(cand.stringSimilarity * 100)}% | Phon {Math.round(cand.phoneticSimilarity * 100)}%
+                                    </div>
+                                  </div>
+
+                                  <div className="hidden md:flex justify-center text-primary">
+                                    <ArrowRight className="w-4 h-4" />
+                                  </div>
+
+                                  {/* Step 4 */}
+                                  <div className="md:col-span-1 p-2.5 rounded-lg bg-critical/10 border border-critical/40 space-y-0.5">
+                                    <div className="text-[9px] uppercase text-critical font-bold flex items-center gap-1">
+                                      <FileWarning className="w-3 h-3" />
+                                      4. Statutory Action
+                                    </div>
+                                    <div className="font-bold text-critical truncate" title={cand.sanctionsList}>
+                                      {cand.sanctionsList}
+                                    </div>
+                                    <div className="text-[10px] text-ink font-semibold">
+                                      {cand.confidenceScore >= 90 ? 'Statutory Freeze' : 'EDD Hold'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Visual Similarity Bars */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+                                  <div className="p-2.5 rounded bg-surface-muted border border-border">
+                                    <div className="flex justify-between text-[10px] font-mono mb-1">
+                                      <span className="text-muted">String Distance</span>
+                                      <span className="font-bold text-ink">{Math.round(cand.stringSimilarity * 100)}%</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                                      <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, Math.round(cand.stringSimilarity * 100))}%` }} />
+                                    </div>
+                                  </div>
+
+                                  <div className="p-2.5 rounded bg-surface-muted border border-border">
+                                    <div className="flex justify-between text-[10px] font-mono mb-1">
+                                      <span className="text-muted">Phonetic Double Metaphone</span>
+                                      <span className="font-bold text-ink">{Math.round(cand.phoneticSimilarity * 100)}%</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                                      <div className="h-full bg-accent rounded-full" style={{ width: `${Math.min(100, Math.round(cand.phoneticSimilarity * 100))}%` }} />
+                                    </div>
+                                  </div>
+
+                                  <div className="p-2.5 rounded bg-surface-muted border border-border">
+                                    <div className="flex justify-between text-[10px] font-mono mb-1">
+                                      <span className="text-muted">Composite Final Score</span>
+                                      <span className="font-bold text-critical">{cand.confidenceScore.toFixed(1)}%</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+                                      <div className="h-full bg-critical rounded-full" style={{ width: `${Math.min(100, cand.confidenceScore)}%` }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 ))}

@@ -21,26 +21,20 @@ public sealed record OpenSearchOptions
 /// <summary>
 /// OpenSearch 2.x candidate retrieval engine implementing Pass 2 multi-match DisMax and phonetic token filtering.
 /// </summary>
-public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, IDisposable
+public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
 {
     private readonly HttpClient _httpClient;
     private readonly ITextNormalizer _normalizer;
     private readonly OpenSearchOptions _options;
-    private readonly InMemoryWatchlistSearchEngine _fallback;
-    private readonly bool _ownsFallback;
-    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public OpenSearchWatchlistSearchEngine(
         HttpClient httpClient,
         ITextNormalizer normalizer,
-        OpenSearchOptions? options = null,
-        InMemoryWatchlistSearchEngine? fallback = null)
+        OpenSearchOptions? options = null)
     {
         _httpClient = httpClient;
         _normalizer = normalizer;
         _options = options ?? new OpenSearchOptions();
-        _ownsFallback = fallback == null;
-        _fallback = fallback ?? new InMemoryWatchlistSearchEngine(normalizer);
 
         if (_httpClient.BaseAddress == null)
         {
@@ -49,14 +43,6 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
 
         var authBytes = Encoding.UTF8.GetBytes($"{_options.Username}:{_options.Password}");
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(authBytes));
-    }
-
-    public void Dispose()
-    {
-        if (_ownsFallback)
-        {
-            _fallback.Dispose();
-        }
     }
 
     public async Task<IReadOnlyList<WatchlistEntity>> SearchCandidatesAsync(
@@ -133,20 +119,13 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
             Content = new StringContent(searchBody.ToJsonString(), Encoding.UTF8, "application/json")
         };
 
-        string json;
-        try
+        using var response = await _httpClient.SendAsync(request, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            using var response = await _httpClient.SendAsync(request, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                return await _fallback.SearchCandidatesAsync(query, maxResults, ct);
-            }
-            json = await response.Content.ReadAsStringAsync(ct);
+            return [];
         }
-        catch (HttpRequestException)
-        {
-            return await _fallback.SearchCandidatesAsync(query, maxResults, ct);
-        }
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
 
         if (!doc.RootElement.TryGetProperty("hits", out var hitsProp) ||
@@ -180,6 +159,17 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
                     dob = parsedDob;
                 }
 
+                var idDetails = src.TryGetProperty("designation_details", out var ddProp) ? ddProp.GetString() : null;
+                string? aliasName = null;
+                if (src.TryGetProperty("aliases", out var aliasesProp) && aliasesProp.ValueKind == JsonValueKind.Array)
+                {
+                    var aliasList = aliasesProp.EnumerateArray()
+                        .Select(a => a.GetString())
+                        .Where(a => !string.IsNullOrWhiteSpace(a) && !string.Equals(a, fullName, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    if (aliasList.Count > 0) aliasName = string.Join(", ", aliasList);
+                }
+
                 candidates.Add(new WatchlistEntity
                 {
                     Id = id,
@@ -190,6 +180,8 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
                     Dob = dob,
                     SourceList = sourceList,
                     Category = category,
+                    IdDetails = idDetails,
+                    AliasName = aliasName,
                     IsBlocked = isBlocked,
                     IsActive = isActive
                 });
@@ -207,7 +199,7 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
     public async Task IndexBatchAsync(IEnumerable<WatchlistEntity> entities, CancellationToken ct = default)
     {
         var list = entities.ToList();
-        await _fallback.IndexBatchAsync(list, ct);
+        if (list.Count == 0) return;
 
         var sb = new StringBuilder();
 
@@ -224,7 +216,25 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
                 if (!string.IsNullOrEmpty(meta.Alternate)) phoneticTokens.Add(meta.Alternate);
             }
 
-            var docId = string.IsNullOrWhiteSpace(entity.EntityExternalId) ? entity.Id.ToString() : entity.EntityExternalId;
+            var aliases = new List<string> { entity.FullName };
+            if (!string.IsNullOrWhiteSpace(entity.AliasName))
+            {
+                foreach (var alias in entity.AliasName.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    aliases.Add(alias);
+                    var normAlias = _normalizer.Normalize(alias, entity.EntityType == "CORPORATE");
+                    foreach (var at in normAlias.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var meta = DoubleMetaphone.Encode(at);
+                        if (!string.IsNullOrEmpty(meta.Primary)) phoneticTokens.Add(meta.Primary);
+                        if (!string.IsNullOrEmpty(meta.Alternate)) phoneticTokens.Add(meta.Alternate);
+                    }
+                }
+            }
+
+            var docId = string.IsNullOrWhiteSpace(entity.EntityExternalId)
+                ? entity.Id.ToString()
+                : $"{entity.EntityExternalId}:{norm.Replace(' ', '_')}";
             var header = JsonSerializer.Serialize(new { index = new { _index = _options.WatchlistIndex, _id = docId } });
 
             var doc = new
@@ -233,7 +243,7 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
                 entity_external_id = entity.EntityExternalId,
                 entity_type = entity.EntityType,
                 full_name = entity.FullName,
-                aliases = new[] { entity.FullName },
+                aliases = aliases.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
                 phonetic_tokens = phoneticTokens.ToArray(),
                 date_of_birth = entity.Dob?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 birth_year = entity.Dob?.Year,
@@ -241,6 +251,7 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
                 country = entity.Nationality,
                 source_list = entity.SourceList,
                 category = entity.Category,
+                designation_details = entity.IdDetails,
                 is_blocked = entity.IsBlocked,
                 is_active = entity.IsActive,
                 updated_at = DateTimeOffset.UtcNow
@@ -250,21 +261,13 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine, ID
             sb.AppendLine(JsonSerializer.Serialize(doc));
         }
 
-        if (sb.Length == 0) return;
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/_bulk?refresh=wait_for")
+        var bulkUrl = list.Count < 100 ? "/_bulk?refresh=true" : "/_bulk";
+        using var request = new HttpRequestMessage(HttpMethod.Post, bulkUrl)
         {
             Content = new StringContent(sb.ToString(), Encoding.UTF8, "application/x-ndjson")
         };
 
-        try
-        {
-            using var response = await _httpClient.SendAsync(request, ct);
-            response.EnsureSuccessStatusCode();
-        }
-        catch (HttpRequestException)
-        {
-            // Fallback already indexed in-memory when OpenSearch is offline
-        }
+        using var response = await _httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
     }
 }

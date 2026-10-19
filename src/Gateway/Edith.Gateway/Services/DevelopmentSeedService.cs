@@ -3,6 +3,7 @@ using Edith.Cases.Services;
 using Edith.Rules.Models;
 using Edith.Rules.Repository;
 using Edith.Screening.Api.Services;
+using Edith.Screening.Bulk.Repository;
 using Edith.Screening.Core.Models;
 using Edith.Screening.Core.Search;
 using Microsoft.Extensions.Hosting;
@@ -15,22 +16,28 @@ public sealed partial class DevelopmentSeedService : IHostedService
     private static readonly Guid DefaultTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     private readonly IWatchlistSearchEngine _searchEngine;
+    private readonly IBulkJobRepository _bulkJobRepo;
     private readonly ICaseService _caseService;
     private readonly IRuleRepository _ruleRepo;
     private readonly IWhitelistService _whitelistService;
+    private readonly IAuditLedgerService _auditService;
     private readonly ILogger<DevelopmentSeedService> _logger;
 
     public DevelopmentSeedService(
         IWatchlistSearchEngine searchEngine,
+        IBulkJobRepository bulkJobRepo,
         ICaseService caseService,
         IRuleRepository ruleRepo,
         IWhitelistService whitelistService,
+        IAuditLedgerService auditService,
         ILogger<DevelopmentSeedService> logger)
     {
         _searchEngine = searchEngine;
+        _bulkJobRepo = bulkJobRepo;
         _caseService = caseService;
         _ruleRepo = ruleRepo;
         _whitelistService = whitelistService;
+        _auditService = auditService;
         _logger = logger;
     }
 
@@ -44,7 +51,8 @@ public sealed partial class DevelopmentSeedService : IHostedService
     {
         LogSeedingStarted(_logger);
 
-        // 1. Seed Watchlist
+        // 1. Seed Watchlist into PostgreSQL and OpenSearch
+        await _bulkJobRepo.UpsertWatchlistEntitiesBatchAsync(WatchlistSeedService.BaselineWatchlist, cancellationToken);
         await _searchEngine.IndexBatchAsync(WatchlistSeedService.BaselineWatchlist, cancellationToken);
 
         // 2. Seed Baseline Rules
@@ -165,7 +173,7 @@ public sealed partial class DevelopmentSeedService : IHostedService
         // 4. Seed Whitelist
         await _whitelistService.AddWhitelistAsync(new WhitelistEntry
         {
-            Id = Guid.NewGuid(),
+            Id = Guid.Parse("01931000-0000-7000-8000-000000000201"),
             TenantId = DefaultTenantId,
             EntityIdentifier = "EMIRATES AIRLINE",
             MatchScope = "EXACT",
@@ -173,6 +181,9 @@ public sealed partial class DevelopmentSeedService : IHostedService
             ExpiresAt = DateTimeOffset.UtcNow.AddYears(1),
             IsActive = true
         }, cancellationToken);
+
+        // 5. Seed Baseline Immutable WORM Audit Ledger
+        await _auditService.EnsureBaselineAuditLedgerAsync(DefaultTenantId, cancellationToken);
 
         LogSeedingCompleted(_logger);
     }

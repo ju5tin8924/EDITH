@@ -1,4 +1,4 @@
-# Master Product Requirements Document (PRD v4.0)
+# Master Product Requirements Document (PRD v4.1)
 
 **Product Name:** EDITH Next-Gen AML Intelligence Platform (formerly iShield)  
 **Target Architecture:** Modular Microservices (.NET 10 LTS + React 19 Portal + OpenSearch 2.12 + PostgreSQL 17)  
@@ -6,8 +6,8 @@
 **Screening Scope:** English & Transliterated Phonetic Optimized  
 **Performance SLA:** Sub-second 5-pass screening budget (P99 < 10ms in-memory / < 50ms OpenSearch)  
 **Database Footprint:** Dual-Database (PostgreSQL 17 + OpenSearch 2.12 — Zero Redis Dependency)  
-**Version:** 4.0  
-**Last Updated:** October 2026  
+**Version:** 4.1  
+**Last Updated:** October 19, 2026  
 
 ---
 

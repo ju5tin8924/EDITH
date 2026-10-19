@@ -121,14 +121,17 @@ public sealed class ScreeningEngine : IScreeningEngine
         var isWhitelisted = false;
         string? whitelistReason = null;
 
-        if (isOverThreshold && activeWhitelists != null && topMatch != null)
+        if (isOverThreshold && activeWhitelists != null && allCandidateMatches.Count > 0)
         {
             var matchedWhitelist = activeWhitelists.FirstOrDefault(w =>
                 w.IsActive &&
                 (w.ExpiresAt == null || w.ExpiresAt > DateTimeOffset.UtcNow) &&
-                (string.Equals(w.EntityIdentifier, topMatch.Entity.EntityExternalId, StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(w.EntityIdentifier, topMatch.NormalizedInput, StringComparison.OrdinalIgnoreCase) ||
-                 w.CustomerId == transaction.CustomerId));
+                allCandidateMatches.Any(m => m.CompositeScore >= config.MinThresholdScore && (
+                    string.Equals(w.EntityIdentifier, m.Entity.EntityExternalId, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(w.EntityIdentifier, m.NormalizedInput, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(_normalizer.Normalize(w.EntityIdentifier), m.NormalizedTarget, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(_normalizer.Normalize(w.EntityIdentifier), m.NormalizedInput, StringComparison.OrdinalIgnoreCase) ||
+                    w.CustomerId == transaction.CustomerId)));
 
             if (matchedWhitelist != null)
             {
@@ -224,6 +227,7 @@ public sealed class ScreeningEngine : IScreeningEngine
             compositeScore += (decimal)scoreResult.FinalScore * (remainingWeight / 100m);
 
             compositeScore = Math.Min(100m, Math.Round(compositeScore, 2));
+            if (compositeScore < 65m) continue;
 
             matches.Add(new CandidateMatch
             {

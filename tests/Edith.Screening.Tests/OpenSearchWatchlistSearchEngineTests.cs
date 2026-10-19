@@ -118,7 +118,7 @@ public sealed class OpenSearchWatchlistSearchEngineTests
 
         Assert.NotNull(handler.LastRequestBody);
         Assert.Contains("\"_index\":\"edith_watchlist_v1\"", handler.LastRequestBody);
-        Assert.Contains("\"_id\":\"TEST-100\"", handler.LastRequestBody);
+        Assert.Contains("\"_id\":\"TEST-100:JOHN_DOE\"", handler.LastRequestBody);
         Assert.Contains("\"full_name\":\"JOHN DOE\"", handler.LastRequestBody);
         Assert.Contains("\"phonetic_tokens\"", handler.LastRequestBody);
     }

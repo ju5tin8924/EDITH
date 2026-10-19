@@ -1,12 +1,12 @@
 # EDITH Next-Gen AML Intelligence Platform
-## Master Technical Architecture & Engineering Specification (v5.0)
+## Master Technical Architecture & Engineering Specification (v5.1)
 
-**Document ID:** EDITH-ARCH-SPEC-V5.0  
+**Document ID:** EDITH-ARCH-SPEC-V5.1  
 **Target Architecture:** Modular Microservices (.NET 10 LTS + React 19 Portal + Dual-Database)  
 **System of Record:** PostgreSQL 17 (`edith_aml`)  
 **Screening Engine:** OpenSearch 2.12 (Phonetic & Multi-Attribute Search Index + In-Memory Fallback)  
 **Applicable Standards:** UAE AML/CFT Federal Decree-Law No. (20) of 2018, Cabinet Decision No. (74) of 2020 on Terrorist Lists & UNSCR, and FATF Recommendations 6, 7, 10 & 16  
-**Publication Date:** October 2026  
+**Publication Date:** October 19, 2026  
 **Document Status:** Approved / Production-Ready Specification  
 
 ---
@@ -20,6 +20,7 @@
 | **v3.0** | Oct 14, 2026 | Product Engineering | Master PRD, English-optimized 5-pass screening lifecycle, Add-on services (goAML, Copilot, Graph). |
 | **v4.0** | Oct 15, 2026 | Senior Dev / EDITH Core | Realization of Phases 1–4: Local Docker Dual-Database Infrastructure (PostgreSQL 17 + OpenSearch 2.12), OpenSearch 5-pass phonetic screening engine, Bulk streaming ingestion pipeline with 9-field AML mapping & deduplication/skip export, Case Investigation Engine with 15-min pessimistic lease locking, 4-Eyes Maker-Checker governance, and CBS HMAC-SHA256 signed webhooks (`RELEASE`/`FREEZE`). |
 | **v5.0** | Oct 17, 2026 | Senior Dev / EDITH Core | **Phase 5 Complete:** Live React 19 Portal (`edith-portal`) to `Edith.Gateway` integration bridge, real JWT token exchange per persona (`ANALYST`, `MLRO`, `SUPER_ADMIN`, `AUDITOR`), live case comment persistence & MLRO escalation/resolution wiring, portal bulk file upload (`CSV`/`JSON`/`XML`) with skipped duplicate download, offline-resilient OpenSearch/PostgreSQL fallback, and **93/93 automated tests passing green across 10 test projects**. |
+| **v5.1** | Oct 19, 2026 | Senior Dev / EDITH Core | **Phase 6 Complete:** Universal Single Entity & Transaction Screening overhaul (`NameSearchView.tsx` & `ScreeningConsole.tsx`), 6 screening possibilities coverage (Exact, Fuzzy, Dual-Factor, Clean Certificate, PEP, Corporate), full reset lifecycle (`Esc`/inline clear), resolved stale candidate match threshold filtering, and interactive on-click match decision diagrams. |
 
 ---
 

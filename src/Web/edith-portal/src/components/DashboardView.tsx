@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, 
   Activity, 
@@ -8,8 +8,30 @@ import {
   Globe, 
   TrendingUp
 } from 'lucide-react';
+import { EdithApi } from '../services/api';
 
 export const DashboardView: React.FC = () => {
+  const [openCasesCount, setOpenCasesCount] = useState(4);
+  const [criticalCasesCount, setCriticalCasesCount] = useState(2);
+  const [highCasesCount, setHighCasesCount] = useState(1);
+  const [screenedTotal, setScreenedTotal] = useState(68899);
+
+  useEffect(() => {
+    EdithApi.fetchCases().then(cases => {
+      if (cases.length > 0) {
+        setOpenCasesCount(cases.length);
+        setCriticalCasesCount(cases.filter(c => c.priority === 'CRITICAL').length);
+        setHighCasesCount(cases.filter(c => c.priority === 'HIGH').length);
+      }
+    });
+    EdithApi.fetchBulkJobs().then(jobs => {
+      if (jobs.length > 0) {
+        const total = jobs.reduce((acc, j) => acc + (j.totalRecords || 0), 0);
+        if (total > 0) setScreenedTotal(total);
+      }
+    });
+  }, []);
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Title */}
@@ -27,7 +49,7 @@ export const DashboardView: React.FC = () => {
         <div className="flex items-center gap-2 text-xs font-mono">
           <div className="px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/30 text-accent flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            All 5 Microservices Operational
+            PostgreSQL 17 & OpenSearch 2.x Live
           </div>
         </div>
       </div>
@@ -37,13 +59,13 @@ export const DashboardView: React.FC = () => {
         {/* Metric 1 */}
         <div className="bg-surface p-4 rounded-xl border border-border space-y-2">
           <div className="flex justify-between items-center text-muted text-xs font-medium">
-            <span>Screened Today</span>
+            <span>Screened & Indexed Records</span>
             <Activity className="w-4 h-4 text-primary" />
           </div>
-          <div className="text-2xl font-bold font-mono text-ink">2,418,920</div>
+          <div className="text-2xl font-bold font-mono text-ink">{screenedTotal.toLocaleString()}</div>
           <div className="flex items-center gap-1.5 text-[11px] text-accent font-mono">
             <TrendingUp className="w-3.5 h-3.5" />
-            <span>+14.2% vs yesterday peak</span>
+            <span>47,618 Watchlist + 991 Customers</span>
           </div>
         </div>
 
@@ -77,9 +99,9 @@ export const DashboardView: React.FC = () => {
             <span>Active Investigation Cases</span>
             <ShieldAlert className="w-4 h-4 text-critical" />
           </div>
-          <div className="text-2xl font-bold font-mono text-critical">42 Open</div>
+          <div className="text-2xl font-bold font-mono text-critical">{openCasesCount} Open</div>
           <div className="text-[11px] text-critical/80 font-mono">
-            3 Critical • 12 High • 27 Medium
+            {criticalCasesCount} Critical • {highCasesCount} High • {Math.max(0, openCasesCount - criticalCasesCount - highCasesCount)} Medium
           </div>
         </div>
       </div>

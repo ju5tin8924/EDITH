@@ -75,31 +75,60 @@ builder.Services.AddCors(options =>
 // 4. SignalR WebSockets
 builder.Services.AddSignalR();
 
+var pgConn = builder.Configuration.GetConnectionString("EdithPostgres")
+    ?? Environment.GetEnvironmentVariable("EDITH_PG_CONNECTION")
+    ?? "Host=localhost;Port=5432;Database=edith_aml;Username=edith_admin;Password=EdithSecurePassword2026!";
+
 // 5. IAM & Tenant Resolution Services
-builder.Services.AddSingleton<ITenantRegistry, InMemoryTenantRegistry>();
+builder.Services.AddSingleton<ITenantRegistry>(new PostgreSqlTenantRegistry(pgConn));
 builder.Services.AddScoped<ITenantContextAccessor, TenantContextAccessor>();
 builder.Services.AddSingleton<ITokenService, JwtTokenService>();
 builder.Services.AddSingleton<IEntitlementsService, EntitlementsService>();
 
-// 6. Screening Engine Services
+// 6. Screening Engine Services (OpenSearch + PostgreSQL)
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizer>();
 builder.Services.AddSingleton<INameSimilarityScorer, NameSimilarityScorer>();
-builder.Services.AddSingleton<IWatchlistSearchEngine, InMemoryWatchlistSearchEngine>();
-builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
-builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
-builder.Services.AddSingleton<IWhitelistService, InMemoryWhitelistService>();
 
-// 7. Case Management & Collision Locking
-builder.Services.AddSingleton<ICaseLockManager, CaseLockManager>();
-builder.Services.AddSingleton<ICaseService, CaseService>();
+var openSearchConfig = builder.Configuration.GetSection("OpenSearch");
+var osOpts = new OpenSearchOptions
+{
+    BaseUrl = openSearchConfig.GetValue<string>("BaseUrl") ?? "https://localhost:9200",
+    Username = openSearchConfig.GetValue<string>("Username") ?? "admin",
+    Password = openSearchConfig.GetValue<string>("Password") ?? "Tr@ns@ct10n$2026!#",
+    WatchlistIndex = openSearchConfig.GetValue<string>("WatchlistIndex") ?? "edith_watchlist_v1",
+    CustomersIndex = openSearchConfig.GetValue<string>("CustomersIndex") ?? "edith_customers_v1",
+    SkipSslValidation = openSearchConfig.GetValue<bool>("SkipSslValidation", true)
+};
+builder.Services.AddSingleton(osOpts);
+builder.Services.AddHttpClient<IWatchlistSearchEngine, OpenSearchWatchlistSearchEngine>(client =>
+{
+    client.BaseAddress = new Uri(osOpts.BaseUrl);
+}).ConfigurePrimaryHttpMessageHandler(() =>
+{
+    var handler = new HttpClientHandler();
+    if (osOpts.SkipSslValidation)
+    {
+        handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+    }
+    return handler;
+});
+
+builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
+builder.Services.AddSingleton<IIdempotencyStore>(new PostgreSqlIdempotencyStore(pgConn));
+builder.Services.AddSingleton<IWhitelistService>(new PostgreSqlWhitelistService(pgConn));
+
+// 7. Case Management & Collision Locking (PostgreSQL)
+var pgLockMgr = new PostgreSqlCaseLockManager(pgConn);
+builder.Services.AddSingleton<ICaseLockManager>(pgLockMgr);
+builder.Services.AddSingleton<ICaseService>(new PostgreSqlCaseService(pgConn, pgLockMgr));
 builder.Services.AddHttpClient<ICbsWebhookDispatcher, CbsWebhookDispatcher>();
 
-// 8. AML Rules & Backtesting Sandbox
+// 8. AML Rules & Backtesting Sandbox (PostgreSQL)
 builder.Services.AddSingleton<IRuleEngine, RuleEngine>();
-builder.Services.AddSingleton<IRuleRepository, InMemoryRuleRepository>();
+builder.Services.AddSingleton<IRuleRepository>(new PostgreSqlRuleRepository(pgConn));
 builder.Services.AddSingleton<IRuleBacktester, RuleBacktester>();
 
-// 9. Bulk Screening & Delta Sync Services
+// 9. Bulk Screening & Delta Sync Services (PostgreSQL)
 builder.Services.AddScoped<IBulkScreeningProcessor, BulkScreeningProcessor>();
 builder.Services.AddSingleton<IDeltaRescreeningService, DeltaRescreeningService>();
 builder.Services.AddSingleton<IAmlStreamingParser, AmlStreamingParser>();
@@ -116,7 +145,7 @@ builder.Services.AddSingleton<IBulkProgressNotifier>(sp =>
         }
     });
 });
-builder.Services.AddSingleton<IBulkJobRepository>(_ => new InMemoryBulkJobRepository(seedBaseline: true));
+builder.Services.AddSingleton<IBulkJobRepository>(new PostgreSqlBulkJobRepository(pgConn));
 builder.Services.AddScoped<IBulkIngestionPipeline, BulkIngestionPipeline>();
 builder.Services.AddHostedService<BulkScreeningBackgroundWorker>();
 
@@ -124,6 +153,11 @@ builder.Services.AddHostedService<BulkScreeningBackgroundWorker>();
 builder.Services.AddSingleton<IGoAmlExporter, GoAmlExporter>();
 builder.Services.AddSingleton<IStrNarrativeCopilot, StrNarrativeCopilot>();
 builder.Services.AddSingleton<IEntityGraphVisualizer, EntityGraphVisualizer>();
+
+// 10b. Core PostgreSQL Services (KYC, Masters, WORM Audit)
+builder.Services.AddSingleton<IKycService>(new PostgreSqlKycService(pgConn));
+builder.Services.AddSingleton<ISystemMastersService>(new PostgreSqlSystemMastersService(pgConn));
+builder.Services.AddSingleton<IAuditLedgerService>(new PostgreSqlAuditLedgerService(pgConn));
 
 // 11. Background Seed Service for Development
 builder.Services.AddHostedService<DevelopmentSeedService>();
@@ -146,7 +180,7 @@ app.MapIamEndpoints();
 app.MapScreeningEndpoints(includeHealth: false);
 app.MapCaseEndpoints();
 app.MapRuleEndpoints();
-app.MapBulkScreeningEndpoints();
+app.MapBulkScreeningEndpoints(pgConn);
 app.MapAddonEndpoints();
 app.MapKycEndpoints();
 app.MapSettingsEndpoints();

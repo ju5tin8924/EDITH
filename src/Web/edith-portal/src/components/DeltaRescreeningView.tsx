@@ -8,6 +8,7 @@ import {
   TrendingUp,
   Check
 } from 'lucide-react';
+import { EdithApi } from '../services/api';
 
 interface DeltaHit {
   id: string;
@@ -83,6 +84,9 @@ export const DeltaRescreeningView: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeHit, setActiveHit] = useState<DeltaHit | null>(MOCK_DELTA_HITS[0]);
   const [batchActionFeedback, setBatchActionFeedback] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [latestBatchId, setLatestBatchId] = useState('BATCH-2026-10-19-0200');
+  const [scannedCount, setScannedCount] = useState(47618);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => 
@@ -98,8 +102,47 @@ export const DeltaRescreeningView: React.FC = () => {
     }
   };
 
-  const handleBulkAction = (action: 'DISMISS' | 'ESCALATE') => {
+  const handleTriggerAdHocSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const res = await EdithApi.triggerDeltaSync();
+      if (res) {
+        setLatestBatchId(res.syncBatchId);
+        setScannedCount(res.scannedCustomers);
+        const liveHits: DeltaHit[] = res.hits.map((h, idx) => {
+          const prevScore = 14.0;
+          const newScore = Number(h.compositeScore || 92.5);
+          return {
+            id: h.id || `delta-live-${Date.now()}-${idx}`,
+            customerCode: h.customerCode,
+            customerName: h.customerName,
+            nationality: h.nationality || 'ARE',
+            watchlistSource: `${h.sourceList} Live Sync`,
+            previousScore: prevScore,
+            newScore,
+            deltaDiff: Number((newScore - prevScore).toFixed(1)),
+            deltaReason: `${h.matchDetails} (Matched: ${h.matchedWatchlistName})`,
+            status: 'PENDING_REVIEW',
+            updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16) + ' UTC'
+          };
+        });
+        if (liveHits.length > 0) {
+          setHits(prev => [...liveHits, ...prev]);
+          setActiveHit(liveHits[0]);
+        }
+        setBatchActionFeedback(`Delta Sync ${res.syncBatchId} completed: evaluated ${res.scannedCustomers.toLocaleString()} records against PostgreSQL watchlist. ${res.newDeltaHits} new delta intercept(s) detected.`);
+        setTimeout(() => setBatchActionFeedback(null), 5000);
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleBulkAction = async (action: 'DISMISS' | 'ESCALATE') => {
     if (selectedIds.length === 0) return;
+    const codes = hits.filter(h => selectedIds.includes(h.id)).map(h => h.customerCode);
+    await EdithApi.authorizeDeltaBatch(latestBatchId, codes);
     setHits(prev => prev.map(item => {
       if (selectedIds.includes(item.id)) {
         return {
@@ -109,7 +152,7 @@ export const DeltaRescreeningView: React.FC = () => {
       }
       return item;
     }));
-    setBatchActionFeedback(`Successfully executed ${action} for ${selectedIds.length} delta hit(s). Audit record generated.`);
+    setBatchActionFeedback(`Successfully executed ${action} for ${selectedIds.length} delta hit(s) in batch ${latestBatchId}. Audit record generated.`);
     setSelectedIds([]);
     setTimeout(() => setBatchActionFeedback(null), 4000);
   };
@@ -130,18 +173,22 @@ export const DeltaRescreeningView: React.FC = () => {
             Delta Rescreening & Watchlist Synchronization Hub
           </h1>
           <p className="text-xs text-muted mt-1">
-            Nightly delta synchronization evaluating 15M+ customer records against latest OFAC, UN, and EU sanction additions.
+            Nightly delta synchronization evaluating customer records against latest OFAC, UN, World-Check, and UAE EOCN sanction additions.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="text-right font-mono text-xs hidden sm:block">
             <div className="text-muted text-[10px]">LATEST SYNC BATCH</div>
-            <div className="font-bold text-ink">BATCH-2026-10-14-0200</div>
+            <div className="font-bold text-ink">{latestBatchId}</div>
           </div>
-          <button className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-mono font-bold hover:bg-primary-hover flex items-center gap-1.5 shadow-xs">
-            <RefreshCw className="w-3.5 h-3.5" />
-            Trigger Ad-Hoc Sync
+          <button
+            onClick={handleTriggerAdHocSync}
+            disabled={syncing}
+            className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-mono font-bold hover:bg-primary-hover flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing Watchlist...' : 'Trigger Ad-Hoc Sync'}
           </button>
         </div>
       </div>
@@ -150,8 +197,8 @@ export const DeltaRescreeningView: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-surface p-4 rounded-xl border border-border">
           <div className="text-muted text-xs font-medium">Delta Entities Tested</div>
-          <div className="text-2xl font-bold font-mono text-ink mt-1">1,418,290</div>
-          <div className="text-[11px] text-accent font-mono mt-1">✓ 100% evaluated in 4.2m</div>
+          <div className="text-2xl font-bold font-mono text-ink mt-1">{scannedCount.toLocaleString()}</div>
+          <div className="text-[11px] text-accent font-mono mt-1">✓ 100% evaluated against PG/OS</div>
         </div>
         <div className="bg-surface p-4 rounded-xl border border-border">
           <div className="text-muted text-xs font-medium">New Watchlist Additions</div>

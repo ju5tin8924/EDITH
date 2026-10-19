@@ -60,11 +60,11 @@ public sealed class ScreeningApiTests : IClassFixture<WebApplicationFactory<Prog
             TransactionRefNo = "TX-CLEAN-001",
             Amount = 50000m,
             Currency = "AED",
-            SenderName = "Ahmed Mohammed Al-Fassi",
-            SenderNationality = "AE",
-            SenderCountry = "AE",
-            BeneficiaryName = "Rashid Saeed Al-Nuaimi",
-            BeneficiaryCountry = "AE"
+            SenderName = "Liam Alexander O'Connor",
+            SenderNationality = "IE",
+            SenderCountry = "IE",
+            BeneficiaryName = "Sophia Isabella Miller",
+            BeneficiaryCountry = "NZ"
         };
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/screen/transaction")

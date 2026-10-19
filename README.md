@@ -22,6 +22,17 @@ Designed to eliminate false positives while guaranteeing statutory freeze compli
 
 ## Key Capabilities
 
+- **Universal Single Entity & Sanctions Search (`NameSearchView.tsx` & `ScreeningConsole.tsx`):**
+  - High-velocity deterministic search across 47,600+ records in PostgreSQL 17 (`screening.watchlist_entities`) and OpenSearch 2.12 (`edith_watchlist_v1`).
+  - Covers all 6 single entity screening possibilities:
+    1. *Exact Name Search (100%):* Normalized alias & full-name equality with zero false positive tolerance.
+    2. *Fuzzy & Phonetic Search:* Jaro-Winkler + Damerau-Levenshtein + Double Metaphone with interactive sensitivity threshold slider (50%–95%).
+    3. *Dual-Factor Exact Name & ID Search:* Dual-attribute verification matching entity name AND official identifier (OFAC UID, Passport, National ID, Trade License).
+    4. *Clean Entity Compliance Certificate:* Zero-match formal audit clearance receipt with SHA-256 fingerprint, timestamp, and 1-click clipboard compliance copy.
+    5. *Politically Exposed Person (PEP) Registry:* Distinct EDD triage indicator with Source of Wealth verification guidance.
+    6. *Corporate Entity & Trade License:* Organization and corporate alias resolution (e.g. UAE Trade License `TL-DXB-889120`).
+  - Frictionless search reset lifecycle: Dedicated `Clear Search` action, `Esc` keyboard shortcut, and inline input `(X)` clears.
+  - Interactive on-click diagrams: Search engine overview architecture diagram and per-match 4-step decision pipeline flowcharts with similarity distribution bars.
 - **Real-Time Transaction Interceptor:** Ingests SWIFT MT103 and ISO 20022 messages via high-throughput REST endpoints (`POST /api/v1/screen/transaction`) with `Idempotency-Key` replay protection, executing pre-clearance statutory freezes and auto-provisioning investigation cases.
 - **Deterministic 5-Pass Screening Engine (`Edith.Screening.Core`):**
   1. *Pass 1 — Unicode & Corporate Normalization:* Diacritic stripping, ligature decomposition, corporate noise suffix removal, and ASCII folding.
@@ -90,10 +101,12 @@ EDITH/
 ├── docker/                           # Local Dual-DB Docker Compose (PostgreSQL 17 + OpenSearch 2.12)
 ├── docs/                             # Engineering build plan (BUILD_PLAN.md)
 ├── MD_DOC/                           # Versioned Architecture, PRD, Database & Workplan PDFs/MDs
-│   ├── EDITH_Master_Specification_v5.0.md / .pdf
-│   ├── EDITH_Master_PRD_v4.0.md / .pdf
-│   ├── database_v2.0.md / .pdf
-│   └── EDITH_END_TO_END_WORKPLAN_v2.0.md / .pdf
+│   ├── TODO_v1.0.md                 # Live Roadmap (v1.2.0: Phases 1–6 Complete, Phase 7 Target)
+│   ├── CREDENTIALS_v1.0.md          # Infrastructure & Service Credentials (v1.1)
+│   ├── EDITH_Master_Specification_v5.0.md / .pdf # Master Architecture (v5.1)
+│   ├── EDITH_Master_PRD_v4.0.md / .pdf           # Master PRD (v4.1)
+│   ├── database_v2.0.md / .pdf                   # Database Architecture & DDL (v2.1)
+│   └── EDITH_END_TO_END_WORKPLAN_v2.0.md / .pdf  # Workplan Execution Ledger (v2.1)
 ├── src/
 │   ├── Addons/                      # goAML XML exporter, AI STR copilot, graph visualizer
 │   ├── Cases/                       # Case state machine, 15m pessimistic locking, SignalR hub

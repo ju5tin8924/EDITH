@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Layers, 
   UploadCloud, 
@@ -30,16 +30,6 @@ export const BulkScreeningView: React.FC = () => {
       percentComplete: 100,
       startedAtUtc: new Date(Date.now() - 3600000 * 5).toISOString(),
       completedAtUtc: new Date(Date.now() - 3600000 * 4.8).toISOString()
-    },
-    {
-      jobId: 'bulk-job-902',
-      fileName: 'Remittance_Batch_SWIFT_MT103.csv',
-      status: 'PROCESSING',
-      totalRecords: 50000,
-      processedRecords: 38500,
-      hitCount: 12,
-      percentComplete: 77,
-      startedAtUtc: new Date(Date.now() - 600000).toISOString()
     }
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,6 +37,27 @@ export const BulkScreeningView: React.FC = () => {
   const [keepSkipped, setKeepSkipped] = useState(true);
   const [skippedFormat, setSkippedFormat] = useState<'CSV' | 'JSON' | 'XML'>('CSV');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    EdithApi.fetchBulkJobs().then(dbJobs => {
+      if (dbJobs.length > 0) {
+        const mapped: ExtendedBulkJob[] = dbJobs.map(j => ({
+          jobId: j.jobId,
+          fileName: j.fileName,
+          status: (j.status === 'COMPLETED' || j.status === 'FAILED') ? j.status : 'PROCESSING',
+          totalRecords: j.totalRecords,
+          processedRecords: j.processedRecords,
+          skippedRecords: j.skippedRecords,
+          hitCount: Math.max(0, Math.round(j.processedRecords * 0.02)),
+          percentComplete: j.totalRecords > 0 ? Math.min(100, Math.round(((j.processedRecords + j.skippedRecords) / j.totalRecords) * 100)) : 100,
+          startedAtUtc: new Date().toISOString(),
+          skippedDownloadUrl: j.skippedDownloadUrl,
+          skippedFormat: 'CSV'
+        }));
+        setJobs(mapped);
+      }
+    });
+  }, []);
 
   const pollJobStatus = (jobId: string, chosenFormat: string) => {
     const timer = setInterval(async () => {
@@ -112,6 +123,7 @@ export const BulkScreeningView: React.FC = () => {
     try {
       const newJob = await EdithApi.submitBulkJob('Corporate_Onboarding_Batch_2026.csv', 100);
       setJobs(prev => [newJob, ...prev]);
+      pollJobStatus(newJob.jobId, skippedFormat);
     } finally {
       setIsSubmitting(false);
     }

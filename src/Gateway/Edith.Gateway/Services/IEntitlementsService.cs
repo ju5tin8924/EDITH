@@ -32,7 +32,7 @@ public sealed class EntitlementsService : IEntitlementsService
         var permissions = new List<string>();
         var menus = new List<MenuEntitlementDto>();
 
-        // 1. Dashboard (All roles)
+        // 1. Dashboard & Name Search (Accessible by ALL roles)
         menus.Add(new MenuEntitlementDto
         {
             Key = "dashboard",
@@ -42,7 +42,17 @@ public sealed class EntitlementsService : IEntitlementsService
             OrderIndex = 1,
             AllowedActions = ["view", "filter"]
         });
+        menus.Add(new MenuEntitlementDto
+        {
+            Key = "name_search",
+            Label = "Name & ID Search",
+            Icon = "Search",
+            Route = "/name-search",
+            OrderIndex = 2,
+            AllowedActions = ["search", "view"]
+        });
         permissions.Add("dashboard:view");
+        permissions.Add("screening:name_search");
 
         switch (role)
         {

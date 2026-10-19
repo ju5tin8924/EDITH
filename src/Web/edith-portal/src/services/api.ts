@@ -8,7 +8,9 @@ import {
   BulkJobSummary,
   RuleDefinition,
   BacktestResult,
-  CaseResolution
+  CaseResolution,
+  NameSearchRequest,
+  NameSearchResponse
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -42,6 +44,7 @@ export const getAuthHeaders = (): Record<string, string> => ({
 const DEFAULT_MENU_ITEMS = [
   // Group 1: Operational Screening & Ingestion
   { code: 'DASHBOARD', label: 'Executive Dashboard', path: '/dashboard', icon: 'BarChart3', enabled: true },
+  { code: 'NAME_SEARCH', label: 'Name & ID Search', path: '/name-search', icon: 'Search', enabled: true },
   { code: 'SCREENING', label: 'Single Entity Screening', path: '/screening', icon: 'ShieldAlert', enabled: true },
   { code: 'BULK', label: 'Bulk File Screening', path: '/bulk', icon: 'Layers', enabled: true },
   { code: 'DELTA', label: 'Delta Rescreening Hub', path: '/delta', icon: 'RefreshCw', enabled: true },
@@ -196,22 +199,33 @@ export const EdithApi = {
         const data = await res.json();
         const partyRole = beneficiary?.role || 'BENEFICIARY';
         const partyName = beneficiary?.fullName || 'Unknown Party';
+        const topScore = Number(data.overallScore || 0);
+        const rawStatus = (data.decision || data.status || 'CLEARED') as string;
+        const uiDecision = rawStatus === 'HELD' && topScore >= 95 && (data.triggeredList?.includes('OFAC') || data.triggeredList?.includes('UN'))
+          ? 'BLOCKED'
+          : (rawStatus as 'CLEARED' | 'HELD' | 'BLOCKED');
         
+        // Only include over-threshold candidate matches (or held/blocked decisions)
+        const effectiveMatches = (data.matches || []).filter((m: any) => 
+          rawStatus === 'HELD' || rawStatus === 'BLOCKED' || (Number(m.score || 0) >= 80)
+        );
+        const matchCount = (rawStatus === 'CLEARED' && !data.isWhitelisted) ? 0 : effectiveMatches.length;
+
         return {
-          decision: (data.decision || data.status || 'CLEARED'),
-          riskScore: Number(data.overallScore || 0),
+          decision: uiDecision,
+          riskScore: topScore,
           primaryHitReason: data.holdReason,
           evaluationLatencyMs: data.latencyMs || Math.round(performance.now() - startTime),
-          matchCount: data.matches?.length || 0,
+          matchCount: matchCount,
           isCached: false,
           replayedFromIdempotency: !!data.idempotencyReplayed,
           partyEvaluations: [
             {
               role: partyRole,
               queryName: partyName,
-              matchFound: (data.matches && data.matches.length > 0) || false,
-              maxScore: Number(data.overallScore || 0),
-              matchedCandidates: (data.matches || []).map((m: any) => ({
+              matchFound: matchCount > 0,
+              maxScore: topScore,
+              matchedCandidates: ((rawStatus === 'CLEARED' && !data.isWhitelisted) ? [] : effectiveMatches).map((m: any) => ({
                 candidateId: m.matchedEntityId || 'SDN-001',
                 canonicalName: m.matchedEntityName,
                 matchedName: m.matchedEntityName,
@@ -220,10 +234,10 @@ export const EdithApi = {
                 stringSimilarity: m.nameSimilarity ? m.nameSimilarity / 100 : 0.9,
                 phoneticSimilarity: m.phoneticSimilarity ? m.phoneticSimilarity / 100 : 1.0,
                 sanctionsList: m.sourceList || 'OFAC / UN',
-                isSuppressedByWhitelist: false,
+                isSuppressedByWhitelist: !!data.isWhitelisted,
                 designationDetails: m.matchDetails,
                 tokenBreakdown: [
-                  { queryToken: partyName.split(' ')[0] || '', candidateToken: m.matchedEntityName.split(' ')[0] || '', tokenScore: 95, matchType: 'FUZZY' }
+                  { queryToken: partyName.split(' ')[0] || '', candidateToken: m.matchedEntityName.split(' ')[0] || '', tokenScore: Math.round(m.nameSimilarity || 95), matchType: (m.nameSimilarity >= 99 ? 'EXACT' : 'FUZZY') }
                 ]
               }))
             }
@@ -615,5 +629,135 @@ Enhanced Due Diligence (EDD) confirmed no legitimate commercial contracts or tra
 
 5. ACTION TAKEN & RECOMMENDATION:
 The transaction was placed on immediate statutory HOLD. The compliance team recommends filing this Suspicious Transaction Report (STR) to the UAE Financial Intelligence Unit (goAML) and maintaining the asset freeze pending regulatory directive.`;
+  },
+
+  async searchNameAndId(request: NameSearchRequest): Promise<NameSearchResponse> {
+    const res = await fetch(`${API_BASE}/screen/name-search`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(request)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to execute Name & ID search' }));
+      throw new Error(err.error || 'Failed to execute Name & ID search');
+    }
+    return await res.json();
+  },
+
+  async fetchBulkJobs(): Promise<Array<{
+    jobId: string;
+    fileName: string;
+    status: string;
+    totalRecords: number;
+    processedRecords: number;
+    skippedRecords: number;
+    skippedDownloadUrl?: string;
+  }>> {
+    try {
+      const res = await fetch(`${API_BASE}/bulk/jobs`, { headers: getAuthHeaders() });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return [];
+  },
+
+  async triggerDeltaSync(): Promise<{
+    syncBatchId: string;
+    scannedCustomers: number;
+    newDeltaHits: number;
+    hits: Array<{
+      id?: string;
+      customerCode: string;
+      customerName: string;
+      nationality?: string;
+      matchedWatchlistName: string;
+      sourceList: string;
+      compositeScore: number;
+      matchDetails: string;
+    }>;
+  } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/delta/sync`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return null;
+  },
+
+  async authorizeDeltaBatch(batchId: string, approvedCustomerCodes: string[]): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/delta/authorize`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ batchId, approvedCustomerCodes })
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async fetchWhitelists(): Promise<Array<{
+    id: string;
+    tenantId: string;
+    customerId?: string;
+    entityIdentifier: string;
+    matchScope: string;
+    reason: string;
+    expiresAt?: string;
+    isActive: boolean;
+  }>> {
+    try {
+      const res = await fetch(`${API_BASE}/whitelists`, { headers: getAuthHeaders() });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return [];
+  },
+
+  async createWhitelist(payload: {
+    entityIdentifier: string;
+    matchScope: string;
+    reason: string;
+    expiresAt?: string;
+  }): Promise<{
+    id: string;
+    tenantId: string;
+    entityIdentifier: string;
+    matchScope: string;
+    reason: string;
+    expiresAt?: string;
+    isActive: boolean;
+  } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/whitelists`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return null;
+  },
+
+  async deleteWhitelist(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/whitelists/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 };
+

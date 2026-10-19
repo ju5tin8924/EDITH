@@ -43,6 +43,8 @@ public sealed record WatchlistEntity
     public string? Nationality { get; init; }
     public required string SourceList { get; init; } // OFAC_SDN, UN_CONSOLIDATED, etc.
     public required string Category { get; init; }   // SANCTION, PEP, ADVERSE_MEDIA
+    public string? AliasName { get; init; }
+    public string? IdDetails { get; init; }
     public bool IsBlocked { get; init; } = true;
     public bool IsActive { get; init; } = true;
 }

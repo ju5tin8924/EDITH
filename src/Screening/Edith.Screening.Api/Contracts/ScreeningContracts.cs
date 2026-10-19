@@ -178,3 +178,52 @@ public sealed record BulkJobStatusResponse
     public double ProgressPercentage => TotalRecords > 0 ? Math.Round((double)(ProcessedRecords + SkippedRecords) / TotalRecords * 100.0, 2) : 0.0;
 }
 
+public sealed record NameSearchRequest
+{
+    public string? Name { get; init; }
+    public string? IdNumber { get; init; }
+    /// <summary>
+    /// Search mode: "EXACT", "FUZZY", or "EXACT_NAME_AND_ID"
+    /// </summary>
+    public string SearchMode { get; init; } = "FUZZY";
+    public decimal MinScore { get; init; } = 65.0m;
+    public int MaxResults { get; init; } = 25;
+}
+
+public sealed record NameSearchResponse
+{
+    public required string QueryName { get; init; }
+    public required string NormalizedQueryName { get; init; }
+    public string? QueryId { get; init; }
+    public required string SearchMode { get; init; }
+    public required int TotalMatches { get; init; }
+    public required double LatencyMs { get; init; }
+    public required IReadOnlyList<NameSearchMatchDto> Matches { get; init; }
+    public DateTimeOffset EvaluatedAt { get; init; } = DateTimeOffset.UtcNow;
+}
+
+public sealed record NameSearchMatchDto
+{
+    public required Guid EntityId { get; init; }
+    public required string ExternalId { get; init; }
+    public required string FullName { get; init; }
+    public required string NormalizedTargetName { get; init; }
+    public required string EntityType { get; init; }
+    public string? AliasName { get; init; }
+    public string? IdDetails { get; init; }
+    public string? Nationality { get; init; }
+    public string? Dob { get; init; }
+    public required string SanctionsList { get; init; }
+    public required string SanctionsAuthority { get; init; }
+    public required string Category { get; init; }
+    public required bool IsBlocked { get; init; }
+    public required decimal Score { get; init; }
+    public required double StringSimilarity { get; init; }
+    public required double PhoneticSimilarity { get; init; }
+    public required string MatchModeUsed { get; init; }
+    public required string WhySanctioned { get; init; }
+    public required string WhyMatched { get; init; }
+    public required string TechnicalBreakdown { get; init; }
+}
+
+

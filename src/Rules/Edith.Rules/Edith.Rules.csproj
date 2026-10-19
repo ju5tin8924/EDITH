@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Npgsql" Version="10.0.3" />
     <ProjectReference Include="..\..\Screening\Edith.Screening.Core\Edith.Screening.Core.csproj" />
   </ItemGroup>
 

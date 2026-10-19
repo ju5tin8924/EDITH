@@ -52,13 +52,13 @@ public class SqlMigratorTests
     }
 
     [Fact]
-    public void Ddl_defines_the_expected_33_tables()
+    public void Ddl_defines_the_expected_37_tables()
     {
-        // 6 core + 8 rules + 11 screening + 5 cases + 3 notifications, per MD_DOC/database_v1.0.md.
+        // 6 core + 8 rules + 13 screening + 7 cases + 3 notifications, per MD_DOC/database_v2.0.md.
         var tableCount = SqlMigrator.LoadScripts(includeDevSeed: false)
             .Sum(s => CountOccurrences(s.Sql, "CREATE TABLE "));
 
-        Assert.Equal(33, tableCount);
+        Assert.Equal(37, tableCount);
     }
 
     private static int CountOccurrences(string text, string token)

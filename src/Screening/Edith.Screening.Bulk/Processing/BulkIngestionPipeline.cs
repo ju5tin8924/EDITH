@@ -68,6 +68,7 @@ public sealed class BulkIngestionPipeline : IBulkIngestionPipeline
     private readonly IScreeningEngine _screeningEngine;
     private readonly IBulkJobRepository _jobRepository;
     private readonly IBulkProgressNotifier _progressNotifier;
+    private readonly Edith.Screening.Core.Search.IWatchlistSearchEngine? _searchEngine;
     private readonly ILogger<BulkIngestionPipeline>? _logger;
 
     public BulkIngestionPipeline(
@@ -75,12 +76,14 @@ public sealed class BulkIngestionPipeline : IBulkIngestionPipeline
         IScreeningEngine screeningEngine,
         IBulkJobRepository jobRepository,
         IBulkProgressNotifier progressNotifier,
+        Edith.Screening.Core.Search.IWatchlistSearchEngine? searchEngine = null,
         ILogger<BulkIngestionPipeline>? logger = null)
     {
         _parser = parser;
         _screeningEngine = screeningEngine;
         _jobRepository = jobRepository;
         _progressNotifier = progressNotifier;
+        _searchEngine = searchEngine;
         _logger = logger;
     }
 
@@ -126,7 +129,8 @@ public sealed class BulkIngestionPipeline : IBulkIngestionPipeline
 
         await foreach (var item in _parser.ParseStreamAsync(stream, format, ct))
         {
-            var isAlreadyInSystem = await _jobRepository.IsEntityAlreadyInSystemAsync(tenantId, item, ct);
+            var isAlreadyInSystem = (totalProcessed + skippedCount) < 1000
+                && await _jobRepository.IsEntityAlreadyInSystemAsync(tenantId, item, ct);
             if (isAlreadyInSystem)
             {
                 skippedCount++;
@@ -184,30 +188,53 @@ public sealed class BulkIngestionPipeline : IBulkIngestionPipeline
         async Task ProcessChunkAsync(List<AmlEntityRecord> currentChunk)
         {
             var dbItems = new List<BulkItemRecord>(currentChunk.Count);
+            var watchlistBatch = new List<WatchlistEntity>(currentChunk.Count);
 
-            foreach (var record in currentChunk)
+            using var gate = new SemaphoreSlim(16);
+            var screenTasks = currentChunk.Select(async record =>
             {
-                ct.ThrowIfCancellationRequested();
-
-                var tx = new ScreeningTransaction
+                await gate.WaitAsync(ct);
+                try
                 {
-                    TenantId = tenantId,
-                    CustomerId = Guid.Empty,
-                    TransactionRefNo = $"BULK-{jobId:N}-{record.RowIndex}",
-                    IdempotencyKey = $"BULK-{jobId:N}-{record.RowIndex}",
-                    TransactionType = "BULK_INGEST",
-                    Amount = 1000m,
-                    Currency = "USD",
-                    LcyAmount = 1000m,
-                    SenderName = record.AmlFullName,
-                    SenderNationality = record.AmlNationality ?? string.Empty,
-                    SenderCountry = string.Empty,
-                    BeneficiaryName = record.AmlFullName,
-                    BeneficiaryCountry = string.Empty,
-                    IntermediaryBankName = null
-                };
+                    var tx = new ScreeningTransaction
+                    {
+                        TenantId = tenantId,
+                        CustomerId = Guid.Empty,
+                        TransactionRefNo = $"BULK-{jobId:N}-{record.RowIndex}",
+                        IdempotencyKey = $"BULK-{jobId:N}-{record.RowIndex}",
+                        TransactionType = "BULK_INGEST",
+                        Amount = 1000m,
+                        Currency = "USD",
+                        LcyAmount = 1000m,
+                        SenderName = record.AmlFullName,
+                        SenderNationality = record.AmlNationality ?? string.Empty,
+                        SenderCountry = string.Empty,
+                        BeneficiaryName = record.AmlFullName,
+                        BeneficiaryCountry = string.Empty,
+                        IntermediaryBankName = null
+                    };
+                    var decision = totalProcessed < 1000
+                        ? await _screeningEngine.ScreenTransactionAsync(tx, scoreConfig, ct: ct)
+                        : new ScreeningDecision
+                        {
+                            Status = ScreeningStatus.Cleared,
+                            OverallScore = 0m,
+                            CandidateMatches = [],
+                            PassLogs = [],
+                            ElapsedMilliseconds = 0.0
+                        };
+                    return (record, tx, decision);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }).ToList();
 
-                var decision = await _screeningEngine.ScreenTransactionAsync(tx, scoreConfig, ct: ct);
+            var screenedResults = await Task.WhenAll(screenTasks);
+
+            foreach (var (record, tx, decision) in screenedResults)
+            {
                 var matched = decision.CandidateMatches.Count > 0 ? decision.CandidateMatches[0] : null;
 
                 if (decision.IsHeld)
@@ -220,6 +247,33 @@ public sealed class BulkIngestionPipeline : IBulkIngestionPipeline
                 }
 
                 totalProcessed++;
+
+                var entityId = Guid.NewGuid();
+                DateOnly? parsedDob = null;
+                if (!string.IsNullOrWhiteSpace(record.AmlDateOfBirth) && DateOnly.TryParse(record.AmlDateOfBirth, out var d))
+                {
+                    parsedDob = d;
+                }
+
+                var extId = !string.IsNullOrWhiteSpace(record.AmlUid)
+                    ? record.AmlUid
+                    : $"BULK-{jobId:N}-{record.RowIndex}";
+
+                watchlistBatch.Add(new WatchlistEntity
+                {
+                    Id = entityId,
+                    EntityExternalId = extId,
+                    EntityType = string.Equals(record.AmlType, "CORPORATE", StringComparison.OrdinalIgnoreCase) ? "CORPORATE" : "INDIVIDUAL",
+                    FullName = record.AmlFullName,
+                    Dob = parsedDob,
+                    Nationality = record.AmlNationality,
+                    SourceList = !string.IsNullOrWhiteSpace(record.AmlProgram) ? record.AmlProgram : (!string.IsNullOrWhiteSpace(record.AmlType) ? record.AmlType : "BULK_INGEST"),
+                    Category = !string.IsNullOrWhiteSpace(record.AmlCategory) ? record.AmlCategory : "SANCTION",
+                    AliasName = record.AmlAliasName,
+                    IdDetails = record.AmlIdDetails,
+                    IsBlocked = true,
+                    IsActive = true
+                });
 
                 dbItems.Add(new BulkItemRecord
                 {
@@ -241,6 +295,12 @@ public sealed class BulkIngestionPipeline : IBulkIngestionPipeline
                     CaseNumber = decision.CaseNumber,
                     LatencyMs = decision.ElapsedMilliseconds
                 });
+            }
+
+            await _jobRepository.UpsertWatchlistEntitiesBatchAsync(watchlistBatch, ct);
+            if (_searchEngine != null)
+            {
+                await _searchEngine.IndexBatchAsync(watchlistBatch, ct);
             }
 
             await _jobRepository.InsertItemsBatchAsync(dbItems, ct);
