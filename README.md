@@ -99,8 +99,8 @@ EDITH/
 │   ├── opensearch/                  # OpenSearch 2.12 phonetic & n-gram index mappings
 │   └── vault/                       # HashiCorp Vault agent configuration
 ├── docker/                           # Local Dual-DB Docker Compose (PostgreSQL 17 + OpenSearch 2.12)
-├── docs/                             # Engineering build plan (BUILD_PLAN.md)
 ├── MD_DOC/                           # Versioned Architecture, PRD, Database & Workplan Documentation
+│   ├── README.md                    # Master Documentation Catalog & Reading Order
 │   ├── TODO_v1.0.md                 # Live Roadmap (v1.2.0: Phases 1–6 Complete, Phase 7 Target)
 │   ├── CREDENTIALS_v1.0.md          # Infrastructure & Service Credentials (v1.1)
 │   ├── EDITH_Master_Specification_v5.0.md # Master Architecture & Specification (v5.1)

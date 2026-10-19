@@ -108,3 +108,13 @@ Frontend Build:       tsc -b && vite build (0 errors)
 | `Edith.Addons.Tests` | 6 | UNODC goAML XML export, AI STR narrative copilot, multi-hop entity relationship graph visualizer. |
 | `Edith.Rules.Tests` | 5 | High-risk corridor, structuring/smurfing, large cash threshold rules, and historical backtesting sandbox. |
 | `Edith.Performance.Benchmark` | 1 | High-concurrency 5-pass screening latency benchmark. |
+
+---
+
+## 8. Resolved Architectural Decisions
+
+1. **Cross-Schema Foreign Keys (Monolithic DB / Modular App):** Retained with cross-schema foreign keys. The PostgreSQL database acts as a monolithic safety net guaranteeing referential integrity; .NET microservices remain decoupled at the application layer, interacting via APIs and Kafka rather than cross-schema SQL joins. Database migrations are managed centrally via `Edith.Database.Migrator`.
+2. **Partitioning `screening.transactions`:** Monthly partitioning was deliberately omitted for `screening.transactions` to preserve primary key and unique constraints (`transaction_ref_no`, `idempotency_key`) and maintain referential integrity for downstream foreign keys (`cases.aml_cases`).
+3. **Tenant-Scoped Composite Uniqueness:** Replaced global unique constraints with tenant-scoped composite constraints on `core.users(tenant_id, username)`, `screening.customers(tenant_id, customer_code)`, `rules.aml_rules(tenant_id, rule_code)`, and `rules.setup_controls(tenant_id, control_code)`.
+4. **Target Metrics & SLA Realism:** All SLA targets (sub-second 5-pass screening, P99 < 10ms in-memory, < 50ms OpenSearch) are documented with empirical benchmarks in `Edith.Performance.Benchmark`.
+5. **Local Dual-DB vs Target Platform:** Local developer environment runs strictly on Docker Compose (PostgreSQL 17 on `:5432` + OpenSearch 2.12 on `:9200`). Production packaging targets Kubernetes with Helm charts, Istio mTLS, and HashiCorp Vault.
