@@ -100,13 +100,13 @@ EDITH/
 │   └── vault/                       # HashiCorp Vault agent configuration
 ├── docker/                           # Local Dual-DB Docker Compose (PostgreSQL 17 + OpenSearch 2.12)
 ├── docs/                             # Engineering build plan (BUILD_PLAN.md)
-├── MD_DOC/                           # Versioned Architecture, PRD, Database & Workplan PDFs/MDs
+├── MD_DOC/                           # Versioned Architecture, PRD, Database & Workplan Documentation
 │   ├── TODO_v1.0.md                 # Live Roadmap (v1.2.0: Phases 1–6 Complete, Phase 7 Target)
 │   ├── CREDENTIALS_v1.0.md          # Infrastructure & Service Credentials (v1.1)
-│   ├── EDITH_Master_Specification_v5.0.md / .pdf # Master Architecture (v5.1)
-│   ├── EDITH_Master_PRD_v4.0.md / .pdf           # Master PRD (v4.1)
-│   ├── database_v2.0.md / .pdf                   # Database Architecture & DDL (v2.1)
-│   └── EDITH_END_TO_END_WORKPLAN_v2.0.md / .pdf  # Workplan Execution Ledger (v2.1)
+│   ├── EDITH_Master_Specification_v5.0.md # Master Architecture & Specification (v5.1)
+│   ├── EDITH_Master_PRD_v4.0.md           # Master PRD (v4.1)
+│   ├── database_v2.0.md                   # Database Architecture & DDL (v2.1)
+│   └── EDITH_END_TO_END_WORKPLAN_v2.0.md  # Workplan Execution Ledger (v2.1)
 ├── src/
 │   ├── Addons/                      # goAML XML exporter, AI STR copilot, graph visualizer
 │   ├── Cases/                       # Case state machine, 15m pessimistic locking, SignalR hub
