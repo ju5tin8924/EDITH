@@ -39,6 +39,14 @@ public sealed record ScreenTransactionRequest
     public DateTimeOffset? TransactionDate { get; init; }
 
     public decimal? MinThresholdScore { get; init; }
+
+    public decimal? NameWeightage { get; init; }
+
+    public decimal? NationalityWeightage { get; init; }
+
+    public decimal? DobWeightage { get; init; }
+
+    public decimal? IdWeightage { get; init; }
 }
 
 public sealed record ScreenTransactionResponse
@@ -54,6 +62,8 @@ public sealed record ScreenTransactionResponse
     public string? HoldReason { get; init; }
 
     public string? TriggeredList { get; init; }
+
+    public Guid? CaseId { get; init; }
 
     public string? CaseNumber { get; init; }
 
@@ -182,6 +192,7 @@ public sealed record NameSearchRequest
 {
     public string? Name { get; init; }
     public string? IdNumber { get; init; }
+    public int? BirthYear { get; init; }
     /// <summary>
     /// Search mode: "EXACT", "FUZZY", or "EXACT_NAME_AND_ID"
     /// </summary>
@@ -195,6 +206,7 @@ public sealed record NameSearchResponse
     public required string QueryName { get; init; }
     public required string NormalizedQueryName { get; init; }
     public string? QueryId { get; init; }
+    public int? QueryBirthYear { get; init; }
     public required string SearchMode { get; init; }
     public required int TotalMatches { get; init; }
     public required double LatencyMs { get; init; }
@@ -213,6 +225,8 @@ public sealed record NameSearchMatchDto
     public string? IdDetails { get; init; }
     public string? Nationality { get; init; }
     public string? Dob { get; init; }
+    public int? YobDelta { get; init; }
+    public bool IsIdMatched { get; init; }
     public required string SanctionsList { get; init; }
     public required string SanctionsAuthority { get; init; }
     public required string Category { get; init; }
@@ -226,4 +240,54 @@ public sealed record NameSearchMatchDto
     public required string TechnicalBreakdown { get; init; }
 }
 
+public sealed record CreateInterceptCaseRequest
+{
+    public string? TransactionRefNo { get; init; }
+    public string? SenderName { get; init; }
+    public required string BeneficiaryName { get; init; }
+    public decimal Amount { get; init; } = 50000m;
+    public string Currency { get; init; } = "AED";
+    public required decimal RiskScore { get; init; }
+    public required string TriggeredList { get; init; }
+    public required string HoldReason { get; init; }
+}
 
+public sealed record CreateInterceptCaseResponse
+{
+    public required Guid CaseId { get; init; }
+    public required string CaseNumber { get; init; }
+    public required string Priority { get; init; }
+    public required string Status { get; init; }
+    public required DateTimeOffset SlaDueDate { get; init; }
+}
+
+public sealed record ScreeningAuditCertificateRequest
+{
+    public required string SubjectName { get; init; }
+    public string? SubjectId { get; init; }
+    public required string ScreeningType { get; init; } // SINGLE_ENTITY | TRANSACTION
+    public required string Decision { get; init; }
+    public required decimal OverallScore { get; init; }
+    public required double LatencyMs { get; init; }
+    public string? CaseNumber { get; init; }
+    public IReadOnlyList<PassLogDto>? PassLogs { get; init; }
+    public int MatchCount { get; init; }
+}
+
+public sealed record ScreeningAuditCertificateResponse
+{
+    public required string CertificateId { get; init; }
+    public required string IssuedAtUtc { get; init; }
+    public required string TenantId { get; init; }
+    public required string SubjectName { get; init; }
+    public string? SubjectId { get; init; }
+    public required string ScreeningType { get; init; }
+    public required string Decision { get; init; }
+    public required decimal OverallScore { get; init; }
+    public required double LatencyMs { get; init; }
+    public string? CaseNumber { get; init; }
+    public required int MatchCount { get; init; }
+    public required IReadOnlyList<PassLogDto> PassLogs { get; init; }
+    public required string WormBlockHashSha256 { get; init; }
+    public required string RegulatoryAttestation { get; init; }
+}

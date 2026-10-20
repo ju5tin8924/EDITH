@@ -17,9 +17,22 @@ var pgConn = builder.Configuration.GetConnectionString("EdithPostgres")
     ?? Environment.GetEnvironmentVariable("EDITH_PG_CONNECTION")
     ?? "Host=localhost;Port=5432;Database=edith_aml;Username=edith_admin;Password=EdithSecurePassword2026!";
 
+bool usePostgres = false;
+try
+{
+    using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=1");
+    probeConn.Open();
+    usePostgres = true;
+}
+catch
+{
+    usePostgres = false;
+}
+
 // Core Screening Services
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizer>();
 builder.Services.AddSingleton<INameSimilarityScorer, NameSimilarityScorer>();
+builder.Services.AddSingleton<InMemoryWatchlistSearchEngine>();
 
 var openSearchConfig = builder.Configuration.GetSection("OpenSearch");
 var osOpts = new OpenSearchOptions
@@ -48,20 +61,32 @@ builder.Services.AddHttpClient<IWatchlistSearchEngine, OpenSearchWatchlistSearch
 
 builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
 
-// State & Cache Services (PostgreSQL)
-builder.Services.AddSingleton<IIdempotencyStore>(new PostgreSqlIdempotencyStore(pgConn));
-builder.Services.AddSingleton<IWhitelistService>(new PostgreSqlWhitelistService(pgConn));
+// State, Cache, Case & Bulk Services (PostgreSQL with In-Memory Fallback)
+if (usePostgres)
+{
+    builder.Services.AddSingleton<IIdempotencyStore>(new PostgreSqlIdempotencyStore(pgConn));
+    builder.Services.AddSingleton<IWhitelistService>(new PostgreSqlWhitelistService(pgConn));
 
-// Case Management (PostgreSQL)
-var pgLockMgr = new PostgreSqlCaseLockManager(pgConn);
-builder.Services.AddSingleton<ICaseLockManager>(pgLockMgr);
-builder.Services.AddSingleton<ICaseService>(new PostgreSqlCaseService(pgConn, pgLockMgr));
+    var pgLockMgr = new PostgreSqlCaseLockManager(pgConn);
+    builder.Services.AddSingleton<ICaseLockManager>(pgLockMgr);
+    builder.Services.AddSingleton<ICaseService>(new PostgreSqlCaseService(pgConn, pgLockMgr));
+    builder.Services.AddSingleton<IBulkJobRepository>(new PostgreSqlBulkJobRepository(pgConn));
+}
+else
+{
+    builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+    builder.Services.AddSingleton<IWhitelistService, InMemoryWhitelistService>();
 
-// Bulk Ingestion Services (PostgreSQL)
+    var memLockMgr = new CaseLockManager();
+    builder.Services.AddSingleton<ICaseLockManager>(memLockMgr);
+    builder.Services.AddSingleton<ICaseService>(new CaseService(memLockMgr));
+    builder.Services.AddSingleton<IBulkJobRepository, InMemoryBulkJobRepository>();
+}
+
+// Bulk Ingestion Services
 builder.Services.AddSingleton<IAmlStreamingParser, AmlStreamingParser>();
 builder.Services.AddSingleton<IBulkJobChannel, ChannelBulkJobDispatcher>();
 builder.Services.AddSingleton<IBulkProgressNotifier, CallbackProgressNotifier>();
-builder.Services.AddSingleton<IBulkJobRepository>(new PostgreSqlBulkJobRepository(pgConn));
 
 builder.Services.AddScoped<IBulkIngestionPipeline, BulkIngestionPipeline>();
 builder.Services.AddHostedService<BulkScreeningBackgroundWorker>();

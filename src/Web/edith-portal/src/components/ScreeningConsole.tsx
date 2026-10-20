@@ -6,19 +6,28 @@ import {
   Clock, 
   Zap, 
   Search, 
-  ArrowRight,
-  ShieldCheck,
-  Building,
-  UserCheck,
-  RotateCcw,
-  GitBranch,
-  ChevronDown,
-  ChevronUp,
-  FileWarning
+  ArrowRight, 
+  ShieldCheck, 
+  Building, 
+  UserCheck, 
+  RotateCcw, 
+  GitBranch, 
+  ChevronDown, 
+  ChevronUp, 
+  FileWarning, 
+  Sliders, 
+  FileText, 
+  PlusCircle, 
+  Download, 
+  X, 
+  Check 
 } from 'lucide-react';
 import { 
   TransactionScreeningRequest, 
-  ScreeningResult 
+  ScreeningResult, 
+  CandidateMatch, 
+  ScreeningAuditCertificate,
+  PassLogDto
 } from '../types';
 import { EdithApi } from '../services/api';
 
@@ -72,8 +81,28 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
     ]
   });
 
+  // Engine Sensitivity & Pass Config Drawer States
+  const [isConfigDrawerOpen, setIsConfigDrawerOpen] = useState(false);
+  const [minThresholdScore, setMinThresholdScore] = useState<number>(75);
+  const [nameWeightage, setNameWeightage] = useState<number>(60);
+  const [nationalityWeightage, setNationalityWeightage] = useState<number>(15);
+  const [dobWeightage, setDobWeightage] = useState<number>(15);
+  const [idWeightage, setIdWeightage] = useState<number>(10);
+
+  // Screening Results & UI Diagnostics
   const [result, setResult] = useState<ScreeningResult | null>(null);
   const [activeDiagramCandidateId, setActiveDiagramCandidateId] = useState<string | null>(null);
+
+  // Status & Modals
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [whitelistModalCandidate, setWhitelistModalCandidate] = useState<CandidateMatch | null>(null);
+  const [whitelistScope, setWhitelistScope] = useState<string>('EXACT');
+  const [whitelistReason, setWhitelistReason] = useState<string>(
+    'Verified secondary identifiers and trade licenses confirm false-positive mismatch.'
+  );
+  const [whitelistSubmitting, setWhitelistSubmitting] = useState(false);
+  const [certificateData, setCertificateData] = useState<ScreeningAuditCertificate | null>(null);
+  const [certifying, setCertifying] = useState(false);
 
   const toggleCandidateDiagram = (id: string) => {
     setActiveDiagramCandidateId(prev => (prev === id ? null : id));
@@ -163,15 +192,113 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
     }
   };
 
+  const applySensitivityPreset = (preset: 'strict' | 'standard' | 'relaxed') => {
+    if (preset === 'strict') {
+      setMinThresholdScore(70);
+      setNameWeightage(55);
+      setNationalityWeightage(20);
+      setDobWeightage(15);
+      setIdWeightage(10);
+    } else if (preset === 'standard') {
+      setMinThresholdScore(75);
+      setNameWeightage(60);
+      setNationalityWeightage(15);
+      setDobWeightage(15);
+      setIdWeightage(10);
+    } else {
+      setMinThresholdScore(85);
+      setNameWeightage(70);
+      setNationalityWeightage(10);
+      setDobWeightage(10);
+      setIdWeightage(10);
+    }
+  };
+
   const handleScreen = async (e: React.FormEvent) => {
     e.preventDefault();
     setResult(null);
     setLoading(true);
     try {
-      const res = await EdithApi.screenTransaction(formData);
+      const payload: TransactionScreeningRequest = {
+        ...formData,
+        minThresholdScore,
+        nameWeightage,
+        nationalityWeightage,
+        dobWeightage,
+        idWeightage
+      };
+      const res = await EdithApi.screenTransaction(payload);
       setResult(res);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 1-Click Intercept & Persistent Case Creation
+  const handleInterceptCase = async (candidate?: CandidateMatch) => {
+    try {
+      const party = formData.parties[0];
+      const created = await EdithApi.createInterceptCase({
+        beneficiaryName: candidate?.canonicalName || party?.fullName || 'Screened Target',
+        riskScore: candidate?.confidenceScore || result?.riskScore || 85,
+        triggeredList: candidate?.sanctionsList || 'OFAC / UN Sanctions',
+        holdReason: `1-Click Direct Intercept from Transaction Screening Console (${candidate?.category || 'SANCTIONS'})`
+      });
+      if (created) {
+        setStatusMessage(`Provisioned Case ${created.caseNumber} in 3-Pane Investigation Workspace.`);
+        setTimeout(() => {
+          if (onOpenCase) onOpenCase(created.caseId);
+        }, 1200);
+      }
+    } catch {
+      setStatusMessage('Case intercept failed. Please check backend connection.');
+    }
+  };
+
+  // 1-Click Whitelist Submission
+  const handleWhitelistSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!whitelistModalCandidate) return;
+    setWhitelistSubmitting(true);
+    try {
+      const expiresAt = new Date();
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      await EdithApi.createWhitelist({
+        entityIdentifier: whitelistModalCandidate.candidateId || whitelistModalCandidate.canonicalName,
+        matchScope: whitelistScope,
+        reason: whitelistReason,
+        expiresAt: expiresAt.toISOString()
+      });
+      setStatusMessage(`Added ${whitelistModalCandidate.canonicalName} to 12-Month Whitelist Suppression ledger.`);
+      setWhitelistModalCandidate(null);
+      setTimeout(() => setStatusMessage(null), 4000);
+    } catch {
+      setStatusMessage('Failed to register whitelist exception.');
+    } finally {
+      setWhitelistSubmitting(false);
+    }
+  };
+
+  // Export Cryptographically Signed WORM Certificate
+  const handleExportCertificate = async () => {
+    if (!result) return;
+    setCertifying(true);
+    try {
+      const primaryParty = formData.parties[0]?.fullName || 'Counterparty';
+      const cert = await EdithApi.generateScreeningAuditCertificate({
+        subjectName: primaryParty,
+        subjectId: formData.sourceAccount || undefined,
+        screeningType: 'TRANSACTION',
+        decision: result.decision,
+        overallScore: result.riskScore,
+        latencyMs: result.evaluationLatencyMs,
+        matchCount: result.matchCount
+      });
+      setCertificateData(cert);
+    } catch {
+      setStatusMessage('Certificate generation failed.');
+    } finally {
+      setCertifying(false);
     }
   };
 
@@ -201,6 +328,12 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
     }
   };
 
+  const getYearFromDob = (dob?: string): number | null => {
+    if (!dob) return null;
+    const match = dob.match(/(\d{4})/);
+    return match ? parseInt(match[1], 10) : null;
+  };
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Top Banner & Quick Presets */}
@@ -215,7 +348,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted font-medium">Quick Test Scenarios:</span>
           <button
             onClick={() => applyPreset('sanction')}
@@ -236,6 +369,19 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
             High Risk Corridor
           </button>
           <button
+            onClick={() => setIsConfigDrawerOpen(prev => !prev)}
+            className={`px-2.5 py-1 text-xs rounded border transition font-medium flex items-center gap-1.5 ${
+              isConfigDrawerOpen
+                ? 'bg-primary text-white border-primary'
+                : 'bg-surface-muted text-ink border-border hover:bg-border/30'
+            }`}
+            title="Configure sensitivity thresholds and scoring weights"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Sensitivity Config</span>
+            {isConfigDrawerOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+          <button
             onClick={handleReset}
             className="px-2.5 py-1 text-xs rounded bg-surface-muted text-ink border border-border hover:bg-border/30 transition font-medium flex items-center gap-1"
             title="Clear all fields to default blank state"
@@ -245,6 +391,146 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
           </button>
         </div>
       </div>
+
+      {/* Status Toast */}
+      {statusMessage && (
+        <div className="p-3 bg-primary/10 border border-primary/30 rounded-lg text-primary text-xs font-mono flex items-center justify-between animate-in fade-in">
+          <span>{statusMessage}</span>
+          <button onClick={() => setStatusMessage(null)} className="hover:text-primary-dark">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Collapsible Engine Sensitivity & Pass Config Drawer */}
+      {isConfigDrawerOpen && (
+        <div className="bg-surface rounded-xl border border-primary/30 p-5 space-y-4 animate-in fade-in duration-150">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-primary" />
+              <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-ink">
+                Pass 1-5 Engine Sensitivity & Weight Config
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted font-mono">Corridor Presets:</span>
+              <button
+                type="button"
+                onClick={() => applySensitivityPreset('strict')}
+                className="px-2 py-0.5 text-[10px] font-mono rounded bg-critical/15 text-critical border border-critical/30 hover:bg-critical/25"
+              >
+                High-Risk Strict (70%)
+              </button>
+              <button
+                type="button"
+                onClick={() => applySensitivityPreset('standard')}
+                className="px-2 py-0.5 text-[10px] font-mono rounded bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              >
+                FATF Balanced (75%)
+              </button>
+              <button
+                type="button"
+                onClick={() => applySensitivityPreset('relaxed')}
+                className="px-2 py-0.5 text-[10px] font-mono rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25"
+              >
+                Domestic Fast (85%)
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 text-xs font-mono">
+            {/* Min Score Threshold */}
+            <div className="p-3 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-muted font-bold">Min Confidence:</span>
+                <span className="font-bold text-primary">{minThresholdScore}%</span>
+              </div>
+              <input
+                type="range"
+                min={50}
+                max={95}
+                step={1}
+                value={minThresholdScore}
+                onChange={e => setMinThresholdScore(parseInt(e.target.value, 10))}
+                className="w-full accent-primary"
+              />
+              <div className="text-[10px] text-muted">Triggers EDD / Freeze alert</div>
+            </div>
+
+            {/* Name Weight */}
+            <div className="p-3 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-muted font-bold">Name Weight:</span>
+                <span className="font-bold text-ink">{nameWeightage}%</span>
+              </div>
+              <input
+                type="range"
+                min={30}
+                max={80}
+                step={5}
+                value={nameWeightage}
+                onChange={e => setNameWeightage(parseInt(e.target.value, 10))}
+                className="w-full accent-primary"
+              />
+              <div className="text-[10px] text-muted">Jaro & Levenshtein weight</div>
+            </div>
+
+            {/* Nationality Weight */}
+            <div className="p-3 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-muted font-bold">Nat Weight:</span>
+                <span className="font-bold text-ink">{nationalityWeightage}%</span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={30}
+                step={5}
+                value={nationalityWeightage}
+                onChange={e => setNationalityWeightage(parseInt(e.target.value, 10))}
+                className="w-full accent-primary"
+              />
+              <div className="text-[10px] text-muted">ISO-2 jurisdiction alignment</div>
+            </div>
+
+            {/* DOB Weight */}
+            <div className="p-3 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-muted font-bold">DOB Weight:</span>
+                <span className="font-bold text-ink">{dobWeightage}%</span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={30}
+                step={5}
+                value={dobWeightage}
+                onChange={e => setDobWeightage(parseInt(e.target.value, 10))}
+                className="w-full accent-primary"
+              />
+              <div className="text-[10px] text-muted">Year & Day delta alignment</div>
+            </div>
+
+            {/* ID Weight */}
+            <div className="p-3 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-muted font-bold">ID Weight:</span>
+                <span className="font-bold text-ink">{idWeightage}%</span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={30}
+                step={5}
+                value={idWeightage}
+                onChange={e => setIdWeightage(parseInt(e.target.value, 10))}
+                className="w-full accent-primary"
+              />
+              <div className="text-[10px] text-muted">Passport & National ID factor</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Screening Input Form (Left 5 cols) */}
@@ -424,7 +710,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                   {getDecisionBadge(result.decision)}
                 </div>
 
-                <div className="flex items-center gap-3 font-mono text-xs">
+                <div className="flex items-center gap-2 font-mono text-xs flex-wrap">
                   <div className="px-3 py-1.5 rounded bg-surface-muted border border-border">
                     <span className="text-muted">Risk Score:</span>{' '}
                     <span className={`font-bold ${result.riskScore >= 80 ? 'text-critical' : result.riskScore >= 50 ? 'text-warning' : 'text-accent'}`}>
@@ -437,6 +723,17 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                     <span>Latency:</span>{' '}
                     <span className="text-primary font-bold">{result.evaluationLatencyMs}ms</span>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={handleExportCertificate}
+                    disabled={certifying}
+                    className="px-3 py-1.5 rounded-lg bg-surface-muted text-ink border border-border hover:bg-border/30 transition flex items-center gap-1.5 font-semibold"
+                    title="Export cryptographically signed regulatory audit certificate"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-primary" />
+                    <span>{certifying ? 'Signing...' : 'Export Proof'}</span>
+                  </button>
 
                   <button
                     type="button"
@@ -520,6 +817,11 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                     ) : (
                       evalParty.matchedCandidates.map((cand) => {
                         const isDiagramOpen = activeDiagramCandidateId === cand.candidateId;
+                        const queryDobYear = getYearFromDob(formData.parties[0]?.dateOfBirth);
+                        const candDobYear = getYearFromDob(cand.dateOfBirth);
+                        const yobDelta = queryDobYear && candDobYear ? Math.abs(queryDobYear - candDobYear) : null;
+                        const natMatches = cand.nationality && formData.parties[0]?.country && cand.nationality.toUpperCase() === formData.parties[0]?.country.toUpperCase();
+
                         return (
                           <div
                             key={cand.candidateId}
@@ -527,19 +829,42 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                           >
                             <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-3">
                               <div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-semibold text-ink text-sm">{cand.canonicalName}</span>
                                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-critical/20 text-critical border border-critical/40 uppercase font-bold">
                                     {cand.category}
                                   </span>
+
+                                  {/* Secondary Identifier Badges: YOB Delta & Nationality */}
+                                  {yobDelta !== null && (
+                                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold border ${
+                                      yobDelta === 0 
+                                        ? 'bg-accent/20 text-accent border-accent/40' 
+                                        : yobDelta <= 2 
+                                        ? 'bg-warning/20 text-warning border-warning/40' 
+                                        : 'bg-surface border-border text-muted'
+                                    }`}>
+                                      YOB: {yobDelta === 0 ? 'Exact Match' : `Δ ±${yobDelta} yrs`}
+                                    </span>
+                                  )}
+
+                                  {cand.nationality && (
+                                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold border ${
+                                      natMatches 
+                                        ? 'bg-accent/20 text-accent border-accent/40' 
+                                        : 'bg-surface border-border text-muted'
+                                    }`}>
+                                      Nat: {cand.nationality} {natMatches ? '(Match)' : ''}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[11px] text-muted font-mono mt-0.5">
                                   List: {cand.sanctionsList || 'OFAC / UN'} • DOB: {cand.dateOfBirth || 'N/A'} • Nat: {cand.nationality || 'N/A'}
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-3 shrink-0">
-                                <div className="text-right font-mono">
+                              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                <div className="text-right font-mono mr-2">
                                   <div className="text-lg font-bold text-critical">
                                     {cand.confidenceScore.toFixed(1)}%
                                   </div>
@@ -557,8 +882,28 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                                   title="View interactive step-by-step match attribution diagram"
                                 >
                                   <GitBranch className="w-3.5 h-3.5" />
-                                  <span>{isDiagramOpen ? 'Hide Diagram' : 'Explain Match Diagram'}</span>
+                                  <span>{isDiagramOpen ? 'Hide' : 'Explain'}</span>
                                   {isDiagramOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleInterceptCase(cand)}
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-critical/15 text-critical border border-critical/30 hover:bg-critical/25 transition flex items-center gap-1.5"
+                                  title="Direct 1-Click Intercept & Persistent Case Creation"
+                                >
+                                  <FileWarning className="w-3.5 h-3.5" />
+                                  <span>1-Click Intercept</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setWhitelistModalCandidate(cand)}
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition flex items-center gap-1.5"
+                                  title="1-Click False-Positive Exception Whitelist Approval"
+                                >
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                  <span>Whitelist</span>
                                 </button>
                               </div>
                             </div>
@@ -593,7 +938,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                               </p>
                             )}
 
-                            {/* ON-CLICK MATCH DIAGRAM (Only rendered when user clicks "Explain Match Diagram") */}
+                            {/* ON-CLICK MATCH DIAGRAM */}
                             {isDiagramOpen && (
                               <div className="p-4 rounded-xl bg-surface border-2 border-primary/30 space-y-3 animate-in fade-in duration-150 mt-2">
                                 <div className="flex items-center justify-between border-b border-border pb-2">
@@ -705,9 +1050,9 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                   </div>
                 ))}
 
-                {result.matchCount > 0 && onOpenCase && (
+                {result.matchCount > 0 && (
                   <button
-                    onClick={() => onOpenCase('c1111111-2222-3333-4444-555555555555')}
+                    onClick={() => handleInterceptCase()}
                     className="w-full py-2.5 rounded-lg bg-critical/20 text-critical border border-critical/40 hover:bg-critical/30 transition text-xs font-semibold flex items-center justify-center gap-2 font-mono"
                   >
                     <ShieldAlert className="w-4 h-4" />
@@ -729,6 +1074,184 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
           )}
         </div>
       </div>
+
+      {/* 1-Click Whitelist Exception Modal */}
+      {whitelistModalCandidate && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono">
+          <div className="bg-surface rounded-xl border border-border shadow-xl max-w-lg w-full p-6 space-y-4 animate-in fade-in duration-150">
+            <div className="flex justify-between items-center border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-accent" />
+                <h3 className="text-sm font-bold text-ink">
+                  1-Click False-Positive Whitelist Approval
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWhitelistModalCandidate(null)}
+                className="text-muted hover:text-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleWhitelistSubmit} className="space-y-3 text-xs">
+              <div className="p-3 bg-surface-muted rounded-lg border border-border space-y-1">
+                <div className="text-muted text-[11px]">Target Entity & UID:</div>
+                <div className="font-bold text-ink">{whitelistModalCandidate.canonicalName} ({whitelistModalCandidate.candidateId})</div>
+                <div className="text-[11px] text-primary">
+                  Score: {whitelistModalCandidate.confidenceScore.toFixed(1)}% ({whitelistModalCandidate.sanctionsList || 'OFAC'})
+                </div>
+              </div>
+
+              <div>
+                <label className="text-muted block mb-1">Match Scope</label>
+                <select
+                  value={whitelistScope}
+                  onChange={e => setWhitelistScope(e.target.value)}
+                  className="w-full bg-surface-muted border border-border rounded px-3 py-1.5 text-ink focus:outline-none focus:border-primary"
+                >
+                  <option value="EXACT">EXACT (Exact Name/Identifier suppression)</option>
+                  <option value="FUZZY">FUZZY (Suppresses variations within score margin)</option>
+                  <option value="CUSTOMER_REF">CUSTOMER_REF (Account-level exemption)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-muted block mb-1">Statutory Rationale for 12-Month Exemption *</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={whitelistReason}
+                  onChange={e => setWhitelistReason(e.target.value)}
+                  className="w-full bg-surface-muted border border-border rounded p-2.5 text-ink focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="p-2.5 rounded bg-surface-muted border border-border text-[11px] text-muted">
+                <strong>MLRO Policy Note:</strong> Pass 5 bypass policy will suppress alerts for 12 months. Requires annual MLRO recertification under FATF Rec. 11.
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setWhitelistModalCandidate(null)}
+                  className="px-3 py-1.5 rounded bg-surface-muted text-muted hover:text-ink text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={whitelistSubmitting}
+                  className="px-4 py-1.5 rounded bg-accent text-white font-bold text-xs hover:bg-accent/90 flex items-center gap-1.5 shadow-xs"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{whitelistSubmitting ? 'Registering...' : 'Approve 12-Mo Whitelist'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Regulatory Screening Certificate Proof Modal */}
+      {certificateData && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono">
+          <div className="bg-surface rounded-xl border border-border shadow-2xl max-w-2xl w-full p-6 space-y-4 animate-in fade-in duration-150">
+            <div className="flex justify-between items-center border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                <h3 className="text-sm font-bold text-ink">
+                  Regulatory Screening Audit Certificate (WORM Proof)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCertificateData(null)}
+                className="text-muted hover:text-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-background rounded-lg border border-border space-y-3 text-xs leading-relaxed">
+              <div className="flex justify-between items-center border-b border-border/80 pb-2">
+                <div>
+                  <span className="text-[10px] text-muted">CERTIFICATE ID:</span>
+                  <div className="font-bold text-primary">{certificateData.certificateId}</div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-muted">TIMESTAMP (UTC):</span>
+                  <div className="font-bold text-ink">{certificateData.issuedAtUtc}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-muted text-[11px]">Subject Screened:</span>
+                  <div className="font-bold text-ink">{certificateData.subjectName}</div>
+                </div>
+                <div>
+                  <span className="text-muted text-[11px]">Decision & Score:</span>
+                  <div className={`font-bold ${certificateData.decision === 'BLOCKED' ? 'text-critical' : certificateData.decision === 'HELD' ? 'text-warning' : 'text-accent'}`}>
+                    {certificateData.decision} ({certificateData.overallScore.toFixed(1)}%)
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-muted text-[11px]">5-Pass Logs & Latency ({certificateData.latencyMs}ms):</span>
+                <div className="mt-1 space-y-1">
+                  {certificateData.passLogs.map((p: PassLogDto) => (
+                    <div key={p.passNumber} className="flex justify-between text-[11px] p-1 rounded bg-surface-muted border border-border">
+                      <span className="font-bold text-primary">Pass {p.passNumber}: {p.matchType}</span>
+                      <span className="text-muted">{p.details}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded bg-surface-muted border border-border space-y-1">
+                <span className="text-[10px] text-muted uppercase font-bold">Cryptographic WORM Proof (SHA-256):</span>
+                <div className="font-mono text-[10px] text-accent break-all">
+                  {certificateData.wormBlockHashSha256}
+                </div>
+              </div>
+
+              <p className="text-[10px] text-muted italic">
+                {certificateData.regulatoryAttestation}
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => {
+                  const blob = new Blob([JSON.stringify(certificateData, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${certificateData.certificateId}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="px-3.5 py-1.5 rounded bg-surface-muted text-ink border border-border hover:bg-border/30 text-xs font-bold flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download JSON Proof</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-4 py-1.5 rounded bg-primary text-white text-xs font-bold hover:bg-primary/90 flex items-center gap-1.5 shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print Certificate</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

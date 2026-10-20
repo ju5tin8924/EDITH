@@ -70,6 +70,11 @@ export interface TransactionScreeningRequest {
   currency: string;
   originatingCountry: string;
   destinationCountry: string;
+  minThresholdScore?: number;
+  nameWeightage?: number;
+  nationalityWeightage?: number;
+  dobWeightage?: number;
+  idWeightage?: number;
   parties: {
     role: 'SENDER' | 'BENEFICIARY' | 'INTERMEDIARY' | 'ULTIMATE_BENEFICIARY';
     fullName: string;
@@ -79,13 +84,23 @@ export interface TransactionScreeningRequest {
   }[];
 }
 
+export interface PassLogDto {
+  passNumber: number;
+  score: number;
+  matchType: string;
+  details: string;
+}
+
 export interface ScreeningResult {
   decision: ScreeningDecision;
   riskScore: number;
   primaryHitReason?: string;
+  caseId?: string;
+  caseNumber?: string;
   evaluationLatencyMs: number;
   matchCount: number;
   partyEvaluations: PartyEvaluation[];
+  passLogs?: PassLogDto[];
   isCached: boolean;
   replayedFromIdempotency: boolean;
 }
@@ -186,6 +201,7 @@ export type NameSearchMode = 'EXACT' | 'FUZZY' | 'EXACT_NAME_AND_ID';
 export interface NameSearchRequest {
   name?: string;
   idNumber?: string;
+  birthYear?: number;
   searchMode: NameSearchMode;
   minScore?: number;
   maxResults?: number;
@@ -201,6 +217,8 @@ export interface NameSearchMatch {
   idDetails?: string;
   nationality?: string;
   dob?: string;
+  yobDelta?: number;
+  isIdMatched?: boolean;
   sanctionsList: string;
   sanctionsAuthority: string;
   category: string;
@@ -218,6 +236,7 @@ export interface NameSearchResponse {
   queryName: string;
   normalizedQueryName: string;
   queryId?: string;
+  queryBirthYear?: number;
   searchMode: NameSearchMode;
   totalMatches: number;
   latencyMs: number;
@@ -225,3 +244,49 @@ export interface NameSearchResponse {
   evaluatedAt: string;
 }
 
+export interface ScreeningAuditCertificate {
+  certificateId: string;
+  issuedAtUtc: string;
+  tenantId: string;
+  subjectName: string;
+  subjectId?: string;
+  screeningType: string;
+  decision: string;
+  overallScore: number;
+  latencyMs: number;
+  caseNumber?: string;
+  matchCount: number;
+  passLogs: PassLogDto[];
+  wormBlockHashSha256: string;
+  regulatoryAttestation: string;
+}
+
+export interface IamUserRecord {
+  id: string;
+  tenantId: string;
+  groupId?: string;
+  username: string;
+  fullName: string;
+  role: UserRole;
+  department: string;
+  isActive: boolean;
+  mfaEnabled: boolean;
+  shiftStatus: 'ON_DUTY' | 'OFF_DUTY';
+  lastLogin: string;
+  passwordHashScheme?: string;
+}
+
+export interface IamGroupPermission {
+  menuId: string;
+  canView: boolean;
+  canEdit: boolean;
+  canAuthorize: boolean;
+}
+
+export interface IamGroupRecord {
+  id: string;
+  tenantId: string;
+  groupName: string;
+  isActive: boolean;
+  permissions: IamGroupPermission[];
+}

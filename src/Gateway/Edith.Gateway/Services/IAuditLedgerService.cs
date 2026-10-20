@@ -219,3 +219,57 @@ public sealed class PostgreSqlAuditLedgerService : IAuditLedgerService
         }
     }
 }
+
+public sealed class InMemoryAuditLedgerService : IAuditLedgerService
+{
+    private readonly List<AuditLogEntryDto> _entries = [];
+    private long _nextId = 1;
+    private readonly object _sync = new();
+
+    public Task<IReadOnlyList<AuditLogEntryDto>> GetAuditLogsAsync(Guid tenantId, int limit = 50, CancellationToken ct = default)
+    {
+        lock (_sync)
+        {
+            return Task.FromResult<IReadOnlyList<AuditLogEntryDto>>(_entries.OrderByDescending(e => long.Parse(e.Id, CultureInfo.InvariantCulture)).Take(limit).ToList());
+        }
+    }
+
+    public Task<AuditLogEntryDto> RecordAuditEntryAsync(Guid tenantId, RecordAuditRequest req, CancellationToken ct = default)
+    {
+        lock (_sync)
+        {
+            var prevHash = _entries.Count > 0 ? _entries[^1].Sha256Hash : "0000000000000000000000000000000000000000000000000000000000000000";
+            var timestamp = DateTimeOffset.UtcNow;
+            var rawBlockData = $"{timestamp:o}|{tenantId}|{req.Actor}|{req.Action}|{req.TargetEntity}|{req.CaseNumber}|{prevHash}|{req.Details}";
+            var computedHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawBlockData))).ToLowerInvariant();
+            var entry = new AuditLogEntryDto(
+                (_nextId++).ToString(CultureInfo.InvariantCulture),
+                timestamp.ToString("o", CultureInfo.InvariantCulture),
+                req.Actor,
+                req.Action,
+                req.TargetEntity,
+                req.CaseNumber,
+                computedHash,
+                prevHash,
+                req.Details
+            );
+            _entries.Add(entry);
+            return Task.FromResult(entry);
+        }
+    }
+
+    public async Task EnsureBaselineAuditLedgerAsync(Guid tenantId, CancellationToken ct = default)
+    {
+        var current = await GetAuditLogsAsync(tenantId, 1, ct);
+        if (current.Count == 0)
+        {
+            await RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
+                "System Initializer",
+                "GENESIS_BLOCK_CREATION",
+                "Platform Root",
+                null,
+                "Initialized immutable WORM cryptographic audit ledger chain."
+            ), ct);
+        }
+    }
+}

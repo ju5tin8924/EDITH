@@ -35,6 +35,17 @@ public sealed record CbsWebhookResult
 {
     public required bool Success { get; init; }
     public required int StatusCode { get; init; }
+    public int AttemptCount { get; init; } = 1;
+    public bool DeadLetterLogged { get; init; }
     public string? ResponsePayload { get; init; }
     public string? ErrorMessage { get; init; }
+}
+
+public sealed record WebhookDeliveryRecord
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public Guid? NotificationRuleId { get; init; }
+    public required string TraceId { get; init; }
+    public required string DeliveryStatus { get; init; } // DELIVERED | DEAD_LETTER
+    public DateTimeOffset SentAt { get; init; } = DateTimeOffset.UtcNow;
 }

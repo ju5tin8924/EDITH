@@ -1,7 +1,7 @@
 # EDITH Platform Core Modernization & Production Readiness TODO
-**Document Version:** 1.2.0  
-**Date:** October 19, 2026  
-**Status:** In Active Execution  
+**Document Version:** 1.3.0  
+**Date:** October 20, 2026  
+**Status:** Completed (Production Ready)  
 **Target Environment:** PostgreSQL 17 (`edith_postgres_17`), OpenSearch 2.12 (`edith_opensearch_2`), .NET 10 Minimal APIs (`Edith.Gateway`), React 19 Frontend (`edith-portal`).
 
 ---
@@ -16,9 +16,9 @@
 | **Phase 4** | Multipart Bulk Screening File Upload with `AmlStreamingParser` | `COMPLETED` |
 | **Phase 5** | Live Delta Rescreening with PostgreSQL & OpenSearch Timestamps | `COMPLETED` |
 | **Phase 6** | Single Entity & Transaction Screening Console UX/Workflow Modernization | `COMPLETED` |
-| **Phase 7** | Single Entity Recommended Enhancements (Whitelist Bypass, PDF Audit, Sensitive Drawer) | `PENDING (v1.3.0)` |
-| **Phase 8** | IAM User & Group Administration CRUD Endpoints (`core.users`) | `PENDING` |
-| **Phase 9** | CBS Webhook Reliability (HMAC-SHA256 Signatures & Retries) | `PENDING` |
+| **Phase 7** | Single Entity Recommended Enhancements (Whitelist Bypass, WORM Audit, Sensitivity Drawer) | `COMPLETED` |
+| **Phase 8** | Multi-tenant IAM User & Group Administration CRUD Endpoints (`core.users`) | `COMPLETED` |
+| **Phase 9** | CBS Outbound Webhooks & Reliability (HMAC-SHA256 Signatures, Polly Retries & Dead-Letter) | `COMPLETED` |
 
 ---
 
@@ -65,20 +65,22 @@
 - [x] Added `updateFormData` and `setResult(null)` on presets and edits in `ScreeningConsole.tsx` to immediately clear stale results when searching with different details.
 - [x] Added on-click `Explain Match Diagram` on candidate match cards in `ScreeningConsole.tsx` with interactive 4-step pipeline tracing.
 
-### [ ] Phase 7: Single Entity Recommended Enhancements (v1.3.0 Target)
-- [ ] **1-Click "Add to Whitelist" / False-Positive Exception**: Add button on candidate cards (70%–85% score range) with modal pre-filling entity UID, customer reference, and match scope for fast 12-month suppression approval.
-- [ ] **Export Regulatory Screening Audit Certificate (PDF / JSON)**: Generate a cryptographically signed proof note containing query timestamp (UTC), system latency, 5-pass logs, and SHA-256 block hash for WORM regulatory compliance.
-- [ ] **Engine Sensitivity & Pass Config Drawer**: Collapsible sensitivity drawer on `ScreeningConsole.tsx` allowing compliance officers to tune thresholds (e.g. 75% for high-risk corridors or 90% for domestic clearing) without modifying backend configs.
-- [ ] **Direct 1-Click Intercept & Persistent Case Creation**: Automatically provision persistent case in `cases.aml_cases` from transaction console and link directly into 3-Pane Workspace.
-- [ ] **Adverse Media & Secondary Identifier Quick Badges**: Highlight Year of Birth (YOB) delta (`±2 years`) and Passport/National ID match status as distinct badges.
+### [x] Phase 7: Single Entity Recommended Enhancements (v1.3.0 Target)
+- [x] **1-Click "Add to Whitelist" / False-Positive Exception**: Added 1-click button on candidate match cards (both `NameSearchView.tsx` & `ScreeningConsole.tsx`) with modal pre-filling entity UID, customer reference, match scope, and duration for 12-month suppression approval.
+- [x] **Export Regulatory Screening Audit Certificate (PDF / JSON)**: Generated cryptographically signed proof containing query timestamp (UTC), system latency, 5-pass logs, and SHA-256 block hash for WORM regulatory compliance. Added JSON download and Print view.
+- [x] **Engine Sensitivity & Pass Config Drawer**: Collapsible sensitivity drawer on `ScreeningConsole.tsx` allowing compliance officers to tune thresholds (e.g. 70% strict, 75% standard FATF, 85% domestic) and weight factors (Name, Nationality, DOB, ID).
+- [x] **Direct 1-Click Intercept & Persistent Case Creation**: Added `/api/v1/screen/intercept-case` in `ScreeningEndpoints.cs` provisioning persistent AML cases in `cases.aml_cases` and linking directly into 3-Pane Investigation Workspace.
+- [x] **Adverse Media & Secondary Identifier Quick Badges**: Highlighted Year of Birth (YOB) delta (`±2 years`, `Exact Match`) and Passport / National ID / Nationality match status as distinct badges.
 
-### [ ] Phase 8: Multi-tenant IAM User & Group Administration
-- [ ] Expose CRUD endpoints under `/api/v1/iam/users` (`core.users`).
-- [ ] Expose CRUD endpoints under `/api/v1/iam/groups` (`core.user_groups`, `core.group_menu_permissions`).
-- [ ] Store hashed credentials using standard password hashing.
-- [ ] Support dynamic group menu permission assignments.
+### [x] Phase 8: Multi-tenant IAM User & Group Administration
+- [x] Expose CRUD endpoints under `/api/v1/iam/users` (`core.users`) & `/api/v1/iam/groups` (`core.user_groups`, `core.group_menu_permissions`).
+- [x] Implemented `IIamUserService` with `PostgreSqlIamUserService` and fallback `InMemoryIamUserService`.
+- [x] Secure credential hashing using salted PBKDF2-SHA256 (`Rfc2898DeriveBytes.Pbkdf2`) with 100,000 iterations.
+- [x] Dynamic group menu permission assignments and tenant isolation.
+- [x] Integrated `IamAccessView.tsx` with live user/group creation, filtering, role selection, shift tracking, and deletion.
 
-### [ ] Phase 9: CBS Outbound Webhooks & Reliability
-- [ ] Add HMAC-SHA256 signature header (`X-Edith-Signature`) with shared secret.
-- [ ] Implement exponential backoff retry policy using `Polly` / `HttpClient`.
-- [ ] Store failed webhook deliveries into `notifications.delivery_ledgers` as a dead-letter log.
+### [x] Phase 9: CBS Outbound Webhooks & Reliability
+- [x] Added HMAC-SHA256 signature header (`X-Edith-Signature`) with tenant-specific shared secret.
+- [x] Implemented exponential backoff retry policy using `Polly` / `HttpClient` (3 retry attempts at 1s, 2s, 4s with jitter).
+- [x] Stored failed webhook deliveries into `notifications.delivery_ledgers` as a dead-letter log with full delivery status tracking.
+- [x] Implemented `CbsWebhookDispatcher` and comprehensive test suite in `Edith.Events.Tests`.

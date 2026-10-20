@@ -177,3 +177,46 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
         return true;
     }
 }
+
+public sealed class InMemorySystemMastersService : ISystemMastersService
+{
+    private ScoringWeightsDto _weights = new(60.0, 10.0, 15.0, 15.0, 80.0);
+    private readonly List<string> _blackList = ["IRN", "PRK", "MMR"];
+    private readonly List<string> _greyList = ["SYR", "YEM", "RUS", "CYP"];
+    private readonly List<string> _monitored = ["PAK", "CHN"];
+
+    public Task<SystemMastersResponseDto> GetMastersAsync(Guid tenantId, CancellationToken ct = default)
+    {
+        var fatfTiers = new List<FatfTierDto>
+        {
+            new("BLACK_LIST", _blackList.ToList(), 100),
+            new("GREY_LIST", _greyList.ToList(), 75),
+            new("MONITORED", _monitored.ToList(), 60)
+        };
+        var currencyThresholds = new List<CurrencyThresholdDto>
+        {
+            new("AED", 55000m, 500000m),
+            new("USD", 10000m, 100000m),
+            new("EUR", 10000m, 100000m)
+        };
+        return Task.FromResult(new SystemMastersResponseDto(fatfTiers, currencyThresholds, _weights));
+    }
+
+    public Task<bool> UpdateScoringWeightsAsync(Guid tenantId, UpdateScoringWeightsRequest req, CancellationToken ct = default)
+    {
+        _weights = new ScoringWeightsDto(req.NameWeightage, req.NationalityWeightage, req.DobWeightage, req.IdWeightage, req.DefaultThreshold);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpsertCountryAsync(UpdateCountryRiskRequest req, CancellationToken ct = default)
+    {
+        var code = req.Code.Trim().ToUpperInvariant();
+        _blackList.Remove(code);
+        _greyList.Remove(code);
+        _monitored.Remove(code);
+        if (req.RiskScore >= 90m) _blackList.Add(code);
+        else if (req.RiskScore >= 60m || req.IsHighRisk) _greyList.Add(code);
+        else _monitored.Add(code);
+        return Task.FromResult(true);
+    }
+}

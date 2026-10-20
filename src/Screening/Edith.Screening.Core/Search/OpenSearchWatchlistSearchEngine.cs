@@ -26,15 +26,18 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
     private readonly HttpClient _httpClient;
     private readonly ITextNormalizer _normalizer;
     private readonly OpenSearchOptions _options;
+    private readonly InMemoryWatchlistSearchEngine _fallback;
 
     public OpenSearchWatchlistSearchEngine(
         HttpClient httpClient,
         ITextNormalizer normalizer,
-        OpenSearchOptions? options = null)
+        OpenSearchOptions? options = null,
+        InMemoryWatchlistSearchEngine? fallback = null)
     {
         _httpClient = httpClient;
         _normalizer = normalizer;
         _options = options ?? new OpenSearchOptions();
+        _fallback = fallback ?? new InMemoryWatchlistSearchEngine(normalizer);
 
         if (_httpClient.BaseAddress == null)
         {
@@ -119,13 +122,22 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
             Content = new StringContent(searchBody.ToJsonString(), Encoding.UTF8, "application/json")
         };
 
-        using var response = await _httpClient.SendAsync(request, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        string json;
+        try
         {
-            return [];
+            using var response = await _httpClient.SendAsync(request, ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return await _fallback.SearchCandidatesAsync(query, maxResults, ct);
+            }
+            response.EnsureSuccessStatusCode();
+            json = await response.Content.ReadAsStringAsync(ct);
         }
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(ct);
+        catch (HttpRequestException)
+        {
+            return await _fallback.SearchCandidatesAsync(query, maxResults, ct);
+        }
+
         using var doc = JsonDocument.Parse(json);
 
         if (!doc.RootElement.TryGetProperty("hits", out var hitsProp) ||
@@ -201,6 +213,8 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
         var list = entities.ToList();
         if (list.Count == 0) return;
 
+        await _fallback.IndexBatchAsync(list, ct);
+
         var sb = new StringBuilder();
 
         foreach (var entity in list)
@@ -267,7 +281,14 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
             Content = new StringContent(sb.ToString(), Encoding.UTF8, "application/x-ndjson")
         };
 
-        using var response = await _httpClient.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, ct);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (HttpRequestException)
+        {
+            // Indexed into in-memory fallback when OpenSearch is offline
+        }
     }
 }

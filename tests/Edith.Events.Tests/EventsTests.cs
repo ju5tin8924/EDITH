@@ -180,6 +180,7 @@ public sealed class EventsTests
 
         Assert.True(result.Success);
         Assert.Equal(200, result.StatusCode);
+        Assert.Equal(1, result.AttemptCount);
         Assert.Contains("acknowledged", result.ResponsePayload);
 
         // Verify headers dispatched to CBS
@@ -192,6 +193,90 @@ public sealed class EventsTests
         var sigHeader = capturedHeaders["X-Edith-Signature"];
         Assert.NotNull(capturedBody);
         Assert.True(HmacSignatureHelper.VerifySignature(capturedBody, sharedSecret, sigHeader));
+    }
+
+    [Fact]
+    public async Task CbsWebhookDispatcher_Retries_Transient_Failures_And_Succeeds_On_Third_Attempt()
+    {
+        int calls = 0;
+        var handler = new MockHttpMessageHandler(_ =>
+        {
+            calls++;
+            if (calls < 3)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)
+                {
+                    Content = new StringContent("{\"error\":\"CBS Gateway Timeout\"}")
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"acknowledged\":true}")
+            });
+        });
+
+        var ledger = new InMemoryWebhookDeliveryLedger();
+        using var http = new HttpClient(handler);
+        var dispatcher = new CbsWebhookDispatcher(http, NullLogger<CbsWebhookDispatcher>.Instance, ledger, maxAttempts: 3, baseDelayMs: 5);
+
+        var result = await dispatcher.DispatchDecisionWebhookAsync(
+            new AmlDecisionWebhookPayload
+            {
+                TenantId = TestTenantId,
+                TransactionRefNo = "TX-RETRY-003",
+                Decision = "RELEASE",
+                Reason = "Cleared after secondary verification",
+                DecidedBy = "MLRO_TARIQ"
+            },
+            "https://cbs.bank/webhooks/aml",
+            "SECRET_KEY");
+
+        Assert.True(result.Success);
+        Assert.Equal(3, result.AttemptCount);
+        Assert.Equal(3, calls);
+        Assert.False(result.DeadLetterLogged);
+        Assert.Empty(await ledger.GetDeadLettersAsync());
+    }
+
+    [Fact]
+    public async Task CbsWebhookDispatcher_Logs_DeadLetter_Into_DeliveryLedger_When_All_Retries_Fail()
+    {
+        int calls = 0;
+        var handler = new MockHttpMessageHandler(_ =>
+        {
+            calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("{\"error\":\"CBS Maintenance\"}")
+            });
+        });
+
+        var ledger = new InMemoryWebhookDeliveryLedger();
+        using var http = new HttpClient(handler);
+        var dispatcher = new CbsWebhookDispatcher(http, NullLogger<CbsWebhookDispatcher>.Instance, ledger, maxAttempts: 3, baseDelayMs: 5);
+
+        var result = await dispatcher.DispatchDecisionWebhookAsync(
+            new AmlDecisionWebhookPayload
+            {
+                TenantId = TestTenantId,
+                TransactionRefNo = "TX-DLQ-909",
+                Decision = "FREEZE",
+                Reason = "Sanction Hit",
+                DecidedBy = "MLRO_FATIMA"
+            },
+            "https://cbs.bank/webhooks/aml",
+            "SECRET_KEY");
+
+        Assert.False(result.Success);
+        Assert.Equal(3, result.AttemptCount);
+        Assert.Equal(3, calls);
+        Assert.True(result.DeadLetterLogged);
+
+        var deadLetters = await ledger.GetDeadLettersAsync();
+        Assert.Single(deadLetters);
+        Assert.Equal("TX-DLQ-909:FREEZE", deadLetters[0].TraceId);
+        Assert.Equal("DEAD_LETTER_HTTP_503", deadLetters[0].DeliveryStatus);
     }
 
     [Fact]

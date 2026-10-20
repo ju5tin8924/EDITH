@@ -1,6 +1,6 @@
 # EDITH — Enterprise Anti-Money Laundering & Sanctions Screening Platform
 
-[![Build & Test](https://img.shields.io/badge/tests-93%2F93%20passing-10B981.svg?style=flat-square)](tests/)
+[![Build & Test](https://img.shields.io/badge/tests-96%2F96%20passing-10B981.svg?style=flat-square)](tests/)
 [![Architecture](https://img.shields.io/badge/.NET-10.0%20LTS-512BD4.svg?style=flat-square)](Edith.slnx)
 [![Database](https://img.shields.io/badge/PostgreSQL-17%20Enterprise-336791.svg?style=flat-square)](src/Database/Edith.Database.Migrator/)
 [![Search](https://img.shields.io/badge/OpenSearch-2.12%20Phonetic%20Index-005EB8.svg?style=flat-square)](src/Screening/Edith.Screening.Core/)

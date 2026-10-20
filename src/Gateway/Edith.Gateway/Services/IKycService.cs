@@ -191,3 +191,31 @@ public sealed class PostgreSqlKycService : IKycService
         };
     }
 }
+
+public sealed class InMemoryKycService : IKycService
+{
+    public Task<KycDossierDto?> GetCustomerDossierAsync(string customerIdOrCode, CancellationToken ct = default)
+    {
+        return Task.FromResult<KycDossierDto?>(new KycDossierDto
+        {
+            CustomerId = Guid.TryParse(customerIdOrCode, out var g) ? g.ToString() : "01931000-0000-7000-8000-000000000301",
+            CustomerCode = string.IsNullOrWhiteSpace(customerIdOrCode) ? "CUST-UAE-001" : customerIdOrCode.Trim(),
+            FullName = "Acme Global Trading LLC",
+            CustomerType = "CORPORATE",
+            RiskCategory = "HIGH_RISK_TRADING",
+            RiskScore = 78.5,
+            Nationality = "AE",
+            IncorporationCountry = "AE",
+            UboIdentities = ["Tariq Al-Mansoori (65%)", "Global Holdings FZCO (35%)"],
+            Documents =
+            [
+                new KycDocumentDto("doc-1", "TRADE LICENSE (TL-994821)", "VERIFIED", "2028-12-31"),
+                new KycDocumentDto("doc-2", "MEMORANDUM OF ASSOCIATION (MOA-2024)", "VERIFIED", "2028-12-31")
+            ],
+            RecentTransactions =
+            [
+                new KycTransactionDto("TX-2026-9921448", "2026-10-18", 450000.0, "USD", "Viktor Anatolyevich Bout", "HELD")
+            ]
+        });
+    }
+}

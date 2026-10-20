@@ -274,4 +274,73 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         });
         Assert.Equal(HttpStatusCode.OK, resolveRes.StatusCode);
     }
+
+    [Fact]
+    public async Task Iam_User_And_Group_Crud_With_Pbkdf2_And_Screening_Enhancements_Work()
+    {
+        // 1. Verify PBKDF2-SHA256 password hasher
+        var hash = IamPasswordHasher.HashPassword("ComplianceSecret#2026");
+        Assert.StartsWith("pbkdf2_sha256$", hash);
+        Assert.True(IamPasswordHasher.VerifyPassword("ComplianceSecret#2026", hash));
+        Assert.False(IamPasswordHasher.VerifyPassword("WrongPassword", hash));
+
+        // 2. Provision new IAM user
+        var createUserRes = await _client.PostAsJsonAsync("/api/v1/iam/users", new CreateIamUserRequest(
+            "nadia.alhashimi@adcb.ae",
+            "ComplianceSecret#2026",
+            "Nadia Al-Hashimi",
+            "ANALYST",
+            null,
+            "Sanctions Triage Unit",
+            "ON_DUTY"));
+        Assert.Equal(HttpStatusCode.Created, createUserRes.StatusCode);
+        var createdUser = await createUserRes.Content.ReadFromJsonAsync<IamUserDto>(JsonOptions);
+        Assert.NotNull(createdUser);
+        Assert.Equal("Nadia Al-Hashimi", createdUser.FullName);
+
+        // 3. Update IAM user shift status and role
+        var updateUserRes = await _client.PutAsJsonAsync($"/api/v1/iam/users/{createdUser.Id}", new UpdateIamUserRequest(
+            Role: "MLRO",
+            ShiftStatus: "OFF_DUTY"));
+        Assert.Equal(HttpStatusCode.OK, updateUserRes.StatusCode);
+
+        // 4. Create IAM Group & Update Permissions
+        var createGroupRes = await _client.PostAsJsonAsync("/api/v1/iam/groups", new CreateIamGroupRequest(
+            "SENIOR_SANCTIONS_DESK",
+            [new IamGroupPermissionDto("MENU_SCREENING", true, true, true)]));
+        Assert.Equal(HttpStatusCode.Created, createGroupRes.StatusCode);
+        var createdGroup = await createGroupRes.Content.ReadFromJsonAsync<IamGroupDto>(JsonOptions);
+        Assert.NotNull(createdGroup);
+
+        var updatePermsRes = await _client.PutAsJsonAsync($"/api/v1/iam/groups/{createdGroup.Id}/permissions", new UpdateGroupPermissionsRequest(
+            [
+                new IamGroupPermissionDto("MENU_SCREENING", true, true, true),
+                new IamGroupPermissionDto("MENU_CASES", true, true, false)
+            ]));
+        Assert.Equal(HttpStatusCode.OK, updatePermsRes.StatusCode);
+
+        // 5. Direct 1-Click Intercept Case Creation & Audit Certificate
+        var interceptRes = await _client.PostAsJsonAsync("/api/v1/screen/intercept-case", new
+        {
+            beneficiaryName = "Viktor Anatolyevich Bout",
+            riskScore = 96.5m,
+            triggeredList = "OFAC_SDN",
+            holdReason = "Direct 1-Click Intercept from Single Entity Screening"
+        });
+        Assert.Equal(HttpStatusCode.Created, interceptRes.StatusCode);
+
+        var certRes = await _client.PostAsJsonAsync("/api/v1/screen/audit-certificate", new
+        {
+            subjectName = "Viktor Anatolyevich Bout",
+            subjectId = "OFAC-9812",
+            screeningType = "SINGLE_ENTITY",
+            decision = "HELD",
+            overallScore = 96.5m,
+            latencyMs = 4.2,
+            matchCount = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, certRes.StatusCode);
+        var certJson = await certRes.Content.ReadAsStringAsync();
+        Assert.Contains("wormBlockHashSha256", certJson);
+    }
 }
