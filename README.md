@@ -148,7 +148,7 @@ docker compose -f docker/docker-compose.yml up -d
 dotnet run --project src/Database/Edith.Database.Migrator
 ```
 
-### 2. Run the Full Test Suite (93 Tests)
+### 2. Run the Full Test Suite (96 Tests)
 
 ```bash
 dotnet test Edith.slnx
@@ -156,7 +156,7 @@ dotnet test Edith.slnx
 
 Output:
 ```text
-Passed! - Failed: 0, Passed: 93, Skipped: 0, Total: 93 (10 test projects)
+Passed! - Failed: 0, Passed: 96, Skipped: 0, Total: 96 (10 test projects)
 ```
 
 ### 3. Start the API Gateway & React 19 Portal

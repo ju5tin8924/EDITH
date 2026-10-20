@@ -1,9 +1,9 @@
-# EDITH AML Intelligence Platform: Database Architecture & OpenSearch Specification (v2.1)
+# EDITH AML Intelligence Platform: Database Architecture & OpenSearch Specification (v2.2)
 
 **Project:** EDITH Next-Gen AML Intelligence Platform  
 **Target Architecture:** PostgreSQL 17 (`edith_aml`), OpenSearch 2.12 (`edith_watchlist_v1`, `edith_customers_v1`), .NET 10 Microservices  
-**Version:** 2.1  
-**Last Updated:** October 19, 2026  
+**Version:** 2.2  
+**Last Updated:** October 20, 2026  
 
 ---
 
@@ -38,6 +38,7 @@ CREATE TABLE core.users (
     group_id UUID NULL REFERENCES core.user_groups(id) ON DELETE SET NULL,
     username VARCHAR(100) NOT NULL,
     role VARCHAR(50) NOT NULL,
+    password_hash VARCHAR(256) NULL,
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT users_tenant_username_key UNIQUE (tenant_id, username)
@@ -364,9 +365,9 @@ CREATE TABLE notifications.notification_rules (
 
 CREATE TABLE notifications.delivery_ledgers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    notification_rule_id UUID NOT NULL REFERENCES notifications.notification_rules(id) ON DELETE CASCADE,
-    trace_id VARCHAR(100) NOT NULL UNIQUE,
-    delivery_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    notification_rule_id UUID NULL REFERENCES notifications.notification_rules(id) ON DELETE CASCADE,
+    trace_id VARCHAR(100) NOT NULL,
+    delivery_status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
     sent_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -381,16 +382,41 @@ CREATE TABLE notifications.user_shifts (
 
 ---
 
-## 2. OpenSearch 2.12 Index Mappings (`edith_watchlist_v1` & `edith_customers_v1`)
+## 2. Cryptographic Block Chaining (`core.audit_ledgers`)
+
+Every immutable entry written to `core.audit_ledgers` computes a SHA-256 block hash chained to the preceding entry:
+
+```text
+Block_Hash = SHA256(PreviousBlockHash : TenantId : Actor : ActionType : TargetEntity : TimestampIso : Details)
+```
+
+* **Genesis Block:** Entries preceding any tenant activity reference `previousBlockHash = "GENESIS"`.
+* **Payload Format:** Stored within `core.audit_ledgers.payload` as JSONB:
+  ```json
+  {
+    "actor": "analyst.fatima@adcb.ae",
+    "action": "CASE_RESOLVED",
+    "targetEntity": "TX-99482103",
+    "caseNumber": "CAS-2026-004",
+    "sha256Hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "previousBlockHash": "4a5e1e...88bc",
+    "details": "Released under 4-Eyes signoff"
+  }
+  ```
+* **Tamper Verification:** Any modification, row deletion, or retroactive payload edit invalidates downstream block hashes across the entire tenant chain.
+
+---
+
+## 3. OpenSearch 2.12 Index Mappings (`edith_watchlist_v1` & `edith_customers_v1`)
 
 * **Custom Analyzers (`deploy/opensearch/`):**
-  * `edith_name_analyzer`: Standard tokenizer, lowercase, ASCII folding, corporate suffix stop-word filter.
+  * `edith_name_analyzer`: Standard tokenizer, lowercase, ASCII folding, corporate suffix stop-word filter (*LLC, FZE, Inc, Ltd, PJSC*).
   * `edith_ngram_analyzer`: Edge n-gram tokenizer (`min_gram: 3`, `max_gram: 10`) for partial token matching.
   * `phonetic_tokens`: Pre-computed Double Metaphone primary and alternate keys indexed as `keyword` array for zero-latency phonetic DisMax queries.
 
 ---
 
-## 3. Comprehensive Entity-Relationship Diagram (Mermaid)
+## 4. Comprehensive Entity-Relationship Diagram (Mermaid)
 
 ```mermaid
 erDiagram
