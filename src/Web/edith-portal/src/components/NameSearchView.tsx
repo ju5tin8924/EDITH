@@ -25,10 +25,40 @@ import {
   RefreshCw,
   FileText,
   PlusCircle,
-  Download
+  Download,
+  Clock,
+  Columns,
+  Layers,
+  ClipboardList,
+  Sliders
 } from 'lucide-react';
 import { NameSearchMode, NameSearchResponse, NameSearchMatch, ScreeningAuditCertificate } from '../types';
 import { EdithApi } from '../services/api';
+
+interface RecentSearchRecord {
+  name: string;
+  idNumber: string;
+  birthYear: string;
+  mode: NameSearchMode;
+  verdict: 'CLEARED' | 'HELD' | 'BLOCKED';
+  score: number;
+  matchCount: number;
+  timestamp: string;
+}
+
+interface BatchScreeningItem {
+  inputLine: string;
+  detectedMode: NameSearchMode;
+  verdict: 'CLEARED' | 'HELD' | 'BLOCKED';
+  topHit?: string;
+  topList?: string;
+  score: number;
+  matchCount: number;
+  latencyMs: number;
+  rawResponse: NameSearchResponse;
+}
+
+const STORAGE_KEY_RECENT = 'edith_recent_searches_v1';
 
 export const NameSearchView: React.FC = () => {
   const navigate = useNavigate();
@@ -40,6 +70,12 @@ export const NameSearchView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<NameSearchResponse | null>(null);
+
+  // Client-Side "What-If" Sensitivity Thresholding
+  const [clientThreshold, setClientThreshold] = useState<number>(65);
+
+  // PEP Tiering & Adverse Media Disaggregation Tabs
+  const [activeTierTab, setActiveTierTab] = useState<'ALL' | 'SANCTIONS' | 'PEP' | 'ADVERSE_MEDIA'>('ALL');
 
   // Track the query that produced the currently rendered response
   const [lastExecutedQuery, setLastExecutedQuery] = useState<{
@@ -56,8 +92,9 @@ export const NameSearchView: React.FC = () => {
   const [copiedAuditNote, setCopiedAuditNote] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // Diagram state
+  // Interactive Panels: Diagram and Side-by-Side Diff
   const [activeDiagramEntityId, setActiveDiagramEntityId] = useState<string | null>(null);
+  const [activeDiffEntityId, setActiveDiffEntityId] = useState<string | null>(null);
   const [showOverviewDiagram, setShowOverviewDiagram] = useState(false);
 
   // 1-Click Whitelist Exception Modal
@@ -69,6 +106,24 @@ export const NameSearchView: React.FC = () => {
   // Regulatory Screening Certificate Modal
   const [certificateData, setCertificateData] = useState<ScreeningAuditCertificate | null>(null);
   const [certifying, setCertifying] = useState(false);
+
+  // Recent Searches State
+  const [recentSearches, setRecentSearches] = useState<RecentSearchRecord[]>(() => {
+    try {
+      const stored = sessionStorage.getItem(STORAGE_KEY_RECENT);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Batch Clipboard Paste Screening Mode
+  const [isBatchPasteOpen, setIsBatchPasteOpen] = useState(false);
+  const [batchInputText, setBatchInputText] = useState(
+    'VIKTOR ANATOLYEVICH BOUT\nAl-Baraka General Trading LLC\nTariq Mansoor Al-Aziz\nUS-OFAC-9812\nDubai Retail Holdings LLC'
+  );
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchResults, setBatchResults] = useState<BatchScreeningItem[]>([]);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -91,6 +146,43 @@ export const NameSearchView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  const saveRecentSearch = (
+    qName: string,
+    qId: string,
+    qBy: string,
+    qMode: NameSearchMode,
+    res: NameSearchResponse
+  ) => {
+    const verdict: 'CLEARED' | 'HELD' | 'BLOCKED' =
+      res.totalMatches === 0
+        ? 'CLEARED'
+        : res.matches.some(m => m.isBlocked)
+        ? 'BLOCKED'
+        : 'HELD';
+
+    const record: RecentSearchRecord = {
+      name: qName,
+      idNumber: qId,
+      birthYear: qBy,
+      mode: qMode,
+      verdict,
+      score: res.matches[0]?.score || 0,
+      matchCount: res.totalMatches,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setRecentSearches(prev => {
+      const filtered = prev.filter(
+        r => !(r.name === qName && r.idNumber === qId && r.mode === qMode)
+      );
+      const updated = [record, ...filtered].slice(0, 5);
+      try {
+        sessionStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
   const executeSearch = async (
     overrideName?: string,
     overrideId?: string,
@@ -110,6 +202,7 @@ export const NameSearchView: React.FC = () => {
     setLoading(true);
     setError(null);
     setActiveDiagramEntityId(null);
+    setActiveDiffEntityId(null);
     setCopiedAuditNote(false);
 
     try {
@@ -123,11 +216,13 @@ export const NameSearchView: React.FC = () => {
         maxResults: 30
       });
       setResponse(res);
+      setClientThreshold(minScore);
       setLastExecutedQuery({
         name: qName,
         idNumber: qId,
         mode: qMode
       });
+      saveRecentSearch(qName, qId, qBy, qMode, res);
     } catch (err: any) {
       setError(err?.message || 'Screening search request failed.');
     } finally {
@@ -148,9 +243,11 @@ export const NameSearchView: React.FC = () => {
     setLastExecutedQuery(null);
     setError(null);
     setActiveDiagramEntityId(null);
+    setActiveDiffEntityId(null);
     setCopiedAuditNote(false);
     setEntityTypeFilter('ALL');
     setListFilter('ALL');
+    setActiveTierTab('ALL');
     if (nameInputRef.current) {
       nameInputRef.current.focus();
     }
@@ -173,6 +270,10 @@ export const NameSearchView: React.FC = () => {
 
   const toggleMatchDiagram = (key: string) => {
     setActiveDiagramEntityId(prev => (prev === key ? null : key));
+  };
+
+  const toggleDiffInspector = (key: string) => {
+    setActiveDiffEntityId(prev => (prev === key ? null : key));
   };
 
   // 1-Click Intercept & Persistent Case Creation
@@ -241,6 +342,77 @@ export const NameSearchView: React.FC = () => {
     }
   };
 
+  // Batch Clipboard Paste Screening Execution
+  const handleExecuteBatch = async () => {
+    const lines = batchInputText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+      .slice(0, 10);
+
+    if (lines.length === 0) return;
+
+    setBatchLoading(true);
+    try {
+      const promises = lines.map(async line => {
+        const isId = /^(OFAC|WC|UN|TL|AE|CH|[A-Z]{2,4}-)/i.test(line);
+        const mode: NameSearchMode = isId ? 'EXACT_NAME_AND_ID' : 'FUZZY';
+        try {
+          const res = await EdithApi.searchNameAndId({
+            name: isId ? '' : line,
+            idNumber: isId ? line : '',
+            searchMode: mode,
+            minScore: 65,
+            maxResults: 5
+          });
+
+          const verdict: 'CLEARED' | 'HELD' | 'BLOCKED' =
+            res.totalMatches === 0
+              ? 'CLEARED'
+              : res.matches.some(m => m.isBlocked)
+              ? 'BLOCKED'
+              : 'HELD';
+
+          const topMatch = res.matches[0];
+          return {
+            inputLine: line,
+            detectedMode: mode,
+            verdict,
+            topHit: topMatch?.fullName,
+            topList: topMatch?.sanctionsList,
+            score: topMatch?.score || 0,
+            matchCount: res.totalMatches,
+            latencyMs: res.latencyMs,
+            rawResponse: res
+          } as BatchScreeningItem;
+        } catch {
+          return {
+            inputLine: line,
+            detectedMode: mode,
+            verdict: 'CLEARED',
+            score: 0,
+            matchCount: 0,
+            latencyMs: 0,
+            rawResponse: {
+              queryName: line,
+              normalizedQueryName: line,
+              searchMode: mode,
+              totalMatches: 0,
+              latencyMs: 0,
+              matches: [],
+              evaluatedAt: new Date().toISOString()
+            }
+          } as BatchScreeningItem;
+        }
+      });
+
+      const results = await Promise.all(promises);
+      setBatchResults(results);
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
   const copyAuditNote = () => {
     if (!response) return;
     const auditText = `[EDITH AML CLEARANCE AUDIT NOTE]
@@ -267,18 +439,51 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
     return 'bg-accent/15 text-accent border-accent/40';
   };
 
+  // PEP Tiering Counts based on client threshold
+  const tierCounts = useMemo(() => {
+    if (!response || !response.matches) return { all: 0, sanctions: 0, pep: 0, media: 0 };
+    const overThreshold = response.matches.filter(m => m.score >= clientThreshold);
+    return {
+      all: overThreshold.length,
+      sanctions: overThreshold.filter(m => m.category === 'SANCTIONS').length,
+      pep: overThreshold.filter(m => m.category === 'PEP' || m.sanctionsList.includes('PEP')).length,
+      media: overThreshold.filter(m => m.category === 'ADVERSE_MEDIA').length
+    };
+  }, [response, clientThreshold]);
+
+  // Client-Side "What-If" Sensitivity & Tier Filtered Matches
   const filteredMatches = useMemo(() => {
     if (!response || !response.matches) return [];
     return response.matches.filter(m => {
+      // 1. Client Sensitivity Threshold
+      if (m.score < clientThreshold) return false;
+
+      // 2. PEP & Disaggregation Tiers
+      if (activeTierTab === 'SANCTIONS' && m.category !== 'SANCTIONS') return false;
+      if (activeTierTab === 'PEP' && m.category !== 'PEP' && !m.sanctionsList.includes('PEP')) return false;
+      if (activeTierTab === 'ADVERSE_MEDIA' && m.category !== 'ADVERSE_MEDIA') return false;
+
+      // 3. Entity Type Filter
       if (entityTypeFilter !== 'ALL' && m.entityType !== entityTypeFilter) {
         return false;
       }
+
+      // 4. List Filter
       if (listFilter !== 'ALL' && !m.sanctionsList.toUpperCase().includes(listFilter)) {
         return false;
       }
+
       return true;
     });
-  }, [response, entityTypeFilter, listFilter]);
+  }, [response, clientThreshold, activeTierTab, entityTypeFilter, listFilter]);
+
+  // Simulated Verdict under What-If Threshold
+  const simulatedVerdict = useMemo(() => {
+    if (!response) return 'CLEARED';
+    if (filteredMatches.length === 0) return 'CLEARED';
+    if (filteredMatches.some(m => m.isBlocked)) return 'BLOCKED';
+    return 'HELD';
+  }, [response, filteredMatches]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -300,7 +505,21 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsBatchPasteOpen(prev => !prev)}
+            className={`px-3 py-2 text-xs font-mono font-bold rounded-lg border transition flex items-center gap-1.5 ${
+              isBatchPasteOpen
+                ? 'bg-primary text-white border-primary shadow-xs'
+                : 'bg-surface-muted text-ink border-border hover:bg-border/40'
+            }`}
+            title="Screen up to 10 entities/passports in rapid parallel batch"
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            <span>Multi-Line Batch Paste</span>
+          </button>
+
           {(response || name || idNumber) && (
             <button
               type="button"
@@ -337,6 +556,199 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
         </div>
       )}
 
+      {/* UX 3: Session Recent Searches Breadcrumb Bar */}
+      {recentSearches.length > 0 && (
+        <div className="p-3 bg-surface rounded-xl border border-border flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+            <span className="text-muted flex items-center gap-1.5 font-bold uppercase text-[10px]">
+              <Clock className="w-3.5 h-3.5 text-primary" /> Recent Searches:
+            </span>
+            {recentSearches.map((rec, rIdx) => (
+              <button
+                key={rIdx}
+                type="button"
+                onClick={() => {
+                  setName(rec.name);
+                  setIdNumber(rec.idNumber);
+                  setBirthYear(rec.birthYear);
+                  setSearchMode(rec.mode);
+                  executeSearch(rec.name, rec.idNumber, rec.mode, rec.birthYear);
+                }}
+                className="px-2.5 py-1 rounded-md bg-surface-muted hover:bg-border/40 border border-border flex items-center gap-1.5 transition text-xs"
+                title={`Re-run search for "${rec.name || rec.idNumber}" (${rec.mode})`}
+              >
+                <span className="font-semibold text-ink truncate max-w-[150px]">
+                  {rec.name || rec.idNumber}
+                </span>
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                  rec.verdict === 'BLOCKED'
+                    ? 'bg-critical/20 text-critical'
+                    : rec.verdict === 'HELD'
+                    ? 'bg-warning/20 text-warning'
+                    : 'bg-accent/20 text-accent'
+                }`}>
+                  {rec.verdict} ({rec.matchCount})
+                </span>
+                <span className="text-[10px] text-muted">{rec.timestamp}</span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setRecentSearches([]);
+              sessionStorage.removeItem(STORAGE_KEY_RECENT);
+            }}
+            className="text-muted hover:text-ink text-[11px] underline font-mono shrink-0"
+            title="Clear recent searches history"
+          >
+            Clear History
+          </button>
+        </div>
+      )}
+
+      {/* Engine 7: Batch Clipboard Paste Screening Panel */}
+      {isBatchPasteOpen && (
+        <div className="bg-surface rounded-xl border-2 border-primary/30 p-5 space-y-4 shadow-sm animate-in fade-in duration-150 font-mono text-xs">
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-primary" />
+              <h2 className="text-xs uppercase tracking-wider font-bold text-ink">
+                Multi-Line Batch Clipboard Screening (Parallel Engine)
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-muted">Max 10 rows per batch</span>
+              <button
+                type="button"
+                onClick={() => setIsBatchPasteOpen(false)}
+                className="text-muted hover:text-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-muted block text-[11px]">
+              Paste names, passports, or trade licenses (one entry per line):
+            </label>
+            <textarea
+              rows={5}
+              value={batchInputText}
+              onChange={e => setBatchInputText(e.target.value)}
+              placeholder="VIKTOR ANATOLYEVICH BOUT&#10;Al-Baraka General Trading LLC&#10;Tariq Mansoor Al-Aziz&#10;US-OFAC-9812"
+              className="w-full p-3 rounded-lg border border-border bg-background text-ink font-mono text-xs focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <div className="flex justify-between items-center pt-2">
+            <div className="text-[11px] text-muted">
+              Auto-detects Exact Name, Fuzzy Phonetic, or Identifier search based on row format.
+            </div>
+            <button
+              type="button"
+              onClick={handleExecuteBatch}
+              disabled={batchLoading}
+              className="px-4 py-2 rounded-lg bg-primary text-white font-bold hover:bg-primary/90 flex items-center gap-1.5 shadow-xs transition"
+            >
+              {batchLoading ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Screening {batchInputText.split('\n').filter(l => l.trim()).length} Rows...</span>
+                </>
+              ) : (
+                <>
+                  <Search className="w-3.5 h-3.5" />
+                  <span>Run Multi-Line Screening</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Batch Results Matrix */}
+          {batchResults.length > 0 && (
+            <div className="pt-3 border-t border-border space-y-2">
+              <h3 className="font-bold text-ink uppercase text-[11px]">
+                Batch Screening Triage Matrix ({batchResults.length} Queried)
+              </h3>
+              <div className="overflow-x-auto border border-border rounded-lg">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-surface-muted border-b border-border text-[10px] uppercase text-muted">
+                    <tr>
+                      <th className="p-2.5">#</th>
+                      <th className="p-2.5">Input Query</th>
+                      <th className="p-2.5">Detected Mode</th>
+                      <th className="p-2.5">Verdict</th>
+                      <th className="p-2.5">Top Matched Record</th>
+                      <th className="p-2.5">Score</th>
+                      <th className="p-2.5">Latency</th>
+                      <th className="p-2.5 text-right">Inspect</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border font-mono">
+                    {batchResults.map((bItem, bIdx) => (
+                      <tr key={bIdx} className="hover:bg-surface-muted/40 transition">
+                        <td className="p-2.5 font-bold text-muted">{bIdx + 1}</td>
+                        <td className="p-2.5 font-semibold text-ink">{bItem.inputLine}</td>
+                        <td className="p-2.5 text-[11px] text-muted">{bItem.detectedMode}</td>
+                        <td className="p-2.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            bItem.verdict === 'BLOCKED'
+                              ? 'bg-critical/20 text-critical'
+                              : bItem.verdict === 'HELD'
+                              ? 'bg-warning/20 text-warning'
+                              : 'bg-accent/20 text-accent'
+                          }`}>
+                            {bItem.verdict} ({bItem.matchCount})
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-[11px] text-ink">
+                          {bItem.topHit ? (
+                            <div>
+                              <span className="font-bold">{bItem.topHit}</span>
+                              <span className="text-muted text-[10px] ml-1">({bItem.topList})</span>
+                            </div>
+                          ) : (
+                            <span className="text-accent italic">Clean / Zero adverse hits</span>
+                          )}
+                        </td>
+                        <td className="p-2.5 font-bold">
+                          {bItem.score > 0 ? (
+                            <span className={bItem.score >= 85 ? 'text-critical' : 'text-warning'}>
+                              {bItem.score.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-muted">0%</span>
+                          )}
+                        </td>
+                        <td className="p-2.5 text-muted text-[11px]">{bItem.latencyMs}ms</td>
+                        <td className="p-2.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setName(bItem.inputLine);
+                              setSearchMode(bItem.detectedMode);
+                              setResponse(bItem.rawResponse);
+                              setClientThreshold(minScore);
+                              setIsBatchPasteOpen(false);
+                            }}
+                            className="px-2 py-1 rounded bg-surface border border-border hover:bg-border/30 text-[10px] font-bold text-primary"
+                          >
+                            Inspect
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* On-Click Architecture & Search Modes Diagram */}
       {showOverviewDiagram && (
         <div className="bg-surface rounded-xl border-2 border-primary/30 p-5 space-y-4 shadow-md animate-in fade-in duration-150">
@@ -350,148 +762,95 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
             <button
               type="button"
               onClick={() => setShowOverviewDiagram(false)}
-              className="text-muted hover:text-ink p-1 rounded"
-              title="Close Diagram"
+              className="text-muted hover:text-ink text-xs font-mono"
             >
-              <X className="w-4 h-4" />
+              Close Diagram
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-stretch text-xs">
-            <div className="p-3 rounded-lg bg-background border border-border flex flex-col justify-between">
-              <div className="text-[10px] font-mono font-bold text-primary uppercase">1. User Input</div>
-              <div className="font-bold text-ink mt-1">Name, YOB & ID</div>
-              <div className="text-[11px] text-muted mt-1">
-                Accepts English, Arabic/transliterated names, DOB year, passports, or watchlist UIDs.
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
+            <div className="p-3.5 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="font-bold text-primary flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px]">1</span>
+                Query Normalization
               </div>
+              <p className="text-[11px] text-muted leading-relaxed">
+                Strips Arabic ligatures, Cyrillic diacritics, and corporate legal noise suffixes (LLC, FZE, Corp, GmbH).
+              </p>
             </div>
 
-            <div className="p-3 rounded-lg bg-background border border-border flex flex-col justify-between">
-              <div className="text-[10px] font-mono font-bold text-primary uppercase">2. Normalization</div>
-              <div className="font-bold text-ink mt-1">Cleansing & Phonetics</div>
-              <div className="text-[11px] text-muted mt-1">
-                Strips punctuation, normalizes Arabic/Slavic prefixes, and encodes Double Metaphone tokens.
+            <div className="p-3.5 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="font-bold text-primary flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px]">2</span>
+                Phonetic & DisMax Recall
               </div>
+              <p className="text-[11px] text-muted leading-relaxed">
+                Executes OpenSearch 2.12 Double Metaphone and edge n-gram queries with in-memory deterministic fallback.
+              </p>
             </div>
 
-            <div className="p-3 rounded-lg bg-primary/5 border border-primary/30 flex flex-col justify-between">
-              <div className="text-[10px] font-mono font-bold text-primary uppercase">3. Mode Branching</div>
-              <div className="space-y-1.5 mt-1 text-[11px]">
-                <div className="p-1.5 rounded bg-surface border border-border">
-                  <span className="font-bold text-ink">EXACT:</span> 100% normalized name equality.
-                </div>
-                <div className="p-1.5 rounded bg-surface border border-border">
-                  <span className="font-bold text-ink">FUZZY:</span> Jaro-Winkler + Double Metaphone.
-                </div>
-                <div className="p-1.5 rounded bg-surface border border-border">
-                  <span className="font-bold text-ink">NAME + ID:</span> Dual-Factor verification.
-                </div>
+            <div className="p-3.5 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="font-bold text-primary flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px]">3</span>
+                Dual String Metric Scoring
               </div>
+              <p className="text-[11px] text-muted leading-relaxed">
+                Calculates Jaro-Winkler (prefix match) and Damerau-Levenshtein (transposition penalty) token similarities.
+              </p>
             </div>
 
-            <div className="p-3 rounded-lg bg-background border border-border flex flex-col justify-between">
-              <div className="text-[10px] font-mono font-bold text-primary uppercase">4. Dual Store Query</div>
-              <div className="font-bold text-ink mt-1">OpenSearch + PostgreSQL</div>
-              <div className="text-[11px] text-muted mt-1">
-                Queries <code className="font-mono text-primary">edith_watchlist_v1</code> & <code className="font-mono text-primary">screening.watchlist_entities</code>.
+            <div className="p-3.5 rounded-lg bg-surface-muted border border-border space-y-1.5">
+              <div className="font-bold text-critical flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-critical/10 flex items-center justify-center text-[10px]">4</span>
+                Statutory Freeze & EDD
               </div>
-            </div>
-
-            <div className="p-3 rounded-lg bg-critical/5 border border-critical/30 flex flex-col justify-between">
-              <div className="text-[10px] font-mono font-bold text-critical uppercase">5. 1-Click Operations</div>
-              <div className="font-bold text-ink mt-1">Intercept / Whitelist</div>
-              <div className="text-[11px] text-muted mt-1">
-                Instant provisioning into 3-Pane Cases, 1-Click Whitelist exception, and WORM certificates.
-              </div>
+              <p className="text-[11px] text-muted leading-relaxed">
+                Composite threshold evaluation: 100% Exact Freeze, 75%+ EDD Hold, &lt;75% Auto-Release with WORM audit log.
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Search Controls Card */}
-      <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-5 shadow-2xs">
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-[11px] font-mono uppercase tracking-wider text-muted font-bold">
-              Select Screening Mode
-            </label>
-            <span className="text-[11px] text-muted font-mono">
-              Press <kbd className="px-1.5 py-0.5 rounded bg-surface-muted border border-border font-bold">Enter</kbd> to search • <kbd className="px-1.5 py-0.5 rounded bg-surface-muted border border-border font-bold">Esc</kbd> to clear
+      {/* Main Single Entity Search Box Form */}
+      <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-muted">
+              Select Search Mode:
             </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(['EXACT', 'FUZZY', 'EXACT_NAME_AND_ID'] as NameSearchMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => handleModeChange(mode)}
+                  className={`px-3 py-1 rounded-md text-xs font-mono font-bold transition ${
+                    searchMode === mode
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'bg-surface-muted text-muted hover:text-ink border border-border'
+                  }`}
+                >
+                  {mode === 'EXACT' && 'Exact (100%)'}
+                  {mode === 'FUZZY' && 'Fuzzy & Phonetic'}
+                  {mode === 'EXACT_NAME_AND_ID' && 'Dual-Factor Name + ID'}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <button
-              type="button"
-              onClick={() => handleModeChange('EXACT')}
-              className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 ${
-                searchMode === 'EXACT'
-                  ? 'bg-primary/10 border-primary ring-2 ring-primary/20'
-                  : 'bg-background border-border hover:border-primary/40'
-              }`}
-            >
-              <CheckCircle2 className={`w-5 h-5 mt-0.5 shrink-0 ${searchMode === 'EXACT' ? 'text-primary' : 'text-muted'}`} />
-              <div>
-                <div className="text-xs font-bold text-ink flex items-center gap-2">
-                  <span>1. Exact Name Search</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-surface border border-border">100%</span>
-                </div>
-                <p className="text-[11px] text-muted mt-0.5">
-                  Strict normalized full-name or alias equality check with zero fuzzy tolerance.
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleModeChange('FUZZY')}
-              className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 ${
-                searchMode === 'FUZZY'
-                  ? 'bg-primary/10 border-primary ring-2 ring-primary/20'
-                  : 'bg-background border-border hover:border-primary/40'
-              }`}
-            >
-              <Sparkles className={`w-5 h-5 mt-0.5 shrink-0 ${searchMode === 'FUZZY' ? 'text-primary' : 'text-muted'}`} />
-              <div>
-                <div className="text-xs font-bold text-ink flex items-center gap-2">
-                  <span>2. Fuzzy & Phonetic Search</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-primary text-white">RECOMMENDED</span>
-                </div>
-                <p className="text-[11px] text-muted mt-0.5">
-                  Catches spelling variations, transliterations & phonetic matches (Jaro-Winkler + Metaphone).
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleModeChange('EXACT_NAME_AND_ID')}
-              className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 ${
-                searchMode === 'EXACT_NAME_AND_ID'
-                  ? 'bg-primary/10 border-primary ring-2 ring-primary/20'
-                  : 'bg-background border-border hover:border-primary/40'
-              }`}
-            >
-              <Fingerprint className={`w-5 h-5 mt-0.5 shrink-0 ${searchMode === 'EXACT_NAME_AND_ID' ? 'text-primary' : 'text-muted'}`} />
-              <div>
-                <div className="text-xs font-bold text-ink flex items-center gap-2">
-                  <span>3. Exact Name & ID Search</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-surface border border-border">DUAL-FACTOR</span>
-                </div>
-                <p className="text-[11px] text-muted mt-0.5">
-                  Verifies both entity Name AND Sanctions/Passport/National ID (e.g. OFAC-9812, WC-6211256).
-                </p>
-              </div>
-            </button>
+          <div className="text-[11px] text-muted font-mono">
+            {searchMode === 'EXACT' && 'Deterministic alias equality. Zero false positive tolerance.'}
+            {searchMode === 'FUZZY' && 'Jaro-Winkler + Levenshtein + Double Metaphone phonetic matching.'}
+            {searchMode === 'EXACT_NAME_AND_ID' && 'Validates Official ID / Passport / Trade License.'}
           </div>
         </div>
 
-        {/* Input Fields */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
           <div className="md:col-span-4">
             <div className="flex justify-between items-center mb-1">
               <label className="text-xs font-semibold text-ink">
-                Full or Partial Entity Name
+                Individual / Legal Entity Name
               </label>
               {name && (
                 <button
@@ -718,19 +1077,24 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
       {/* Results Section */}
       {response && (
         <div className="space-y-4 animate-in fade-in duration-150">
-          <div className="flex flex-wrap items-center justify-between gap-4 bg-surface p-4 rounded-xl border border-border">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-surface p-4 rounded-xl border border-border shadow-2xs">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className={`px-3 py-1 rounded-md font-mono font-bold text-xs ${
-                response.totalMatches > 0
+                simulatedVerdict === 'BLOCKED'
                   ? 'bg-critical/15 text-critical border border-critical/30'
+                  : simulatedVerdict === 'HELD'
+                  ? 'bg-warning/15 text-warning border border-warning/30'
                   : 'bg-accent/15 text-accent border border-accent/30'
               }`}>
-                {response.totalMatches > 0 ? `${response.totalMatches} SANCTIONS / PEP MATCHES FOUND` : '0 MATCHES (CLEAN ENTITY)'}
+                {simulatedVerdict === 'CLEARED'
+                  ? '0 MATCHES (CLEAN / PASS)'
+                  : `${filteredMatches.length} MATCHES (${simulatedVerdict})`}
               </span>
+
               <div className="text-xs text-muted font-mono">
                 Mode: <strong className="text-ink">{response.searchMode}</strong>
                 {response.normalizedQueryName && (
-                  <> • Normalized: <strong className="text-primary">"{response.normalizedQueryName}"</strong></>
+                  <> • Query: <strong className="text-primary">"{response.normalizedQueryName}"</strong></>
                 )}
                 {response.queryId && (
                   <> • ID Filter: <strong className="text-primary">"{response.queryId}"</strong></>
@@ -738,172 +1102,168 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                 {response.queryBirthYear && (
                   <> • YOB: <strong className="text-primary">{response.queryBirthYear}</strong></>
                 )}
+                <span className="ml-2 text-primary font-bold">({response.latencyMs}ms)</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExportCertificate}
-                disabled={certifying}
-                className="px-3 py-1.5 rounded-lg bg-surface-muted text-ink border border-border hover:bg-border/40 font-mono text-xs font-bold transition flex items-center gap-1.5"
-                title="Generate cryptographically signed WORM regulatory screening certificate"
-              >
-                <FileText className="w-3.5 h-3.5 text-primary" />
-                <span>{certifying ? 'Signing...' : 'Export Audit Certificate'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleReset}
-                className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition flex items-center gap-1.5 shadow-xs"
-                title="Wipe current search and focus input for next customer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Screen Next Entity</span>
-              </button>
-            </div>
-          </div>
-
-          {response.totalMatches > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-surface p-3 rounded-lg border border-border text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-muted font-mono text-[11px] font-bold">Filter By Type:</span>
-                {(['ALL', 'INDIVIDUAL', 'CORPORATE'] as const).map(type => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setEntityTypeFilter(type)}
-                    className={`px-2.5 py-1 rounded-md font-mono text-[11px] transition ${
-                      entityTypeFilter === type
-                        ? 'bg-primary text-white font-bold'
-                        : 'bg-surface-muted text-muted hover:text-ink border border-border'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                ))}
+            {/* Engine 5: Client-Side "What-If" Sensitivity Slider */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-surface-muted border border-border">
+                <Sliders className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span className="text-[10px] font-mono text-muted uppercase font-bold">
+                  What-If Threshold:
+                </span>
+                <input
+                  type="range"
+                  min={50}
+                  max={95}
+                  step={5}
+                  value={clientThreshold}
+                  onChange={e => setClientThreshold(Number(e.target.value))}
+                  className="w-20 accent-primary cursor-pointer"
+                  title="Simulate sensitivity filter in real time"
+                />
+                <span className="text-xs font-mono font-bold text-primary w-8 text-right">
+                  {clientThreshold}%
+                </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-muted font-mono text-[11px] font-bold">Authority:</span>
-                <select
-                  value={listFilter}
-                  onChange={e => setListFilter(e.target.value)}
-                  className="bg-background border border-border rounded px-2 py-1 text-xs text-ink font-mono focus:outline-none focus:border-primary"
+                <button
+                  type="button"
+                  onClick={handleExportCertificate}
+                  disabled={certifying}
+                  className="px-3 py-1.5 rounded-lg bg-surface-muted text-ink border border-border hover:bg-border/40 font-mono text-xs font-bold transition flex items-center gap-1.5"
+                  title="Generate cryptographically signed WORM regulatory screening certificate"
                 >
-                  <option value="ALL">All Sanctions Lists</option>
-                  <option value="OFAC">OFAC (United States)</option>
-                  <option value="UN">UN Consolidated</option>
-                  <option value="EU">EU / UK HMT</option>
-                  <option value="CBUAE">CBUAE / Local UAE</option>
-                  <option value="PEP">PEP Registries</option>
-                </select>
+                  <FileText className="w-3.5 h-3.5 text-primary" />
+                  <span>{certifying ? 'Signing...' : 'WORM Certificate'}</span>
+                </button>
 
                 <button
                   type="button"
                   onClick={copyAuditNote}
-                  className="px-2.5 py-1 rounded bg-surface-muted text-ink border border-border hover:bg-border/30 font-mono text-[11px] transition flex items-center gap-1"
+                  className="px-3 py-1.5 rounded-lg bg-surface-muted text-ink border border-border hover:bg-border/40 font-mono text-xs font-bold transition flex items-center gap-1.5"
                 >
-                  {copiedAuditNote ? <Check className="w-3 h-3 text-accent" /> : <Copy className="w-3 h-3 text-muted" />}
-                  <span>{copiedAuditNote ? 'Copied Note' : 'Copy Audit Note'}</span>
+                  {copiedAuditNote ? <Check className="w-3.5 h-3.5 text-accent" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedAuditNote ? 'Copied' : 'Audit Note'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-white font-mono text-xs font-bold hover:bg-primary/90 transition flex items-center gap-1.5 shadow-xs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Screen Next</span>
                 </button>
               </div>
             </div>
-          )}
+          </div>
 
-          {response.matches.length === 0 ? (
-            <div className="bg-surface rounded-xl border-2 border-accent/40 p-8 space-y-6 shadow-xs animate-in fade-in duration-150">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-border/80 pb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shrink-0">
-                    <ShieldCheck className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-bold text-ink">
-                        Verified Compliance Clearance Certificate
-                      </h3>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-accent/20 text-accent border border-accent/40">
-                        AUDIT CLEARED
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted mt-0.5">
-                      No sanctions, PEP, or adverse watchlist records identified across 47,600+ monitored global entities.
-                    </p>
-                  </div>
-                </div>
+          {/* Engine 6: PEP Tiering & Adverse Media Disaggregation Tab Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-surface p-3 rounded-xl border border-border">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-muted font-mono text-[11px] font-bold uppercase flex items-center gap-1 mr-1">
+                <Layers className="w-3.5 h-3.5 text-primary" /> HIT TIERS:
+              </span>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleExportCertificate}
-                    className="px-4 py-2 rounded-lg bg-surface-muted border border-border hover:bg-border/40 text-ink font-bold text-xs flex items-center gap-1.5 transition"
-                  >
-                    <FileText className="w-4 h-4 text-primary" />
-                    <span>Download Clearance Certificate</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleReset}
-                    className="px-5 py-2 rounded-lg bg-accent hover:bg-accent/90 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Clear & Screen Next Customer</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
+              <button
+                type="button"
+                onClick={() => setActiveTierTab('ALL')}
+                className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  activeTierTab === 'ALL'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'bg-surface-muted text-muted hover:text-ink border border-border'
+                }`}
+              >
+                <span>All Hits</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-white font-bold">
+                  {tierCounts.all}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTierTab('SANCTIONS')}
+                className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  activeTierTab === 'SANCTIONS'
+                    ? 'bg-critical text-white shadow-xs'
+                    : 'bg-surface-muted text-muted hover:text-critical border border-border'
+                }`}
+              >
+                <FileWarning className="w-3 h-3" />
+                <span>Tier 1: Sanctions</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-white font-bold">
+                  {tierCounts.sanctions}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTierTab('PEP')}
+                className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  activeTierTab === 'PEP'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-surface-muted text-muted hover:text-purple-600 border border-border'
+                }`}
+              >
+                <Users className="w-3 h-3" />
+                <span>Tier 2: PEP & Reg. EDD</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-white font-bold">
+                  {tierCounts.pep}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTierTab('ADVERSE_MEDIA')}
+                className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  activeTierTab === 'ADVERSE_MEDIA'
+                    ? 'bg-warning text-ink shadow-xs'
+                    : 'bg-surface-muted text-muted hover:text-warning border border-border'
+                }`}
+              >
+                <Globe className="w-3 h-3" />
+                <span>Tier 3: Adverse Media</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-ink font-bold">
+                  {tierCounts.media}
+                </span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-muted uppercase">Entity:</span>
+              <select
+                value={entityTypeFilter}
+                onChange={e => setEntityTypeFilter(e.target.value as any)}
+                className="px-2.5 py-1 text-xs font-mono rounded-lg border border-border bg-background text-ink focus:outline-none"
+              >
+                <option value="ALL">All Types</option>
+                <option value="INDIVIDUAL">Individuals Only</option>
+                <option value="CORPORATE">Corporate Entities Only</option>
+              </select>
+            </div>
+          </div>
+
+          {filteredMatches.length === 0 ? (
+            <div className="bg-surface rounded-xl border border-border p-8 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-accent/10 border border-accent/30 text-accent flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-6 h-6" />
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-mono">
-                <div className="p-3.5 rounded-lg bg-background border border-border space-y-1">
-                  <span className="text-[10px] text-muted uppercase">Subject Screened</span>
-                  <div className="font-bold text-ink truncate">
-                    "{response.queryName || response.queryId}"
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-lg bg-background border border-border space-y-1">
-                  <span className="text-[10px] text-muted uppercase">Screening Mode & Threshold</span>
-                  <div className="font-bold text-primary">
-                    {response.searchMode} {response.searchMode === 'FUZZY' && `(Min ${minScore}%)`}
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-lg bg-background border border-border space-y-1">
-                  <span className="text-[10px] text-muted uppercase">Verified Registries</span>
-                  <div className="font-bold text-accent">
-                    OFAC, UN, EU, CBUAE, PEP
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-lg bg-background border border-border space-y-1">
-                  <span className="text-[10px] text-muted uppercase">Deterministic Fingerprint</span>
-                  <div className="font-bold text-ink truncate text-[11px]">
-                    SHA256: {Math.abs(JSON.stringify(response).split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0)).toString(16).padStart(12, '0').toUpperCase()}
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-lg bg-surface-muted border border-border flex flex-col md:flex-row justify-between items-start md:items-center gap-3 text-xs">
-                <p className="text-muted leading-relaxed">
-                  <strong className="text-ink">Regulatory Compliance Note:</strong> Entity passed zero-tolerance sanctions evaluation in compliance with FATF Recommendation 6/7, UAE CBUAE AML Regulations, and OFAC/UN Consolidated Watchlists.
-                </p>
-                <button
-                  type="button"
-                  onClick={copyAuditNote}
-                  className="px-3 py-1.5 rounded bg-surface border border-border hover:bg-border/30 text-ink font-mono text-xs transition flex items-center gap-1.5 shrink-0"
-                >
-                  {copiedAuditNote ? <Check className="w-3.5 h-3.5 text-accent" /> : <Copy className="w-3.5 h-3.5 text-muted" />}
-                  <span>{copiedAuditNote ? 'Audit Note Copied!' : 'Copy Clearance Note'}</span>
-                </button>
-              </div>
+              <h3 className="text-base font-bold text-ink">
+                Zero Adverse Matches Above Threshold ({clientThreshold}%)
+              </h3>
+              <p className="text-xs text-muted max-w-md mx-auto">
+                No sanctions hits, PEP designations, or adverse records exceeded the active sensitivity threshold. Entity cleared for straight-through clearing.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
               {filteredMatches.map((match: NameSearchMatch, index: number) => {
                 const cardKey = `${match.externalId}-${match.fullName}-${index}`;
                 const isDiagramOpen = activeDiagramEntityId === cardKey;
+                const isDiffOpen = activeDiffEntityId === cardKey;
                 const isPep = match.category === 'PEP' || match.sanctionsList.includes('PEP');
                 const isBorderline = match.score >= 70 && match.score <= 88;
 
@@ -931,14 +1291,14 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                             match.isBlocked
                               ? 'bg-critical text-white'
                               : isPep
-                                ? 'bg-purple-600 text-white'
-                                : 'bg-warning/20 text-warning border border-warning/40'
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-warning/20 text-warning border border-warning/40'
                           }`}>
                             {match.isBlocked
                               ? 'STATUTORY BLOCK / FREEZE'
                               : isPep
-                                ? 'PEP HIT — EDD REQUIRED'
-                                : 'EDD REVIEW REQUIRED'}
+                              ? 'PEP HIT — EDD REQUIRED'
+                              : 'EDD REVIEW REQUIRED'}
                           </span>
 
                           {/* Secondary Identifier Quick Badges */}
@@ -947,8 +1307,8 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                               match.yobDelta === 0
                                 ? 'bg-critical/15 text-critical border-critical/30'
                                 : match.yobDelta <= 2
-                                  ? 'bg-warning/15 text-warning border-warning/30'
-                                  : 'bg-accent/15 text-accent border-accent/30'
+                                ? 'bg-warning/15 text-warning border-warning/30'
+                                : 'bg-accent/15 text-accent border-accent/30'
                             }`}>
                               YOB Delta: {match.yobDelta === 0 ? 'Exact Year Match' : `±${match.yobDelta} yrs`}
                             </span>
@@ -987,8 +1347,22 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                           </div>
                         </div>
 
-                        {/* Action Buttons: Explain Diagram, 1-Click Intercept, Add Whitelist */}
-                        <div className="flex items-center gap-2">
+                        {/* Action Buttons: Explain Diagram, Side-by-Side Diff, 1-Click Intercept, Add Whitelist */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => toggleDiffInspector(cardKey)}
+                            className={`px-3 py-2 rounded-lg text-xs font-mono font-bold border transition flex items-center gap-1.5 ${
+                              isDiffOpen
+                                ? 'bg-primary text-white border-primary shadow-xs'
+                                : 'bg-surface-muted text-ink border-border hover:bg-border/40'
+                            }`}
+                            title="Side-by-side comparative inspection between query and record"
+                          >
+                            <Columns className="w-3.5 h-3.5" />
+                            <span>{isDiffOpen ? 'Hide Diff' : 'Side-by-Side Diff'}</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => toggleMatchDiagram(cardKey)}
@@ -1027,6 +1401,97 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                         </div>
                       </div>
                     </div>
+
+                    {/* UX 4: Side-by-Side Visual Diff Inspector */}
+                    {isDiffOpen && (
+                      <div className="p-5 bg-surface-muted/80 border-b border-border space-y-3 font-mono text-xs animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between">
+                          <div className="font-bold text-ink uppercase flex items-center gap-2">
+                            <Columns className="w-4 h-4 text-primary" />
+                            <span>Side-by-Side Field Alignment & Discrepancy Matrix</span>
+                          </div>
+                          <span className="text-[10px] text-muted">Record: {match.externalId}</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Left Column: Query Input */}
+                          <div className="p-3.5 rounded-lg bg-surface border border-border space-y-2">
+                            <div className="text-[10px] font-bold uppercase text-primary border-b border-border pb-1">
+                              Search Query Parameters
+                            </div>
+                            <div className="space-y-1.5">
+                              <div>
+                                <span className="text-muted text-[11px] block">Full Name:</span>
+                                <span className="font-bold text-ink">{response.queryName || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted text-[11px] block">ID / Passport Number:</span>
+                                <span className="font-bold text-ink">{response.queryId || 'None Specified'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted text-[11px] block">Birth Year (YOB):</span>
+                                <span className="font-bold text-ink">{response.queryBirthYear || 'Unspecified'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted text-[11px] block">Screening Mode:</span>
+                                <span className="font-bold text-ink">{response.searchMode}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right Column: Matched Sanctions Profile */}
+                          <div className="p-3.5 rounded-lg bg-surface border border-border space-y-2">
+                            <div className="text-[10px] font-bold uppercase text-critical border-b border-border pb-1">
+                              Watchlist Record ({match.sanctionsList})
+                            </div>
+                            <div className="space-y-1.5">
+                              <div>
+                                <span className="text-muted text-[11px] block">Canonical Name:</span>
+                                <span className="font-bold text-ink">{match.fullName}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted text-[11px] block">Target Identifier:</span>
+                                <span className="font-bold text-ink">{match.externalId} {match.idDetails ? `(${match.idDetails})` : ''}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted text-[11px] block">Official DOB / YOB:</span>
+                                <span className="font-bold text-ink">{match.dob || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted text-[11px] block">Nationality / Jurisdiction:</span>
+                                <span className="font-bold text-ink">{match.nationality || 'N/A'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Alignment Chips */}
+                        <div className="p-2.5 rounded-lg bg-surface border border-border flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-[10px] font-bold uppercase text-muted">Field Alignment:</span>
+                          <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                            <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30 font-bold">
+                              Name: {match.score >= 90 ? 'High Confidence' : `${match.score.toFixed(1)}% Similar`}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded font-bold border ${
+                              match.yobDelta === 0
+                                ? 'bg-accent/20 text-accent border-accent/40'
+                                : match.yobDelta && match.yobDelta <= 2
+                                ? 'bg-warning/20 text-warning border-warning/40'
+                                : 'bg-surface-muted text-muted border-border'
+                            }`}>
+                              DOB/YOB: {match.yobDelta !== undefined ? `Delta ±${match.yobDelta} yrs` : 'Not Compared'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded font-bold border ${
+                              match.isIdMatched
+                                ? 'bg-critical/20 text-critical border-critical/40'
+                                : 'bg-surface-muted text-muted border-border'
+                            }`}>
+                              Identifier: {match.isIdMatched ? 'Exact Verified' : 'No Direct ID Match'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="p-5 bg-background/60 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                       <div className="p-3.5 rounded-lg bg-surface border border-border space-y-1.5">

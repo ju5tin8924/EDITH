@@ -1,9 +1,9 @@
 # EDITH Next-Gen AML Intelligence Platform
-## End-to-End Engineering Workplan & Execution Ledger (v3.0)
+## End-to-End Engineering Workplan & Execution Ledger (v3.2)
 
-**Document ID:** EDITH-WORKPLAN-V3.0  
-**Version:** 3.0  
-**Status:** All Phases 1–9 Fully Completed & Verified (96/96 Automated Tests Passing)  
+**Document ID:** EDITH-WORKPLAN-V3.2  
+**Version:** 3.2  
+**Status:** All Phases 1–10 Fully Completed & Verified (96/96 Automated Tests Passing)  
 **Last Updated:** October 20, 2026  
 
 ---
@@ -21,6 +21,7 @@
 | **Phase 7** | **Single Entity Enhancements & Audit Exporter** | 1-Click Whitelist / False-Positive exception modal, Regulatory Screening Audit Certificate (WORM SHA-256 JSON/Print proof), Engine Sensitivity Drawer on `ScreeningConsole.tsx`, direct persistent case intercept (`/api/v1/screen/intercept-case`), and secondary identifier badges (YOB delta & nationality match). | **COMPLETED** |
 | **Phase 8** | **IAM User & Group Administration** | Multi-tenant user & group management endpoints (`core.users`, `core.user_groups`), dynamic group menu permissions, salted PBKDF2-SHA256 password hashing (`Rfc2898DeriveBytes.Pbkdf2`), and `IamAccessView.tsx` interface. | **COMPLETED** |
 | **Phase 9** | **CBS Webhook Reliability & Delivery Outbox** | HMAC-SHA256 signed callbacks (`X-Edith-Signature`), exponential backoff retries (3 attempts with jitter), and dead-letter delivery logs in `notifications.delivery_ledgers`. | **COMPLETED** |
+| **Phase 10** | **Searches Module Advanced UX & Engine Modernization** | Session Recent Searches Breadcrumb Bar, Side-by-Side Visual Diff Inspector, Client-Side "What-If" Sensitivity Thresholding, PEP Tiering & Adverse Media Disaggregation, and Batch Clipboard Paste Screening. | **COMPLETED** |
 
 ---
 

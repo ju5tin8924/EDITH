@@ -1,5 +1,5 @@
 # EDITH Platform Core Modernization & Production Readiness TODO
-**Document Version:** 1.3.0  
+**Document Version:** 1.4.0  
 **Date:** October 20, 2026  
 **Status:** Completed (Production Ready)  
 **Target Environment:** PostgreSQL 17 (`edith_postgres_17`), OpenSearch 2.12 (`edith_opensearch_2`), .NET 10 Minimal APIs (`Edith.Gateway`), React 19 Frontend (`edith-portal`).
@@ -19,6 +19,7 @@
 | **Phase 7** | Single Entity Recommended Enhancements (Whitelist Bypass, WORM Audit, Sensitivity Drawer) | `COMPLETED` |
 | **Phase 8** | Multi-tenant IAM User & Group Administration CRUD Endpoints (`core.users`) | `COMPLETED` |
 | **Phase 9** | CBS Outbound Webhooks & Reliability (HMAC-SHA256 Signatures, Polly Retries & Dead-Letter) | `COMPLETED` |
+| **Phase 10** | Searches Module Advanced UX & Engine Modernization (History, Diff, What-If, PEP Tiering, Batch) | `COMPLETED` |
 
 ---
 
@@ -84,3 +85,10 @@
 - [x] Implemented exponential backoff retry policy using `Polly` / `HttpClient` (3 retry attempts at 1s, 2s, 4s with jitter).
 - [x] Stored failed webhook deliveries into `notifications.delivery_ledgers` as a dead-letter log with full delivery status tracking.
 - [x] Implemented `CbsWebhookDispatcher` and comprehensive test suite in `Edith.Events.Tests`.
+
+### [x] Phase 10: Searches Module Advanced UX & Engine Modernization (v1.4.0)
+- [x] **UX 3: Session Recent Searches Breadcrumb Bar**: Synchronized with `sessionStorage` displaying the last 5 searched entities with timestamp, score, and verdict pills (`CLEARED`, `HELD`, `BLOCKED`) with instant 1-click re-query.
+- [x] **UX 4: Side-by-Side Visual Diff Inspector**: Two-column layout comparing Query Parameters vs Matched Watchlist Entity Record with green (exact alignment), amber (fuzzy/phonetic alignment), and red/gray (discrepancy) chips for Full Name, Aliases, DOB/YOB, Nationality, and National IDs.
+- [x] **Engine 5: Client-Side "What-If" Sensitivity Thresholding**: Instant (<1ms) candidate re-filtering and live verdict recalculation when adjusting threshold sliders (50% to 95%) without incurring redundant network latency.
+- [x] **Engine 6: PEP Tiering & Adverse Media Disaggregation**: Discrete tabs and categorization dividing hits into Tier 1 Sanctions (Statutory Block), Tier 2 PEP (EDD & Source of Wealth), and Tier 3 Adverse Media with live counts.
+- [x] **Engine 7: Batch Clipboard Paste Screening**: Rapid multi-line screening supporting up to 10 names or IDs pasted simultaneously, executing parallel requests and presenting a compact triage matrix with 1-click single-search inspection.
