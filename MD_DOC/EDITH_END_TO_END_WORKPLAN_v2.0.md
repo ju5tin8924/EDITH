@@ -1,9 +1,9 @@
 # EDITH Next-Gen AML Intelligence Platform
-## End-to-End Engineering Workplan & Execution Ledger (v3.2)
+## End-to-End Engineering Workplan & Execution Ledger (v3.4)
 
-**Document ID:** EDITH-WORKPLAN-V3.2  
-**Version:** 3.2  
-**Status:** All Phases 1–10 Fully Completed & Verified (96/96 Automated Tests Passing)  
+**Document ID:** EDITH-WORKPLAN-V3.4  
+**Version:** 3.4  
+**Status:** All Phases 1–11 Fully Completed & Verified (96/96 Automated Tests Passing)  
 **Last Updated:** October 20, 2026  
 
 ---
@@ -20,8 +20,9 @@
 | **Phase 6** | **Single Entity Screening & Reset Overhaul** | Universal single entity search (`NameSearchView.tsx`), 6 screening possibilities (Exact, Fuzzy, Dual-Factor, Clean Cert, PEP, Corporate), full reset lifecycle, threshold candidate noise filtering, and interactive match diagrams. | **COMPLETED** |
 | **Phase 7** | **Single Entity Enhancements & Audit Exporter** | 1-Click Whitelist / False-Positive exception modal, Regulatory Screening Audit Certificate (WORM SHA-256 JSON/Print proof), Engine Sensitivity Drawer on `ScreeningConsole.tsx`, direct persistent case intercept (`/api/v1/screen/intercept-case`), and secondary identifier badges (YOB delta & nationality match). | **COMPLETED** |
 | **Phase 8** | **IAM User & Group Administration** | Multi-tenant user & group management endpoints (`core.users`, `core.user_groups`), dynamic group menu permissions, salted PBKDF2-SHA256 password hashing (`Rfc2898DeriveBytes.Pbkdf2`), and `IamAccessView.tsx` interface. | **COMPLETED** |
-| **Phase 9** | **CBS Webhook Reliability & Delivery Outbox** | HMAC-SHA256 signed callbacks (`X-Edith-Signature`), exponential backoff retries (3 attempts with jitter), and dead-letter delivery logs in `notifications.delivery_ledgers`. | **COMPLETED** |
+| **Phase 9** | **CBS Outbound Webhooks & Reliability** | HMAC-SHA256 signed callbacks (`X-Edith-Signature`), exponential backoff retries (3 attempts with jitter), and dead-letter delivery logs in `notifications.delivery_ledgers`. | **COMPLETED** |
 | **Phase 10** | **Searches Module Advanced UX & Engine Modernization** | Session Recent Searches Breadcrumb Bar, Side-by-Side Visual Diff Inspector, Client-Side "What-If" Sensitivity Thresholding, PEP Tiering & Adverse Media Disaggregation, and Batch Clipboard Paste Screening. | **COMPLETED** |
+| **Phase 11** | **Single Entity Enterprise Workflow Modernization** | Target-Type Persona Modes (Person, Corporate, Vessel), In-Line Clearance Adjudication Slip (`core.audit_ledgers`), KYC 360 & UBO Tree Bridge, and Printable Onboarding AML Clearance Memo. | **COMPLETED** |
 
 ---
 
@@ -31,7 +32,7 @@
 flowchart LR
     A["Core Banking / Portal Upload"] --> B["Edith.Gateway (:5000)"]
     B --> C["5-Pass Screening Engine (OpenSearch 2.12)"]
-    C -->|Score < 80% or Whitelisted| D["CLEARED + WORM Audit Certificate"]
+    C -->|Score < 80% or Whitelisted| D["CLEARED + In-Line Clearance Memo"]
     C -->|Score >= 80%| E["HELD + Direct Case Intercept"]
     E --> F["Analyst L2 Triage (15m Lease Lock)"]
     F -->|Escalate| G["PendingApproval (MLRO Queue)"]

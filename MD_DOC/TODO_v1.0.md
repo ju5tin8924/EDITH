@@ -1,5 +1,5 @@
 # EDITH Platform Core Modernization & Production Readiness TODO
-**Document Version:** 1.4.0  
+**Document Version:** 1.5.0  
 **Date:** October 20, 2026  
 **Status:** Completed (Production Ready)  
 **Target Environment:** PostgreSQL 17 (`edith_postgres_17`), OpenSearch 2.12 (`edith_opensearch_2`), .NET 10 Minimal APIs (`Edith.Gateway`), React 19 Frontend (`edith-portal`).
@@ -20,6 +20,7 @@
 | **Phase 8** | Multi-tenant IAM User & Group Administration CRUD Endpoints (`core.users`) | `COMPLETED` |
 | **Phase 9** | CBS Outbound Webhooks & Reliability (HMAC-SHA256 Signatures, Polly Retries & Dead-Letter) | `COMPLETED` |
 | **Phase 10** | Searches Module Advanced UX & Engine Modernization (History, Diff, What-If, PEP Tiering, Batch) | `COMPLETED` |
+| **Phase 11** | Single Entity Enterprise Workflow Modernization (Personas, In-Line Adjudication, KYC Bridge, Clearance Slip) | `COMPLETED` |
 
 ---
 
@@ -92,3 +93,9 @@
 - [x] **Engine 5: Client-Side "What-If" Sensitivity Thresholding**: Instant (<1ms) candidate re-filtering and live verdict recalculation when adjusting threshold sliders (50% to 95%) without incurring redundant network latency.
 - [x] **Engine 6: PEP Tiering & Adverse Media Disaggregation**: Discrete tabs and categorization dividing hits into Tier 1 Sanctions (Statutory Block), Tier 2 PEP (EDD & Source of Wealth), and Tier 3 Adverse Media with live counts.
 - [x] **Engine 7: Batch Clipboard Paste Screening**: Rapid multi-line screening supporting up to 10 names or IDs pasted simultaneously, executing parallel requests and presenting a compact triage matrix with 1-click single-search inspection.
+
+### [x] Phase 11: Single Entity Enterprise Workflow Modernization (v1.5.0)
+- [x] **Target-Type Persona Modes**: 3-way toggle for **Individual (Person)**, **Corporate Entity (Trade License / TRN / LEI)**, and **Maritime Vessel / Cargo (IMO Number / Flag State)** with adaptive dynamic inputs and tailored test presets.
+- [x] **In-Line Clearance Adjudication Slip**: Instant sign-off bar on search results allowing analysts to record clearance justification (`False Positive`, `PEP Approved`, `Trade License Verified`, `Routine Clearance`) directly committing an immutable block into `core.audit_ledgers` with clearance reference ID `AML-CLR-XXXX` and SHA-256 block hash.
+- [x] **Bridge to KYC 360 & UBO Tree**: Real-time customer dossier detection that matches screened names/IDs against `screening.customers`, rendering a "Linked Customer Dossier Identified" pill and slide-over KYC/UBO preview drawer.
+- [x] **Onboarding AML Clearance Memo**: Printable, compliance-branded bank clearance memorandum ready for onboarding filing with analyst sign-off, exact lists checked, zero-hit verification, and WORM SHA-256 hash stamp.

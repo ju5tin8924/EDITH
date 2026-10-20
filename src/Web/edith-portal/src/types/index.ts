@@ -290,3 +290,45 @@ export interface IamGroupRecord {
   isActive: boolean;
   permissions: IamGroupPermission[];
 }
+
+export interface KycDocumentDto {
+  id: string;
+  title: string;
+  status: string;
+  expiryDate: string;
+}
+
+export interface KycTransactionDto {
+  txId: string;
+  date: string;
+  amount: number;
+  currency: string;
+  counterparty: string;
+  status: string;
+}
+
+export interface KycDossierDto {
+  customerId: string;
+  customerCode: string;
+  fullName: string;
+  customerType: string;
+  riskCategory: string;
+  riskScore: number;
+  nationality: string;
+  incorporationCountry: string;
+  uboIdentities: string[];
+  documents: KycDocumentDto[];
+  recentTransactions: KycTransactionDto[];
+}
+
+export interface AuditLogRecord {
+  id: string;
+  timestampUtc: string;
+  actor: string;
+  action: string;
+  targetEntity: string;
+  caseNumber?: string;
+  sha256Hash: string;
+  previousBlockHash: string;
+  details: string;
+}

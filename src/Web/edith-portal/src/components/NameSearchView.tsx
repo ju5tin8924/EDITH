@@ -30,15 +30,29 @@ import {
   Columns,
   Layers,
   ClipboardList,
-  Sliders
+  Sliders,
+  Anchor,
+  UserCheck,
+  Printer,
+  ExternalLink
 } from 'lucide-react';
-import { NameSearchMode, NameSearchResponse, NameSearchMatch, ScreeningAuditCertificate } from '../types';
+import { 
+  NameSearchMode, 
+  NameSearchResponse, 
+  NameSearchMatch, 
+  ScreeningAuditCertificate, 
+  KycDossierDto, 
+  AuditLogRecord 
+} from '../types';
 import { EdithApi } from '../services/api';
+
+export type TargetPersona = 'INDIVIDUAL' | 'CORPORATE' | 'VESSEL';
 
 interface RecentSearchRecord {
   name: string;
   idNumber: string;
   birthYear: string;
+  persona: TargetPersona;
   mode: NameSearchMode;
   verdict: 'CLEARED' | 'HELD' | 'BLOCKED';
   score: number;
@@ -62,9 +76,13 @@ const STORAGE_KEY_RECENT = 'edith_recent_searches_v1';
 
 export const NameSearchView: React.FC = () => {
   const navigate = useNavigate();
+
+  // Persona Target Mode: Individual vs Corporate vs Vessel
+  const [personaMode, setPersonaMode] = useState<TargetPersona>('INDIVIDUAL');
+
   const [name, setName] = useState('');
   const [idNumber, setIdNumber] = useState('');
-  const [birthYear, setBirthYear] = useState<string>('');
+  const [birthYear, setBirthYear] = useState<string>(''); // Used for YOB (Individual), Country (Corporate), Flag (Vessel)
   const [searchMode, setSearchMode] = useState<NameSearchMode>('FUZZY');
   const [minScore, setMinScore] = useState<number>(65);
   const [loading, setLoading] = useState(false);
@@ -81,6 +99,7 @@ export const NameSearchView: React.FC = () => {
   const [lastExecutedQuery, setLastExecutedQuery] = useState<{
     name: string;
     idNumber: string;
+    persona: TargetPersona;
     mode: NameSearchMode;
   } | null>(null);
 
@@ -107,6 +126,21 @@ export const NameSearchView: React.FC = () => {
   const [certificateData, setCertificateData] = useState<ScreeningAuditCertificate | null>(null);
   const [certifying, setCertifying] = useState(false);
 
+  // In-Line Clearance Adjudication Slip State
+  const [adjudicationCategory, setAdjudicationCategory] = useState<string>('FALSE_POSITIVE');
+  const [adjudicationRationale, setAdjudicationRationale] = useState<string>(
+    'Verified secondary identifiers and corporate records confirm non-match with sanctioned subject.'
+  );
+  const [adjudicating, setAdjudicating] = useState(false);
+  const [sealedClearanceEntry, setSealedClearanceEntry] = useState<AuditLogRecord | null>(null);
+
+  // KYC 360 & UBO Tree Bridge State
+  const [linkedKycDossier, setLinkedKycDossier] = useState<KycDossierDto | null>(null);
+  const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
+
+  // Onboarding Clearance Memo Modal
+  const [isOnboardingMemoOpen, setIsOnboardingMemoOpen] = useState(false);
+
   // Recent Searches State
   const [recentSearches, setRecentSearches] = useState<RecentSearchRecord[]>(() => {
     try {
@@ -132,9 +166,10 @@ export const NameSearchView: React.FC = () => {
     return (
       name.trim() !== lastExecutedQuery.name.trim() ||
       idNumber.trim() !== lastExecutedQuery.idNumber.trim() ||
+      personaMode !== lastExecutedQuery.persona ||
       searchMode !== lastExecutedQuery.mode
     );
-  }, [name, idNumber, searchMode, lastExecutedQuery]);
+  }, [name, idNumber, personaMode, searchMode, lastExecutedQuery]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -150,6 +185,7 @@ export const NameSearchView: React.FC = () => {
     qName: string,
     qId: string,
     qBy: string,
+    qPersona: TargetPersona,
     qMode: NameSearchMode,
     res: NameSearchResponse
   ) => {
@@ -164,6 +200,7 @@ export const NameSearchView: React.FC = () => {
       name: qName,
       idNumber: qId,
       birthYear: qBy,
+      persona: qPersona,
       mode: qMode,
       verdict,
       score: res.matches[0]?.score || 0,
@@ -183,19 +220,30 @@ export const NameSearchView: React.FC = () => {
     });
   };
 
+  const checkLinkedKyc = async (queryTerm: string) => {
+    if (!queryTerm || queryTerm.trim().length < 3) {
+      setLinkedKycDossier(null);
+      return;
+    }
+    const dossier = await EdithApi.fetchCustomerDossier(queryTerm);
+    setLinkedKycDossier(dossier);
+  };
+
   const executeSearch = async (
     overrideName?: string,
     overrideId?: string,
     overrideMode?: NameSearchMode,
-    overrideBirthYear?: string
+    overrideBirthYear?: string,
+    overridePersona?: TargetPersona
   ) => {
     const qName = overrideName !== undefined ? overrideName : name;
     const qId = overrideId !== undefined ? overrideId : idNumber;
     const qMode = overrideMode !== undefined ? overrideMode : searchMode;
     const qBy = overrideBirthYear !== undefined ? overrideBirthYear : birthYear;
+    const qPersona = overridePersona !== undefined ? overridePersona : personaMode;
 
     if (!qName.trim() && !qId.trim()) {
-      setError('Please enter a full/partial name or an ID/Passport number to screen.');
+      setError('Please enter an entity name or official identifier to screen.');
       return;
     }
 
@@ -204,9 +252,10 @@ export const NameSearchView: React.FC = () => {
     setActiveDiagramEntityId(null);
     setActiveDiffEntityId(null);
     setCopiedAuditNote(false);
+    setSealedClearanceEntry(null);
 
     try {
-      const parsedYear = qBy.trim() ? parseInt(qBy.trim(), 10) : undefined;
+      const parsedYear = qPersona === 'INDIVIDUAL' && qBy.trim() ? parseInt(qBy.trim(), 10) : undefined;
       const res = await EdithApi.searchNameAndId({
         name: qName,
         idNumber: qId,
@@ -220,9 +269,11 @@ export const NameSearchView: React.FC = () => {
       setLastExecutedQuery({
         name: qName,
         idNumber: qId,
+        persona: qPersona,
         mode: qMode
       });
-      saveRecentSearch(qName, qId, qBy, qMode, res);
+      saveRecentSearch(qName, qId, qBy, qPersona, qMode, res);
+      checkLinkedKyc(qName || qId);
     } catch (err: any) {
       setError(err?.message || 'Screening search request failed.');
     } finally {
@@ -248,17 +299,27 @@ export const NameSearchView: React.FC = () => {
     setEntityTypeFilter('ALL');
     setListFilter('ALL');
     setActiveTierTab('ALL');
+    setSealedClearanceEntry(null);
+    setLinkedKycDossier(null);
+    setIsKycDrawerOpen(false);
     if (nameInputRef.current) {
       nameInputRef.current.focus();
     }
   };
 
-  const applyPreset = (presetName: string, presetId: string, mode: NameSearchMode, presetYear: string = '') => {
+  const applyPreset = (
+    presetName: string, 
+    presetId: string, 
+    mode: NameSearchMode, 
+    presetSecondary: string = '',
+    presetPersona: TargetPersona = 'INDIVIDUAL'
+  ) => {
+    setPersonaMode(presetPersona);
     setName(presetName);
     setIdNumber(presetId);
-    setBirthYear(presetYear);
+    setBirthYear(presetSecondary);
     setSearchMode(mode);
-    executeSearch(presetName, presetId, mode, presetYear);
+    executeSearch(presetName, presetId, mode, presetSecondary, presetPersona);
   };
 
   const handleModeChange = (newMode: NameSearchMode) => {
@@ -268,12 +329,47 @@ export const NameSearchView: React.FC = () => {
     }
   };
 
+  const handlePersonaChange = (newPersona: TargetPersona) => {
+    setPersonaMode(newPersona);
+    if (newPersona === 'CORPORATE') {
+      setEntityTypeFilter('CORPORATE');
+    } else if (newPersona === 'INDIVIDUAL') {
+      setEntityTypeFilter('INDIVIDUAL');
+    } else {
+      setEntityTypeFilter('ALL');
+    }
+  };
+
   const toggleMatchDiagram = (key: string) => {
     setActiveDiagramEntityId(prev => (prev === key ? null : key));
   };
 
   const toggleDiffInspector = (key: string) => {
     setActiveDiffEntityId(prev => (prev === key ? null : key));
+  };
+
+  // In-Line Adjudication & Sign-Off to Immutable WORM Audit Ledger
+  const handleCommitAdjudication = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!response) return;
+    setAdjudicating(true);
+    try {
+      const subject = response.queryName || response.queryId || 'Screened Subject';
+      const clrRef = `AML-CLR-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const entry = await EdithApi.recordAuditEvent({
+        action: `SINGLE_ENTITY_CLEARANCE_${adjudicationCategory}`,
+        targetEntity: `${subject} (${personaMode})`,
+        caseNumber: clrRef,
+        details: `Adjudication Category: ${adjudicationCategory} | Rationale: ${adjudicationRationale} | Screened Verdict: ${simulatedVerdict}`
+      });
+      setSealedClearanceEntry(entry);
+      setStatusMessage(`Committed Adjudication Clearance ${clrRef} to Immutable Audit Ledger.`);
+      setTimeout(() => setStatusMessage(null), 5000);
+    } catch {
+      setStatusMessage('Failed to seal adjudication slip into audit ledger.');
+    } finally {
+      setAdjudicating(false);
+    }
   };
 
   // 1-Click Intercept & Persistent Case Creation
@@ -417,9 +513,10 @@ export const NameSearchView: React.FC = () => {
     if (!response) return;
     const auditText = `[EDITH AML CLEARANCE AUDIT NOTE]
 Timestamp: ${new Date().toISOString()}
+Persona: ${personaMode}
 Search Mode: ${response.searchMode}
 Screened Name: "${response.queryName || 'N/A'}"
-Screened ID / Passport: "${response.queryId || 'N/A'}"
+Screened ID / License / IMO: "${response.queryId || 'N/A'}"
 Engine Verdict: ${response.totalMatches === 0 ? 'CLEAN / 0 MATCHES IDENTIFIED' : `${response.totalMatches} POTENTIAL MATCHES FOUND`}
 Checked Registries: OFAC SDN, UN Consolidated, EU Financial Sanctions, UK HMT, CBUAE Local Terrorist List, World-Check PEP.
 Engine Latency: ${response.latencyMs} ms
@@ -455,20 +552,16 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
   const filteredMatches = useMemo(() => {
     if (!response || !response.matches) return [];
     return response.matches.filter(m => {
-      // 1. Client Sensitivity Threshold
       if (m.score < clientThreshold) return false;
 
-      // 2. PEP & Disaggregation Tiers
       if (activeTierTab === 'SANCTIONS' && m.category !== 'SANCTIONS') return false;
       if (activeTierTab === 'PEP' && m.category !== 'PEP' && !m.sanctionsList.includes('PEP')) return false;
       if (activeTierTab === 'ADVERSE_MEDIA' && m.category !== 'ADVERSE_MEDIA') return false;
 
-      // 3. Entity Type Filter
       if (entityTypeFilter !== 'ALL' && m.entityType !== entityTypeFilter) {
         return false;
       }
 
-      // 4. List Filter
       if (listFilter !== 'ALL' && !m.sanctionsList.toUpperCase().includes(listFilter)) {
         return false;
       }
@@ -477,7 +570,6 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
     });
   }, [response, clientThreshold, activeTierTab, entityTypeFilter, listFilter]);
 
-  // Simulated Verdict under What-If Threshold
   const simulatedVerdict = useMemo(() => {
     if (!response) return 'CLEARED';
     if (filteredMatches.length === 0) return 'CLEARED';
@@ -497,11 +589,11 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
             </h1>
             <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase rounded-full bg-accent/15 text-accent border border-accent/30 flex items-center gap-1">
               <Users className="w-3 h-3" />
-              All Users Accessible
+              Institutional Hub
             </span>
           </div>
           <p className="text-xs text-muted mt-1">
-            Deterministic search across 47,600+ live PostgreSQL & OpenSearch records with 1-Click Intercept, Whitelist Suppression, and WORM Proof Certificates.
+            Deterministic search across 47,600+ live PostgreSQL & OpenSearch records with Target-Type Personas, In-Line Audit Slips, and KYC 360 Bridge.
           </p>
         </div>
 
@@ -517,7 +609,7 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
             title="Screen up to 10 entities/passports in rapid parallel batch"
           >
             <ClipboardList className="w-3.5 h-3.5" />
-            <span>Multi-Line Batch Paste</span>
+            <span>Multi-Line Batch</span>
           </button>
 
           {(response || name || idNumber) && (
@@ -539,7 +631,7 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
             className="px-3 py-2 text-xs font-mono font-bold rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition flex items-center gap-2"
           >
             <GitBranch className="w-4 h-4" />
-            {showOverviewDiagram ? 'Hide Search Engine Diagram' : 'View Search Engine Diagram'}
+            {showOverviewDiagram ? 'Hide Diagram' : 'Engine Diagram'}
           </button>
         </div>
       </div>
@@ -556,6 +648,31 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
         </div>
       )}
 
+      {/* Linked Customer KYC 360 Notification Pill */}
+      {linkedKycDossier && (
+        <div className="p-3 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-between gap-4 font-mono text-xs animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <UserCheck className="w-5 h-5 text-primary" />
+            <div>
+              <span className="font-bold text-ink">
+                Linked Customer Dossier Identified: {linkedKycDossier.fullName} ({linkedKycDossier.customerCode})
+              </span>
+              <span className="text-muted text-[11px] ml-2">
+                • Tier: <strong className={linkedKycDossier.riskCategory === 'HIGH_RISK' ? 'text-critical' : 'text-accent'}>{linkedKycDossier.riskCategory}</strong> ({linkedKycDossier.riskScore})
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsKycDrawerOpen(true)}
+            className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary/90 flex items-center gap-1.5 shadow-xs"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Inspect KYC 360 & UBOs</span>
+          </button>
+        </div>
+      )}
+
       {/* UX 3: Session Recent Searches Breadcrumb Bar */}
       {recentSearches.length > 0 && (
         <div className="p-3 bg-surface rounded-xl border border-border flex items-center justify-between gap-3 flex-wrap">
@@ -568,14 +685,15 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                 key={rIdx}
                 type="button"
                 onClick={() => {
+                  setPersonaMode(rec.persona);
                   setName(rec.name);
                   setIdNumber(rec.idNumber);
                   setBirthYear(rec.birthYear);
                   setSearchMode(rec.mode);
-                  executeSearch(rec.name, rec.idNumber, rec.mode, rec.birthYear);
+                  executeSearch(rec.name, rec.idNumber, rec.mode, rec.birthYear, rec.persona);
                 }}
                 className="px-2.5 py-1 rounded-md bg-surface-muted hover:bg-border/40 border border-border flex items-center gap-1.5 transition text-xs"
-                title={`Re-run search for "${rec.name || rec.idNumber}" (${rec.mode})`}
+                title={`Re-run search for "${rec.name || rec.idNumber}" (${rec.persona} - ${rec.mode})`}
               >
                 <span className="font-semibold text-ink truncate max-w-[150px]">
                   {rec.name || rec.idNumber}
@@ -749,68 +867,60 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
         </div>
       )}
 
-      {/* On-Click Architecture & Search Modes Diagram */}
-      {showOverviewDiagram && (
-        <div className="bg-surface rounded-xl border-2 border-primary/30 p-5 space-y-4 shadow-md animate-in fade-in duration-150">
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <div className="flex items-center gap-2">
-              <GitBranch className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-mono uppercase tracking-wider font-bold text-ink">
-                Interactive Architecture Diagram — How the Single Entity Engine Works
-              </h2>
-            </div>
+      {/* Target-Type Persona Modes Selection Bar */}
+      <div className="bg-surface rounded-xl border border-border p-3.5 shadow-2xs flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-muted">
+            Target Persona:
+          </span>
+          <div className="flex items-center gap-1.5 p-1 bg-surface-muted rounded-lg border border-border">
             <button
               type="button"
-              onClick={() => setShowOverviewDiagram(false)}
-              className="text-muted hover:text-ink text-xs font-mono"
+              onClick={() => handlePersonaChange('INDIVIDUAL')}
+              className={`px-3 py-1.5 rounded-md text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                personaMode === 'INDIVIDUAL'
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'text-muted hover:text-ink'
+              }`}
             >
-              Close Diagram
+              <User className="w-3.5 h-3.5" />
+              <span>Individual Person</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handlePersonaChange('CORPORATE')}
+              className={`px-3 py-1.5 rounded-md text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                personaMode === 'CORPORATE'
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'text-muted hover:text-ink'
+              }`}
+            >
+              <Building className="w-3.5 h-3.5" />
+              <span>Corporate / Commercial Entity</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handlePersonaChange('VESSEL')}
+              className={`px-3 py-1.5 rounded-md text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                personaMode === 'VESSEL'
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'text-muted hover:text-ink'
+              }`}
+            >
+              <Anchor className="w-3.5 h-3.5" />
+              <span>Maritime Vessel / Cargo</span>
             </button>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
-            <div className="p-3.5 rounded-lg bg-surface-muted border border-border space-y-1.5">
-              <div className="font-bold text-primary flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px]">1</span>
-                Query Normalization
-              </div>
-              <p className="text-[11px] text-muted leading-relaxed">
-                Strips Arabic ligatures, Cyrillic diacritics, and corporate legal noise suffixes (LLC, FZE, Corp, GmbH).
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-lg bg-surface-muted border border-border space-y-1.5">
-              <div className="font-bold text-primary flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px]">2</span>
-                Phonetic & DisMax Recall
-              </div>
-              <p className="text-[11px] text-muted leading-relaxed">
-                Executes OpenSearch 2.12 Double Metaphone and edge n-gram queries with in-memory deterministic fallback.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-lg bg-surface-muted border border-border space-y-1.5">
-              <div className="font-bold text-primary flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px]">3</span>
-                Dual String Metric Scoring
-              </div>
-              <p className="text-[11px] text-muted leading-relaxed">
-                Calculates Jaro-Winkler (prefix match) and Damerau-Levenshtein (transposition penalty) token similarities.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-lg bg-surface-muted border border-border space-y-1.5">
-              <div className="font-bold text-critical flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-critical/10 flex items-center justify-center text-[10px]">4</span>
-                Statutory Freeze & EDD
-              </div>
-              <p className="text-[11px] text-muted leading-relaxed">
-                Composite threshold evaluation: 100% Exact Freeze, 75%+ EDD Hold, &lt;75% Auto-Release with WORM audit log.
-              </p>
-            </div>
-          </div>
         </div>
-      )}
+
+        <div className="text-[11px] font-mono text-muted">
+          {personaMode === 'INDIVIDUAL' && 'Screens Individuals against OFAC SDN, UN 1267, EU CFSP & PEP registers.'}
+          {personaMode === 'CORPORATE' && 'Screens Legal Entities, DED Trade Licenses, TRN & Corporate Aliases.'}
+          {personaMode === 'VESSEL' && 'Screens Maritime Vessels & Cargo by IMO 7-digit identifier & Flag State.'}
+        </div>
+      </div>
 
       {/* Main Single Entity Search Box Form */}
       <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 shadow-2xs">
@@ -833,7 +943,7 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                 >
                   {mode === 'EXACT' && 'Exact (100%)'}
                   {mode === 'FUZZY' && 'Fuzzy & Phonetic'}
-                  {mode === 'EXACT_NAME_AND_ID' && 'Dual-Factor Name + ID'}
+                  {mode === 'EXACT_NAME_AND_ID' && (personaMode === 'VESSEL' ? 'Vessel Name + IMO' : personaMode === 'CORPORATE' ? 'Company + Trade Lic' : 'Dual-Factor Name + ID')}
                 </button>
               ))}
             </div>
@@ -842,15 +952,18 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
           <div className="text-[11px] text-muted font-mono">
             {searchMode === 'EXACT' && 'Deterministic alias equality. Zero false positive tolerance.'}
             {searchMode === 'FUZZY' && 'Jaro-Winkler + Levenshtein + Double Metaphone phonetic matching.'}
-            {searchMode === 'EXACT_NAME_AND_ID' && 'Validates Official ID / Passport / Trade License.'}
+            {searchMode === 'EXACT_NAME_AND_ID' && 'Dual-Attribute Match with official legal registration ID.'}
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+          {/* Target Name Field (Adaptive) */}
           <div className="md:col-span-4">
             <div className="flex justify-between items-center mb-1">
               <label className="text-xs font-semibold text-ink">
-                Individual / Legal Entity Name
+                {personaMode === 'INDIVIDUAL' && 'Individual Full Legal Name'}
+                {personaMode === 'CORPORATE' && 'Corporate Registered Legal Name'}
+                {personaMode === 'VESSEL' && 'Vessel Name / Aircraft Registration'}
               </label>
               {name && (
                 <button
@@ -873,16 +986,25 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                 type="text"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                placeholder="e.g. Viktor Bout, Tariq Aziz..."
+                placeholder={
+                  personaMode === 'INDIVIDUAL' 
+                    ? 'e.g. Viktor Bout, Tariq Aziz...' 
+                    : personaMode === 'CORPORATE'
+                    ? 'e.g. Al-Baraka General Trading LLC...'
+                    : 'e.g. Bella 1, Neptune Breeze...'
+                }
                 className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-medium"
               />
             </div>
           </div>
 
+          {/* Identifier Field (Adaptive) */}
           <div className="md:col-span-3">
             <div className="flex justify-between items-center mb-1">
               <label className="text-xs font-semibold text-ink">
-                Sanctions UID / Passport / ID
+                {personaMode === 'INDIVIDUAL' && 'Sanctions UID / Passport / ID'}
+                {personaMode === 'CORPORATE' && 'Trade License / TRN / LEI Number'}
+                {personaMode === 'VESSEL' && 'IMO Number (7 Digits) / Call Sign'}
               </label>
             </div>
             <div className="relative">
@@ -891,19 +1013,28 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                 type="text"
                 value={idNumber}
                 onChange={e => setIdNumber(e.target.value)}
-                placeholder="e.g. OFAC-9812, WC-6211256..."
+                placeholder={
+                  personaMode === 'INDIVIDUAL'
+                    ? 'e.g. OFAC-9812, WC-6211256...'
+                    : personaMode === 'CORPORATE'
+                    ? 'e.g. TL-DXB-889120, TRN-1002...'
+                    : 'e.g. IMO-9234567...'
+                }
                 className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-mono"
               />
             </div>
           </div>
 
+          {/* Secondary Field (Adaptive) */}
           <div className="md:col-span-2">
             <label className="text-xs font-semibold text-ink block mb-1">
-              Birth Year (YOB)
+              {personaMode === 'INDIVIDUAL' && 'Birth Year (YOB)'}
+              {personaMode === 'CORPORATE' && 'Jurisdiction (ISO-2)'}
+              {personaMode === 'VESSEL' && 'Flag State (ISO-2)'}
             </label>
             <input
-              type="number"
-              placeholder="e.g. 1967"
+              type={personaMode === 'INDIVIDUAL' ? 'number' : 'text'}
+              placeholder={personaMode === 'INDIVIDUAL' ? 'e.g. 1967' : 'e.g. AE, PA, LR'}
               value={birthYear}
               onChange={e => setBirthYear(e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-mono"
@@ -993,67 +1124,109 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
           </div>
         )}
 
+        {/* 1-Click Persona-Specific Test Scenarios */}
         <div className="pt-2 border-t border-border space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-muted font-mono text-[11px] font-bold uppercase">
-              1-Click Test Scenarios:
+              1-Click {personaMode} Scenarios:
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => applyPreset('VIKTOR ANATOLYEVICH BOUT', '', 'EXACT', '1967')}
-              className="px-2.5 py-1 rounded-md bg-critical/10 text-critical border border-critical/30 hover:bg-critical/20 font-mono text-[11px] transition flex items-center gap-1"
-            >
-              <FileWarning className="w-3 h-3" />
-              1. Exact Sanction Hit: "Viktor Bout" (1967)
-            </button>
+            {personaMode === 'INDIVIDUAL' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('VIKTOR ANATOLYEVICH BOUT', '', 'EXACT', '1967', 'INDIVIDUAL')}
+                  className="px-2.5 py-1 rounded-md bg-critical/10 text-critical border border-critical/30 hover:bg-critical/20 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <FileWarning className="w-3 h-3" />
+                  1. Exact Hit: "Viktor Bout" (1967)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('Victor Bout', '', 'FUZZY', '1968', 'INDIVIDUAL')}
+                  className="px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  2. Fuzzy Typo: "Victor Bout"
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('Viktor Anatolyevich Bout', 'OFAC-9812', 'EXACT_NAME_AND_ID', '1967', 'INDIVIDUAL')}
+                  className="px-2.5 py-1 rounded-md bg-warning/15 text-warning border border-warning/30 hover:bg-warning/25 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <Fingerprint className="w-3 h-3" />
+                  3. Dual-Factor: "Viktor Bout" + "OFAC-9812"
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('Fatima Salem Al-Nuaimi', '', 'EXACT', '1985', 'INDIVIDUAL')}
+                  className="px-2.5 py-1 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  4. Clean Entity: "Fatima Al-Nuaimi" (0 Hits)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('Mansoor Mohammed Al-Marzooqi', '', 'FUZZY', '1975', 'INDIVIDUAL')}
+                  className="px-2.5 py-1 rounded-md bg-purple-500/10 text-purple-700 border border-purple-400/30 hover:bg-purple-500/20 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <Users className="w-3 h-3" />
+                  5. PEP Registry: "Mansoor Al-Marzooqi"
+                </button>
+              </>
+            )}
 
-            <button
-              type="button"
-              onClick={() => applyPreset('Victor Bout', '', 'FUZZY', '1968')}
-              className="px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20 font-mono text-[11px] transition flex items-center gap-1"
-            >
-              <Sparkles className="w-3 h-3" />
-              2. Fuzzy Typo & YOB ±1yr: "Victor Bout"
-            </button>
+            {personaMode === 'CORPORATE' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('Al-Baraka General Trading LLC', 'TL-DXB-991204', 'EXACT_NAME_AND_ID', 'AE', 'CORPORATE')}
+                  className="px-2.5 py-1 rounded-md bg-critical/10 text-critical border border-critical/30 hover:bg-critical/20 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <Building className="w-3 h-3" />
+                  1. Corporate Trade Hit: "Al-Baraka General Trading"
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('Al-Quds Logistics LLC', 'TL-DXB-889120', 'EXACT_NAME_AND_ID', 'IR', 'CORPORATE')}
+                  className="px-2.5 py-1 rounded-md bg-warning/15 text-warning border border-warning/30 hover:bg-warning/25 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <Building className="w-3 h-3" />
+                  2. High-Risk Corridor: "Al-Quds Logistics"
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('Dubai Retail Holdings LLC', 'TL-DXB-334455', 'EXACT', 'AE', 'CORPORATE')}
+                  className="px-2.5 py-1 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  3. Clean UAE Entity: "Dubai Retail Holdings"
+                </button>
+              </>
+            )}
 
-            <button
-              type="button"
-              onClick={() => applyPreset('Viktor Anatolyevich Bout', 'OFAC-9812', 'EXACT_NAME_AND_ID', '1967')}
-              className="px-2.5 py-1 rounded-md bg-warning/15 text-warning border border-warning/30 hover:bg-warning/25 font-mono text-[11px] transition flex items-center gap-1"
-            >
-              <Fingerprint className="w-3 h-3" />
-              3. Dual-Factor: "Viktor Bout" + "OFAC-9812"
-            </button>
-
-            <button
-              type="button"
-              onClick={() => applyPreset('Fatima Salem Al-Nuaimi', '', 'EXACT', '1985')}
-              className="px-2.5 py-1 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 font-mono text-[11px] transition flex items-center gap-1"
-            >
-              <CheckCircle2 className="w-3 h-3" />
-              4. Clean Entity: "Fatima Al-Nuaimi" (0 Hits)
-            </button>
-
-            <button
-              type="button"
-              onClick={() => applyPreset('Mansoor Mohammed Al-Marzooqi', '', 'FUZZY', '1975')}
-              className="px-2.5 py-1 rounded-md bg-purple-500/10 text-purple-700 border border-purple-400/30 hover:bg-purple-500/20 font-mono text-[11px] transition flex items-center gap-1"
-            >
-              <Users className="w-3 h-3" />
-              5. PEP Registry: "Mansoor Al-Marzooqi"
-            </button>
-
-            <button
-              type="button"
-              onClick={() => applyPreset('Al-Quds Logistics LLC', 'TL-DXB-889120', 'EXACT_NAME_AND_ID')}
-              className="px-2.5 py-1 rounded-md bg-surface-muted text-ink border border-border hover:bg-border/40 font-mono text-[11px] transition flex items-center gap-1"
-            >
-              <Building className="w-3 h-3" />
-              6. Corporate & Trade Lic: "Al-Quds Logistics"
-            </button>
+            {personaMode === 'VESSEL' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('BELLA 1', '9234567', 'EXACT_NAME_AND_ID', 'IR', 'VESSEL')}
+                  className="px-2.5 py-1 rounded-md bg-critical/10 text-critical border border-critical/30 hover:bg-critical/20 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <Anchor className="w-3 h-3" />
+                  1. Sanctioned Vessel: "BELLA 1 (IMO 9234567)"
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('NEPTUNE BREEZE', '9345678', 'EXACT', 'PA', 'VESSEL')}
+                  className="px-2.5 py-1 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  2. Clean Container Ship: "NEPTUNE BREEZE (IMO 9345678)"
+                </button>
+              </>
+            )}
           </div>
         </div>
       </form>
@@ -1092,15 +1265,12 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
               </span>
 
               <div className="text-xs text-muted font-mono">
-                Mode: <strong className="text-ink">{response.searchMode}</strong>
+                Persona: <strong className="text-ink">{personaMode}</strong> • Mode: <strong className="text-ink">{response.searchMode}</strong>
                 {response.normalizedQueryName && (
                   <> • Query: <strong className="text-primary">"{response.normalizedQueryName}"</strong></>
                 )}
                 {response.queryId && (
-                  <> • ID Filter: <strong className="text-primary">"{response.queryId}"</strong></>
-                )}
-                {response.queryBirthYear && (
-                  <> • YOB: <strong className="text-primary">{response.queryBirthYear}</strong></>
+                  <> • Identifier: <strong className="text-primary">"{response.queryId}"</strong></>
                 )}
                 <span className="ml-2 text-primary font-bold">({response.latencyMs}ms)</span>
               </div>
@@ -1131,13 +1301,23 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => setIsOnboardingMemoOpen(true)}
+                  className="px-3 py-1.5 rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 font-mono text-xs font-bold transition flex items-center gap-1.5"
+                  title="Print official AML Compliance Clearance Memorandum"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Onboarding Clearance Memo</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleExportCertificate}
                   disabled={certifying}
                   className="px-3 py-1.5 rounded-lg bg-surface-muted text-ink border border-border hover:bg-border/40 font-mono text-xs font-bold transition flex items-center gap-1.5"
                   title="Generate cryptographically signed WORM regulatory screening certificate"
                 >
                   <FileText className="w-3.5 h-3.5 text-primary" />
-                  <span>{certifying ? 'Signing...' : 'WORM Certificate'}</span>
+                  <span>{certifying ? 'Signing...' : 'WORM Proof'}</span>
                 </button>
 
                 <button
@@ -1159,6 +1339,77 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* In-Line Regulatory Adjudication & Sign-Off Bar */}
+          <div className="p-4 bg-surface rounded-xl border border-border space-y-3 font-mono text-xs shadow-2xs">
+            <div className="flex items-center justify-between border-b border-border pb-2.5">
+              <div className="flex items-center gap-2 font-bold text-ink uppercase">
+                <ShieldCheck className="w-4 h-4 text-accent" />
+                <span>In-Line Clearance Adjudication & Regulatory Sign-Off</span>
+              </div>
+              {sealedClearanceEntry && (
+                <span className="px-2.5 py-0.5 rounded bg-accent/20 text-accent font-bold border border-accent/40 flex items-center gap-1 text-[11px]">
+                  <Check className="w-3.5 h-3.5" />
+                  Sealed on WORM Ledger: {sealedClearanceEntry.caseNumber}
+                </span>
+              )}
+            </div>
+
+            <form onSubmit={handleCommitAdjudication} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <div className="md:col-span-4">
+                <label className="text-muted block text-[11px] mb-1 font-bold">
+                  Statutory Adjudication Finding:
+                </label>
+                <select
+                  value={adjudicationCategory}
+                  onChange={e => setAdjudicationCategory(e.target.value)}
+                  className="w-full bg-surface-muted border border-border rounded px-3 py-2 text-ink focus:outline-none focus:border-primary text-xs"
+                >
+                  <option value="FALSE_POSITIVE">False Positive — Verified Distinct Entity / Individual</option>
+                  <option value="PEP_LOW_RISK">PEP Low Risk — Source of Wealth Verified (FATF Rec. 12)</option>
+                  <option value="TRADE_LICENSE_VERIFIED">Corporate Clearance — DED Trade License Verified</option>
+                  <option value="ROUTINE_ONBOARDING">Routine Clearance — 0 Adverse Hits Detected</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-6">
+                <label className="text-muted block text-[11px] mb-1 font-bold">
+                  Compliance Officer Rationale & Evidence:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adjudicationRationale}
+                  onChange={e => setAdjudicationRationale(e.target.value)}
+                  className="w-full bg-surface-muted border border-border rounded px-3 py-2 text-ink focus:outline-none focus:border-primary text-xs"
+                  placeholder="e.g. Scanned official Trade License and confirmed distinct UBOs..."
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <button
+                  type="submit"
+                  disabled={adjudicating}
+                  className="w-full py-2 px-3 rounded-lg bg-accent text-white font-bold text-xs hover:bg-accent/90 transition flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{adjudicating ? 'Sealing...' : 'Sign & Seal Memo'}</span>
+                </button>
+              </div>
+            </form>
+
+            {sealedClearanceEntry && (
+              <div className="p-2.5 rounded bg-surface-muted border border-border space-y-1 text-[11px] text-muted">
+                <div className="flex justify-between items-center text-ink font-bold">
+                  <span>Audit Entry ID: {sealedClearanceEntry.id}</span>
+                  <span>Timestamp: {sealedClearanceEntry.timestampUtc}</span>
+                </div>
+                <div className="text-accent break-all text-[10px]">
+                  Immutable SHA-256 Block Hash: {sealedClearanceEntry.sha256Hash}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Engine 6: PEP Tiering & Adverse Media Disaggregation Tab Bar */}
@@ -1317,7 +1568,7 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                           {match.isIdMatched && (
                             <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-critical/20 text-critical border border-critical/40 flex items-center gap-1">
                               <Fingerprint className="w-3 h-3" />
-                              Passport / ID Verified
+                              Official Identifier Verified
                             </span>
                           )}
                         </div>
@@ -1347,7 +1598,7 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                           </div>
                         </div>
 
-                        {/* Action Buttons: Explain Diagram, Side-by-Side Diff, 1-Click Intercept, Add Whitelist */}
+                        {/* Action Buttons */}
                         <div className="flex items-center gap-2 flex-wrap">
                           <button
                             type="button"
@@ -1421,20 +1672,20 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                             </div>
                             <div className="space-y-1.5">
                               <div>
-                                <span className="text-muted text-[11px] block">Full Name:</span>
+                                <span className="text-muted text-[11px] block">Entity / Person Name:</span>
                                 <span className="font-bold text-ink">{response.queryName || 'N/A'}</span>
                               </div>
                               <div>
-                                <span className="text-muted text-[11px] block">ID / Passport Number:</span>
+                                <span className="text-muted text-[11px] block">Identifier / License / IMO:</span>
                                 <span className="font-bold text-ink">{response.queryId || 'None Specified'}</span>
                               </div>
                               <div>
-                                <span className="text-muted text-[11px] block">Birth Year (YOB):</span>
-                                <span className="font-bold text-ink">{response.queryBirthYear || 'Unspecified'}</span>
+                                <span className="text-muted text-[11px] block">Secondary (YOB / Country):</span>
+                                <span className="font-bold text-ink">{response.queryBirthYear || birthYear || 'Unspecified'}</span>
                               </div>
                               <div>
-                                <span className="text-muted text-[11px] block">Screening Mode:</span>
-                                <span className="font-bold text-ink">{response.searchMode}</span>
+                                <span className="text-muted text-[11px] block">Persona & Search Mode:</span>
+                                <span className="font-bold text-ink">{personaMode} ({response.searchMode})</span>
                               </div>
                             </div>
                           </div>
@@ -1454,7 +1705,7 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                                 <span className="font-bold text-ink">{match.externalId} {match.idDetails ? `(${match.idDetails})` : ''}</span>
                               </div>
                               <div>
-                                <span className="text-muted text-[11px] block">Official DOB / YOB:</span>
+                                <span className="text-muted text-[11px] block">Official DOB / Flag:</span>
                                 <span className="font-bold text-ink">{match.dob || 'N/A'}</span>
                               </div>
                               <div>
@@ -1610,6 +1861,231 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* KYC 360 & UBO Tree Slide-Over Drawer */}
+      {isKycDrawerOpen && linkedKycDossier && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-end z-50 font-mono">
+          <div className="bg-surface w-full max-w-xl h-full shadow-2xl border-l border-border p-6 overflow-y-auto space-y-5 animate-in slide-in-from-right duration-200">
+            <div className="flex justify-between items-center border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-primary" />
+                <h2 className="text-sm font-bold text-ink uppercase">
+                  Linked Customer KYC 360 & UBO Profile
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsKycDrawerOpen(false)}
+                className="text-muted hover:text-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-xl bg-surface-muted border border-border space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-ink text-sm">{linkedKycDossier.fullName}</span>
+                <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                  linkedKycDossier.riskCategory === 'HIGH_RISK' ? 'bg-critical/20 text-critical' : 'bg-accent/20 text-accent'
+                }`}>
+                  {linkedKycDossier.riskCategory} ({linkedKycDossier.riskScore})
+                </span>
+              </div>
+              <div className="text-muted text-[11px]">
+                Code: {linkedKycDossier.customerCode} • Type: {linkedKycDossier.customerType} • Nat: {linkedKycDossier.nationality}
+              </div>
+            </div>
+
+            {/* UBO Tree */}
+            <div className="space-y-2 text-xs">
+              <div className="font-bold text-ink uppercase text-[11px] flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-primary" />
+                <span>Ultimate Beneficial Owners (UBOs)</span>
+              </div>
+              <div className="space-y-1.5">
+                {linkedKycDossier.uboIdentities.map((ubo, uIdx) => (
+                  <div key={uIdx} className="p-2.5 rounded-lg bg-surface border border-border flex items-center justify-between">
+                    <span className="text-ink font-semibold">{ubo}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary/10 text-primary font-bold">
+                      Verified Shareholder
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Documents */}
+            <div className="space-y-2 text-xs">
+              <div className="font-bold text-ink uppercase text-[11px] flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-primary" />
+                <span>Verified Legal Documents</span>
+              </div>
+              <div className="space-y-1.5">
+                {linkedKycDossier.documents.map((doc) => (
+                  <div key={doc.id} className="p-2.5 rounded-lg bg-surface border border-border flex items-center justify-between">
+                    <div>
+                      <div className="text-ink font-semibold">{doc.title}</div>
+                      <div className="text-muted text-[10px]">Expires: {doc.expiryDate}</div>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-accent/20 text-accent font-bold">
+                      {doc.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Recent Account Activity */}
+            <div className="space-y-2 text-xs">
+              <div className="font-bold text-ink uppercase text-[11px] flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-primary" />
+                <span>Recent Screened Transactions</span>
+              </div>
+              <div className="space-y-1.5">
+                {linkedKycDossier.recentTransactions.map((tx) => (
+                  <div key={tx.txId} className="p-2.5 rounded-lg bg-surface border border-border flex items-center justify-between">
+                    <div>
+                      <div className="text-ink font-semibold">{tx.counterparty}</div>
+                      <div className="text-muted text-[10px]">{tx.date} • Ref: {tx.txId}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-ink">{tx.currency} {tx.amount.toLocaleString()}</div>
+                      <span className="text-[10px] text-accent font-bold">{tx.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-border flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsKycDrawerOpen(false);
+                  navigate('/kyc');
+                }}
+                className="px-4 py-2 rounded-lg bg-primary text-white font-bold text-xs hover:bg-primary/90 flex items-center gap-1.5 shadow-xs"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open Full Customer 360 Workspace</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Onboarding AML Clearance Memo Modal */}
+      {isOnboardingMemoOpen && response && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono">
+          <div className="bg-surface rounded-xl border border-border shadow-2xl max-w-2xl w-full p-6 space-y-4 animate-in fade-in duration-150">
+            <div className="flex justify-between items-center border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <Printer className="w-5 h-5 text-primary" />
+                <h3 className="text-sm font-bold text-ink">
+                  Customer Onboarding AML Clearance Memorandum
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOnboardingMemoOpen(false)}
+                className="text-muted hover:text-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 bg-background rounded-lg border border-border space-y-4 text-xs leading-relaxed">
+              <div className="text-center border-b border-border pb-3 space-y-1">
+                <div className="font-bold text-base text-ink tracking-wider">
+                  FIRST EMIRATES COMPLIANCE & FINANCIAL CRIME DIVISION
+                </div>
+                <div className="text-[11px] text-muted">
+                  STATUTORY AML / CFT SCREENING CLEARANCE MEMORANDUM
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-[10px] text-muted block uppercase">Screened Entity / Person:</span>
+                  <span className="font-bold text-ink text-sm">{response.queryName || response.queryId}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted block uppercase">Persona & Classification:</span>
+                  <span className="font-bold text-ink">{personaMode} • Verified</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted block uppercase">Identifier / License / IMO:</span>
+                  <span className="font-bold text-ink">{response.queryId || 'None Specified'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted block uppercase">Date & Timestamp (UTC):</span>
+                  <span className="font-bold text-ink">{response.evaluatedAt || new Date().toISOString()}</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-surface-muted border border-border space-y-1.5">
+                <span className="text-[10px] text-muted uppercase font-bold">Mandatory Registries Screened:</span>
+                <p className="text-[11px] text-ink leading-relaxed">
+                  ✓ OFAC Specially Designated Nationals (SDN) & Sectoral Sanctions (SSI)<br />
+                  ✓ United Nations Security Council Consolidated List (Resolutions 1267/1988/2231)<br />
+                  ✓ European Union Common Foreign & Security Policy (CFSP)<br />
+                  ✓ UK HM Treasury Office of Financial Sanctions Implementation (OFSI)<br />
+                  ✓ Central Bank of UAE (CBUAE) Local Terrorist & Cabinet Resolution List<br />
+                  ✓ Refinitiv World-Check Politically Exposed Persons (PEP Levels 1–4)
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-accent/10 border border-accent/30 space-y-1">
+                <div className="font-bold text-accent flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>CLEARANCE VERDICT: APPROVED / PASS</span>
+                </div>
+                <p className="text-[11px] text-ink">
+                  Deterministic phonetic and token evaluation yielded 0 true statutory adverse matches above active risk threshold. The subject is approved for commercial account onboarding.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border text-[11px]">
+                <div>
+                  <span className="text-muted block">Reviewing Compliance Officer:</span>
+                  <span className="font-bold text-ink">Fatima Al-Nuaimi (MLRO / Senior Officer)</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-muted block">Regulatory Standard:</span>
+                  <span className="font-bold text-ink">CBUAE Dec. 74 & FATF Rec. 11</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => {
+                  const blob = new Blob([JSON.stringify(response, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `CLEARANCE-MEMO-${Date.now()}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="px-3.5 py-1.5 rounded bg-surface-muted text-ink border border-border hover:bg-border/30 text-xs font-bold flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Save JSON</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-4 py-1.5 rounded bg-primary text-white text-xs font-bold hover:bg-primary/90 flex items-center gap-1.5 shadow-xs"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Formal Memo</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
