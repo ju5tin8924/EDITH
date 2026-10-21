@@ -745,7 +745,16 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                         })}
                       >
                         <circle cx="250" cy="160" r="36" fill="#450A0A" stroke="#EF4444" strokeWidth="3" />
-                        <circle cx="250" cy="160" r="42" fill="none" stroke="#EF4444" strokeWidth="1" strokeDasharray="4" className="animate-spin" />
+                        <circle cx="250" cy="160" r="42" fill="none" stroke="#EF4444" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.85">
+                          <animateTransform
+                            attributeName="transform"
+                            type="rotate"
+                            from="0 250 160"
+                            to="360 250 160"
+                            dur="10s"
+                            repeatCount="indefinite"
+                          />
+                        </circle>
                         <text x="250" y="158" fill="#FCA5A5" fontSize="10" textAnchor="middle" fontFamily="monospace" fontWeight="bold">TARGET</text>
                         <text x="250" y="172" fill="#FFFFFF" fontSize="8" textAnchor="middle" fontFamily="monospace">Viktor Bout</text>
                       </g>
