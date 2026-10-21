@@ -387,9 +387,9 @@ export const EdithApi = {
     };
   },
 
-  async acquireLock(caseId: string): Promise<boolean> {
+  async acquireLock(caseId: string, durationMinutes: number = 15): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/cases/${caseId}/acquire-lock`, {
+      const res = await fetch(`${API_BASE}/cases/${caseId}/acquire-lock?durationMinutes=${durationMinutes}`, {
         method: 'POST',
         headers: getAuthHeaders()
       });
@@ -437,12 +437,12 @@ export const EdithApi = {
     }
   },
 
-  async addComment(caseId: string, content: string): Promise<boolean> {
+  async addComment(caseId: string, content: string, noteType: string = 'INVESTIGATION'): Promise<boolean> {
     try {
       const res = await fetch(`${API_BASE}/cases/${caseId}/comments`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ content, noteType })
       });
       return res.ok;
     } catch {

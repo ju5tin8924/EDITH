@@ -164,14 +164,18 @@ public static class CaseEndpoints
         group.MapPost("/{caseId:guid}/acquire-lock", async (
             Guid caseId,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromQuery] int? durationMinutes,
             ClaimsPrincipal principal,
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
             var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
             var (userId, userName) = ExtractUser(principal);
+            var duration = durationMinutes.HasValue && durationMinutes.Value > 0
+                ? TimeSpan.FromMinutes(durationMinutes.Value)
+                : TimeSpan.FromMinutes(15);
 
-            var result = await caseService.AcquireLockAsync(tenantId, caseId, userId, userName, TimeSpan.FromMinutes(15), ct);
+            var result = await caseService.AcquireLockAsync(tenantId, caseId, userId, userName, duration, ct);
             if (!result.IsLocked)
             {
                 return Results.Conflict(new { error = result.ErrorMessage, lockedBy = result.LockedByName });

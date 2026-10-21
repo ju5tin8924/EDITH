@@ -197,9 +197,14 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
             c.GetProperty("status").GetString() == "Open");
         var caseId = Guid.Parse(caseItem.GetProperty("id").GetString()!);
 
-        // 3. Analyst acquires pessimistic 15-minute lease lock
-        var lockRes = await _client.PostAsync($"/api/v1/cases/{caseId}/acquire-lock", null);
+        // 3. Analyst acquires pessimistic lease lock with custom renewal duration (60 minutes)
+        var lockRes = await _client.PostAsync($"/api/v1/cases/{caseId}/acquire-lock?durationMinutes=60", null);
         Assert.Equal(HttpStatusCode.OK, lockRes.StatusCode);
+        var lockJson = await lockRes.Content.ReadAsStringAsync();
+        using var lockDoc = JsonDocument.Parse(lockJson);
+        Assert.True(lockDoc.RootElement.GetProperty("isLocked").GetBoolean());
+        var expiresAt = DateTimeOffset.Parse(lockDoc.RootElement.GetProperty("expiresAt").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(expiresAt > DateTimeOffset.UtcNow.AddMinutes(50));
 
         // 4. Analyst adds multi-type comment
         var noteReq = new { content = "Verified OFAC SDN hit on Viktor Bout. Escalating to MLRO for freeze.", noteType = "INVESTIGATION" };

@@ -142,8 +142,9 @@ export interface CaseComment {
   id: string;
   timestampUtc: string;
   authorName: string;
-  authorRole: UserRole;
+  authorRole: string;
   content: string;
+  noteType?: 'INVESTIGATION' | 'SUPERVISOR' | 'RATIONALE' | 'SYSTEM' | string;
 }
 
 export interface CaseDetail extends CaseSummary {
