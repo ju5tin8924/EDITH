@@ -13,7 +13,7 @@ All platform specifications, database DDLs, product requirements, and execution 
 
 | Document | Current Version | Primary Purpose | Key Contents |
 | :--- | :---: | :--- | :--- |
-| [`TODO_v1.0.md`](file:///f:/EDITH/MD_DOC/TODO_v1.0.md) | **v1.5.0** | **Live Engineering Roadmap** | Task-by-task execution ledger: All 11 phases marked `COMPLETED` (Phases 1–11), tracking test suite coverage (96/96 passing across 10 test projects) and production readiness. |
+| [`TODO_v1.0.md`](file:///f:/EDITH/MD_DOC/TODO_v1.0.md) | **v1.6.0** | **Live Engineering Roadmap** | Task-by-task execution ledger: Phases 1–11 marked `COMPLETED` and Phase 12 `PENDING` (Case Workspace Investigation Canvas: queue layout, multi-duration lock renewals, investigation tabs, whitelist-on-dismissal, editable AI copilot, categorized notes). |
 | [`EDITH_END_TO_END_WORKPLAN_v2.0.md`](file:///f:/EDITH/MD_DOC/EDITH_END_TO_END_WORKPLAN_v2.0.md) | **v3.4** | **Executive Workplan & Data Flow** | 11-Phase executive milestones, comprehensive end-to-end dataflow flowchart (Core Banking $\to$ 5-Pass Screening $\to$ 4-Eyes Adjudication $\to$ Signed CBS Webhooks $\to$ WORM Audit Ledger). |
 | [`CREDENTIALS_v1.0.md`](file:///f:/EDITH/MD_DOC/CREDENTIALS_v1.0.md) | **v1.2** | **Developer & Infrastructure Secrets** | PostgreSQL & OpenSearch ports/credentials, JWT signing keys, multi-tenant GUIDs, RBAC personas, PBKDF2 hashing, CBS webhook retries, seeded data counts. |
 | [`database_v2.0.md`](file:///f:/EDITH/MD_DOC/database_v2.0.md) | **v2.2** | **Database DDL & Search Index Schema** | PostgreSQL 17 DDL across 5 isolated schemas (`core`, `screening`, `cases`, `rules`, `notifications`), SHA-256 block-chained WORM audit ledger, OpenSearch analyzer & mapping configs. |

@@ -1,7 +1,7 @@
 # EDITH Platform Core Modernization & Production Readiness TODO
-**Document Version:** 1.5.0  
-**Date:** October 20, 2026  
-**Status:** Completed (Production Ready)  
+**Document Version:** 1.6.0  
+**Date:** October 21, 2026  
+**Status:** In Progress (Phase 12 Pending)  
 **Target Environment:** PostgreSQL 17 (`edith_postgres_17`), OpenSearch 2.12 (`edith_opensearch_2`), .NET 10 Minimal APIs (`Edith.Gateway`), React 19 Frontend (`edith-portal`).
 
 ---
@@ -21,6 +21,7 @@
 | **Phase 9** | CBS Outbound Webhooks & Reliability (HMAC-SHA256 Signatures, Polly Retries & Dead-Letter) | `COMPLETED` |
 | **Phase 10** | Searches Module Advanced UX & Engine Modernization (History, Diff, What-If, PEP Tiering, Batch) | `COMPLETED` |
 | **Phase 11** | Single Entity Enterprise Workflow Modernization (Personas, In-Line Adjudication, KYC Bridge, Clearance Slip) | `COMPLETED` |
+| **Phase 12** | Case Workspace Investigation Canvas Workflow & UX Modernization (Layout, Multi-Duration Lease, Tabs, Whitelist-on-Dismissal, AI Copilot, Categorized Notes) | `PENDING` |
 
 ---
 
@@ -99,3 +100,29 @@
 - [x] **In-Line Clearance Adjudication Slip**: Instant sign-off bar on search results allowing analysts to record clearance justification (`False Positive`, `PEP Approved`, `Trade License Verified`, `Routine Clearance`) directly committing an immutable block into `core.audit_ledgers` with clearance reference ID `AML-CLR-XXXX` and SHA-256 block hash.
 - [x] **Bridge to KYC 360 & UBO Tree**: Real-time customer dossier detection that matches screened names/IDs against `screening.customers`, rendering a "Linked Customer Dossier Identified" pill and slide-over KYC/UBO preview drawer.
 - [x] **Onboarding AML Clearance Memo**: Printable, compliance-branded bank clearance memorandum ready for onboarding filing with analyst sign-off, exact lists checked, zero-hit verification, and WORM SHA-256 hash stamp.
+
+### [ ] Phase 12: Case Workspace Investigation Canvas Workflow & UX Modernization (v1.6.0 Target)
+- [ ] **1. Collapsible Vertical Case Queue & Status Filters**:
+  - Replace the horizontal top 3-column card block with a compact, scrollable vertical case list / split-pane.
+  - Interactive filter chips: `All Cases`, `My Locks`, `Escalated to MLRO`, `SLA Critical (<24h)`, and `Resolved`.
+  - Instant client-side search by Case Number (`CAS-2026-XXXX`), Primary Subject Name, or Transaction Reference.
+- [ ] **2. Live Lock Lease Countdown & Multi-Duration Renewal (15m, 30m, 1hr)**:
+  - Dynamic user-aware lock ownership check (comparing against current authenticated persona, removing hardcoded user strings).
+  - Real-time countdown timer badge (`🔒 Locked by You (12:45 remaining)`) with amber warning at `< 3:00` and critical alert at `< 1:00`.
+  - Multi-duration lease renewal popover/dropdown with options: `15 Minutes`, `30 Minutes`, and `1 Hour`.
+  - Locked-by-other banner surfacing active investigator name and lock expiration countdown with write-protection safeguards.
+- [ ] **3. Tabbed Multi-Angle Investigation Console (Pane 2)**:
+  - **Tab 1: Token & Phonetic Diff**: Visual token breakdown, Jaro-Winkler scores, and designation details.
+  - **Tab 2: UBO & Entity Relationship Graph**: Embedded multi-hop network visualizer rendering circular ownership and intermediary accounts from `Edith.Addons`.
+  - **Tab 3: Transaction Corridor & AML Typology Rules**: Geographic remittance flow map, FATF Grey/Black list corridor badges, and tripped typology rule conditions (`rules.aml_rules`).
+  - **Tab 4: KYC 360 Customer Profile Bridge**: Direct slide-in or tabbed view of linked customer profile, identity documents, risk score, and screening history from `screening.customers`.
+- [ ] **4. 4-Eyes Maker-Checker & Adjudication Workflows**:
+  - **Direct Whitelist-on-Dismissal**: Checkbox toggle in MLRO false-positive modal (`[x] Auto-provision Whitelist Exemption for Beneficiary (Scope: Exact Name, Expiry: 1 Year)`) calling `screening.whitelists` on sign-off.
+  - **Enhanced Due Diligence (EDD) / RFI Transition**: Analyst ability to move case into `UnderReview (EDD)` with structured checklist (*Source of Funds*, *Invoice Copy*, *Secondary ID Verification*).
+  - **Dual Rationale Presentation**: Side-by-side display of Maker's Escalation Rationale and MLRO's Final Sign-off Rationale in the audit ledger.
+- [ ] **5. Editable AI Copilot Narrative & 1-Click goAML XML Export**:
+  - Interactive multi-paragraph STR narrative editor allowing analysts to modify the 5 generated FATF sections inline before applying directly into statutory case rationale.
+  - 1-Click XML download button (`goAML_STR_{CaseNumber}.xml`) with syntax-highlighted review and FIU copy buffer.
+- [ ] **6. Categorized Note Types & Unified Audit Activity Stream**:
+  - Note classification selector: `Investigation Note` (blue), `Supervisor Direction` (purple), and `Statutory Rationale` (amber) mapped to `cases.case_activities.note_type`.
+  - Chronological activity timeline unifying user notes with automated system events (*CBS Interceptor Hold*, *Lock Acquired*, *Escalated to MLRO*, *CBS Release Webhook Delivered*).
