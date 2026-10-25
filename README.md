@@ -1,11 +1,11 @@
-# EDITH — Enterprise Anti-Money Laundering & Sanctions Screening Platform
+﻿# EDITH — Enterprise Anti-Money Laundering & Sanctions Screening Platform
 
-[![Build & Test](https://img.shields.io/badge/tests-96%2F96%20passing-10B981.svg?style=flat-square)](tests/)
+[![Build & Test](https://img.shields.io/badge/tests-100%2F100%20passing-10B981.svg?style=flat-square)](tests/)
 [![Architecture](https://img.shields.io/badge/.NET-10.0%20LTS-512BD4.svg?style=flat-square)](Edith.slnx)
 [![Database](https://img.shields.io/badge/PostgreSQL-17%20Enterprise-336791.svg?style=flat-square)](src/Database/Edith.Database.Migrator/)
 [![Search](https://img.shields.io/badge/OpenSearch-2.12%20Phonetic%20Index-005EB8.svg?style=flat-square)](src/Screening/Edith.Screening.Core/)
 [![Frontend](https://img.shields.io/badge/React-19%20%7C%20Vite%20%7C%20Tailwind-06B6D4.svg?style=flat-square)](src/Web/edith-portal/)
-[![Zero Redis](https://img.shields.io/badge/Architecture-Zero%20Redis%20Dependency-brightgreen.svg?style=flat-square)](MD_DOC/EDITH_Master_Specification_v5.0.md)
+[![Zero Redis](https://img.shields.io/badge/Architecture-Zero%20Redis%20Dependency-brightgreen.svg?style=flat-square)](MD_DOC/03_Technical_Architecture_and_Database/EDITH_Master_Specification_v10.0.md)
 [![Screening Latency](https://img.shields.io/badge/Screening%20P99-8.4ms-06B6D4.svg?style=flat-square)](tests/Edith.Performance.Benchmark/)
 
 EDITH is a high-velocity, cloud-native Anti-Money Laundering (AML) and Counter-Terrorist Financing (CTF) intelligence platform engineered for Tier-1 financial institutions, digital banks, exchange houses, and international payment networks.
@@ -43,13 +43,32 @@ Designed to eliminate false positives while guaranteeing statutory freeze compli
 - **High-Throughput Streaming Bulk Ingestion (`Edith.Screening.Bulk`):**
   - Asynchronous `IAsyncEnumerable` streaming parser supporting **CSV**, **XML**, and **JSON** mapped to 9 standardized AML fields (`AML_TYPE`, `AML_FULLNAME`, `AML_IDDETAILS`, `AML_CATEGORY`, `AML_DATEOFBIRTH`, `AML_REMARKS`, `AML_NATIONALITY`, `AML_PROGRAM`, `AML_ALIASNAME`).
   - Automatic duplicate entity detection (skipping records already in PostgreSQL/OpenSearch) with optional retention (`keepSkipped=true`) and on-demand export of skipped records in **CSV**, **JSON**, or **XML** (`GET /api/v1/bulk/jobs/{id}/skipped?format=csv|json|xml`).
-- **3-Pane Case Investigation & 4-Eyes Adjudication (`Edith.Cases`):**
-  - *Pessimistic 15-Minute Lease Locking:* Prevents dual-analyst collisions (`409 Conflict`) with real-time SignalR `CaseHub` broadcasts.
-  - *Multi-Type Investigation Notes:* Chronological `INVESTIGATION`, `SUPERVISOR`, and `RATIONALE` commentary.
+- **Case Workspace & Investigation Console (`CaseWorkspace.tsx`):**
+  - *Vertical Queue & Multi-Lease Locking:* Real-time triage queue with atomic pessimistic lease locks (15m, 30m, 1h options) and live countdown timer, preventing analyst collisions (`409 Conflict`).
+  - *4-Tab Investigation Console:* Case Details, Watchlist Hit Diff with token highlights, GenAI Narrative Copilot, and Chronological Audit Ledger & Notes.
   - *4-Eyes Maker-Checker Governance:* Analysts triage and escalate cases to `PendingApproval`; only MLRO / Compliance Officers can execute final resolution (`ClearedFalsePositive` or `ReportedStrFreeze`).
-  - *HMAC-SHA256 Signed CBS Webhooks:* Automatically dispatches signed `RELEASE` or `FREEZE` decisions (`X-Edith-Signature`) back to the Core Banking System.
-- **Regulatory Filing & AI Copilot (`Edith.Addons`):** Native UNODC `goAML` v5.0 XML export, 5-section AI STR narrative copilot, and multi-hop entity relationship graph visualizer.
-- **Rule Sandbox & Historical Backtesting (`Edith.Rules`):** Visual rule creator with live dry-run validation against historical transaction archives.
+  - *Whitelist on Dismissal:* 1-click false-positive suppression directly within case closure workflow.
+  - *HMAC-SHA256 Signed CBS Webhooks:* Automatically dispatches signed `RELEASE` or `FREEZE` decisions (`X-Edith-Signature`) back to the Core Banking System via Polly exponential retries.
+- **Customer KYC 360 & UBO Cascade Hub (`CustomerKyc360View.tsx`):**
+  - *Deep-Linked Dossiers:* Direct navigation via `/kyc360?customer=<id>` loading complete customer profiles from PostgreSQL 17.
+  - *Interactive UBO Ownership Tree:* Corporate hierarchy visualizer down to natural-person beneficial owners with 1-click **Cascade Screening** across all child entities.
+  - *OCR Document Inspector:* Visual credential inspection with bounding boxes, Source of Wealth (SoW) / Source of Funds (SoF) checklists, and signed WORM dossier export.
+- **AML Rule Builder & Category Studio (`RuleBuilderView.tsx`):**
+  - *Crime Typologies:* Dynamic parameter authoring across `HIGH_RISK_CORRIDOR`, `STRUCTURING_SMURFING`, and `VELOCITY_ANOMALY`.
+  - *Execution Modes:* Instant switching between `REALTIME`, `SHADOW` (silent evaluation), and `PENDING_APPROVAL`.
+  - *Draft Backtesting:* Pre-save simulation against transaction records before promotion to production.
+- **Portfolio Calibration & Sensitivity Sandbox (`RuleSandboxView.tsx`):**
+  - *50,000-Transaction Replay:* Full historical transaction replay engine calculating Baseline vs Candidate delta metrics.
+  - *Sensitivity Elbow Curve:* 5-point visualization isolating optimal false-positive reduction sweet spots.
+  - *Recall Preservation:* Verifies 100% ground-truth STR recall preservation with auto-balancing, pin-locked sliders.
+- **Regulatory Reports Hub & goAML v5.0 Filing (`ReportsAuditView.tsx` & `GoAmlReportingView.tsx`):**
+  - *All 14 Statutory Reports:* Automated generation and export of 6 Section 4e Reports, 5 Section 4f Log Reports, and 3 Cross-Module Analytics.
+  - *16-Field Filter & SLA Watchdog:* Multi-criteria transaction filter bar with 3d/7d case SLA alert monitoring.
+  - *UNODC goAML v5.0 XML Exporter:* Direct mapping and schema-compliant generation of national FIU filing packages.
+  - *Verify WORM Cryptographic Chain:* Interactive on-screen verification tool confirming tamper-free SHA-256 block-chaining.
+- **Brand Identity & IAM Security:**
+  - *Heraldic Identity:* Bespoke EDITH Eagle vector SVG emblem (`EdithLogo.tsx`) and animated SVG radar loader (`EdithLoader`).
+  - *Zero-Trust RBAC:* Granular role-gating across 6 personas (Analyst, Senior Investigator, MLRO, Compliance Admin, Auditor, System Admin) with PBKDF2 hashing (100,000 iterations) and TOTP MFA.
 
 ---
 
@@ -68,12 +87,12 @@ flowchart TD
         CORE --> PG[("PostgreSQL 17 (edith_aml)")]
         BULK --> PG
 
-        GW --> RULES["Rules & Backtester (Edith.Rules)"]
+        GW --> RULES["Rules & Calibration (Edith.Rules)"]
         RULES --> PG
 
         SCREEN -->|Match >= 80%| CASES["Case Engine (Edith.Cases)"]
         GW --> CASES
-        CASES -->|15m Lease Lock & SignalR| HUB["CaseHub & JobHub"]
+        CASES -->|15m/30m/1h Lease Lock & SignalR| HUB["CaseHub & JobHub"]
         CASES -->|HMAC-SHA256 RELEASE / FREEZE| CBS
         CASES --> PG
     end
@@ -99,31 +118,42 @@ EDITH/
 │   ├── opensearch/                  # OpenSearch 2.12 phonetic & n-gram index mappings
 │   └── vault/                       # HashiCorp Vault agent configuration
 ├── docker/                           # Local Dual-DB Docker Compose (PostgreSQL 17 + OpenSearch 2.12)
-├── MD_DOC/                           # Versioned Architecture, PRD, Database & Workplan Documentation
-│   ├── README.md                    # Master Documentation Catalog & Reading Order
-│   ├── TODO_v1.0.md                 # Live Roadmap (v1.2.0: Phases 1–6 Complete, Phase 7 Target)
-│   ├── CREDENTIALS_v1.0.md          # Infrastructure & Service Credentials (v1.1)
-│   ├── EDITH_Master_Specification_v5.0.md # Master Architecture & Specification (v5.1)
-│   ├── EDITH_Master_PRD_v4.0.md           # Master PRD (v4.1)
-│   ├── database_v2.0.md                   # Database Architecture & DDL (v2.1)
-│   └── EDITH_END_TO_END_WORKPLAN_v2.0.md  # Workplan Execution Ledger (v2.1)
+├── MD_DOC/                           # Unified v10.0 Architecture, PRD, Database, Pitch & Operations Documentation
+│   ├── README.md                    # Master Documentation Catalog, Category Index & Sync Guide (v10.0)
+│   ├── EDITH_Documentation_Library_v10.0.zip # Pre-packaged archive ready for 1-click Google Drive sync
+│   ├── sync_to_gdrive.ps1           # PowerShell automation script for Google Drive sync
+│   ├── 01_Executive_and_Pitch/      # Client Pitches, Executive Architecture Deck & Presentation Assets
+│   │   ├── EDITH_Client_Architecture_Pitch_v10.0.pdf # Executive-Ready Client Pitch Deck (PDF, Publication Grade)
+│   │   ├── EDITH_Client_Architecture_Pitch_v10.0.md  # Client Pitch & Architecture Master (Markdown + Mermaid, v10.0)
+│   │   └── EDITH_Client_Architecture_Pitch_v10.0.html # Print-Ready Styled HTML Master Template (v10.0)
+│   ├── 02_Product_and_Requirements/ # Functional PRDs, Modules/Pages Catalog & Executive Workplans
+│   │   ├── EDITH_Master_PRD_v10.0.md           # Master PRD (v10.0)
+│   │   ├── EDITH_Modules_Workflows_and_Pages_v10.0.md # Master Catalog of 10 Modules, 17 Pages & 18 Workflows (v10.0)
+│   │   └── EDITH_END_TO_END_WORKPLAN_v10.0.md  # Workplan Execution Ledger (v10.0, Phases 1–17 Complete)
+│   ├── 03_Technical_Architecture_and_Database/ # Technical Specifications & Database DDL
+│   │   ├── EDITH_Master_Specification_v10.0.md # Master Technical Architecture Spec (v10.0)
+│   │   └── database_v10.0.md                   # Database Architecture & PostgreSQL 17 DDL (v10.0)
+│   └── 04_Operations_and_Deployment/ # Operational Runbooks, Credentials & Task Ledgers
+│       ├── HOW_TO_RUN_v10.0.md                 # Visual Studio & Web Portal Run Guide (v10.0)
+│       ├── CREDENTIALS_v10.0.md                # Infrastructure & Service Credentials (v10.0)
+│       └── TODO_v10.0.md                       # Live Engineering Roadmap (v10.0: Phases 1–17 Complete)
 ├── src/
 │   ├── Addons/                      # goAML XML exporter, AI STR copilot, graph visualizer
-│   ├── Cases/                       # Case state machine, 15m pessimistic locking, SignalR hub
+│   ├── Cases/                       # Case state machine, lease locking, SignalR hub
 │   ├── Database/                    # Multi-schema SQL migrations & seed data (PostgreSQL 17)
 │   ├── Events/                      # Kafka event contracts, Outbox processor, CBS HMAC webhooks
 │   ├── Gateway/                     # Multi-tenant resolution, IAM JWT, unified API & SignalR host
-│   ├── Rules/                       # AML rule engine, DSL evaluator, backtesting sandbox
+│   ├── Rules/                       # AML rule engine, DSL evaluator, backtesting & calibration sandbox
 │   ├── Screening/                   # 5-pass OpenSearch engine, streaming CSV/XML/JSON bulk pipeline
-│   └── Web/edith-portal/            # React 19 compliance operator workstation (14 views)
-├── tests/                            # Automated test suite (93 passing tests across 10 projects)
+│   └── Web/edith-portal/            # React 19 compliance operator workstation (17 views)
+├── tests/                            # Automated test suite (100 passing tests across 10 projects)
 │   ├── Edith.Addons.Tests/          # goAML XML schema, copilot & graph tests (6)
 │   ├── Edith.Cases.Tests/           # State machine, 4-Eyes RBAC & locking tests (10)
 │   ├── Edith.Database.Migrator.Tests/# Multi-schema DDL migration & seed tests (6)
 │   ├── Edith.Events.Tests/          # Outbox processor & HMAC-SHA256 webhook tests (8)
-│   ├── Edith.Gateway.Tests/         # JWT IAM, tenant isolation & E2E workflow tests (8)
+│   ├── Edith.Gateway.Tests/         # JWT IAM, tenant isolation & E2E workflow tests (11)
 │   ├── Edith.Performance.Benchmark/ # High-load 5-pass screening latency benchmark (1)
-│   ├── Edith.Rules.Tests/           # Rule evaluator & sandbox backtester tests (5)
+│   ├── Edith.Rules.Tests/           # Rule evaluator & sandbox backtester tests (7)
 │   ├── Edith.Screening.Api.Tests/   # Screening API, idempotency & bulk upload endpoint tests (13)
 │   ├── Edith.Screening.Bulk.Tests/  # Streaming CSV/XML/JSON parser & skipped export tests (10)
 │   └── Edith.Screening.Tests/       # 5-pass engine, OpenSearch & phonetic algorithm tests (26)
@@ -148,7 +178,7 @@ docker compose -f docker/docker-compose.yml up -d
 dotnet run --project src/Database/Edith.Database.Migrator
 ```
 
-### 2. Run the Full Test Suite (96 Tests)
+### 2. Run the Full Test Suite (100 Tests)
 
 ```bash
 dotnet test Edith.slnx
@@ -156,7 +186,7 @@ dotnet test Edith.slnx
 
 Output:
 ```text
-Passed! - Failed: 0, Passed: 96, Skipped: 0, Total: 96 (10 test projects)
+Passed! - Failed: 0, Passed: 100, Skipped: 0, Total: 100 (10 test projects)
 ```
 
 ### 3. Start the API Gateway & React 19 Portal
@@ -175,7 +205,7 @@ npm install
 npm run dev -- --port 3000
 ```
 
-Open `http://localhost:3000` to access the live 14-view compliance portal, switch personas (`ANALYST`, `MLRO`, `SUPER_ADMIN`, `AUDITOR`), upload bulk CSV/JSON/XML batches, and adjudicate cases.
+Open `http://localhost:3000` to access the live 17-view compliance portal, switch personas (`ANALYST`, `MLRO`, `SUPER_ADMIN`, `AUDITOR`), upload bulk CSV/JSON/XML batches, calibrate rules against 50k transactions, and adjudicate cases.
 
 ---
 

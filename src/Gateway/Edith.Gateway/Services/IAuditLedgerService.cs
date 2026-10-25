@@ -44,6 +44,8 @@ public sealed class PostgreSqlAuditLedgerService : IAuditLedgerService
 
     public async Task<IReadOnlyList<AuditLogEntryDto>> GetAuditLogsAsync(Guid tenantId, int limit = 50, CancellationToken ct = default)
     {
+        await EnsureBaselineAuditLedgerAsync(tenantId, ct);
+
         await using var conn = new NpgsqlConnection(_connectionString);
         await conn.OpenAsync(ct);
 
@@ -51,7 +53,7 @@ public sealed class PostgreSqlAuditLedgerService : IAuditLedgerService
             SELECT id, tenant_id, action_type, payload, created_at
             FROM core.audit_ledgers
             WHERE tenant_id = @tid
-            ORDER BY created_at DESC, id DESC
+            ORDER BY id DESC
             LIMIT @limit;";
 
         var list = new List<AuditLogEntryDto>();
@@ -226,11 +228,20 @@ public sealed class InMemoryAuditLedgerService : IAuditLedgerService
     private long _nextId = 1;
     private readonly object _sync = new();
 
-    public Task<IReadOnlyList<AuditLogEntryDto>> GetAuditLogsAsync(Guid tenantId, int limit = 50, CancellationToken ct = default)
+    public async Task<IReadOnlyList<AuditLogEntryDto>> GetAuditLogsAsync(Guid tenantId, int limit = 50, CancellationToken ct = default)
     {
+        bool needsSeed;
         lock (_sync)
         {
-            return Task.FromResult<IReadOnlyList<AuditLogEntryDto>>(_entries.OrderByDescending(e => long.Parse(e.Id, CultureInfo.InvariantCulture)).Take(limit).ToList());
+            needsSeed = _entries.Count == 0;
+        }
+        if (needsSeed)
+        {
+            await EnsureBaselineAuditLedgerAsync(tenantId, ct);
+        }
+        lock (_sync)
+        {
+            return _entries.OrderByDescending(e => long.Parse(e.Id, CultureInfo.InvariantCulture)).Take(limit).ToList();
         }
     }
 
@@ -260,8 +271,12 @@ public sealed class InMemoryAuditLedgerService : IAuditLedgerService
 
     public async Task EnsureBaselineAuditLedgerAsync(Guid tenantId, CancellationToken ct = default)
     {
-        var current = await GetAuditLogsAsync(tenantId, 1, ct);
-        if (current.Count == 0)
+        bool isEmpty;
+        lock (_sync)
+        {
+            isEmpty = _entries.Count == 0;
+        }
+        if (isEmpty)
         {
             await RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
                 "System Initializer",
@@ -269,6 +284,30 @@ public sealed class InMemoryAuditLedgerService : IAuditLedgerService
                 "Platform Root",
                 null,
                 "Initialized immutable WORM cryptographic audit ledger chain."
+            ), ct);
+
+            await RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
+                "Fatima Al-Nuaimi (MLRO)",
+                "ASSET_FREEZE_ORDER",
+                "Viktor Anatolyevich Bout",
+                "EDITH-CAS-2026-0042",
+                "Asset freeze mandated under CBUAE AML Directive Art. 14 / UNSC Res 1521."
+            ), ct);
+
+            await RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
+                "Tariq Mansoor (Compliance Analyst)",
+                "FALSE_POSITIVE_OVERRIDE",
+                "Mohamed Al-Attar",
+                "EDITH-CAS-2026-0041",
+                "Divergent date of birth and passport confirmed via secondary KYC documents."
+            ), ct);
+
+            await RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
+                "Zaid Al-Husseini (Compliance Officer)",
+                "WHITELIST_AUTHORIZATION",
+                "DHL Express UAE LLC",
+                null,
+                "Approved statutory exemption under Pass 5 bypass policy for trusted logistics partner."
             ), ct);
         }
     }

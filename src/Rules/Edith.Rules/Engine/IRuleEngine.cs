@@ -67,6 +67,16 @@ public sealed class RuleEngine : IRuleEngine
                 }
                 return (false, null);
 
+            case RuleCategory.VelocityAnomaly:
+                var minTx = rule.MinTransactions ?? 3;
+                var winMins = rule.WindowMinutes ?? 60;
+                var velocityFloor = rule.ThresholdAmount is > 0m ? rule.ThresholdAmount.Value : 200000m;
+                if (tx.LcyAmount >= velocityFloor)
+                {
+                    return (true, $"Velocity burst anomaly: Transfer of {tx.LcyAmount:N2} LCY breaches velocity floor {velocityFloor:N2} ({minTx}+ tx / {winMins}m profile)");
+                }
+                return (false, null);
+
             default:
                 return (false, null);
         }

@@ -1,6 +1,6 @@
 # EDITH Platform Core Modernization & Production Readiness TODO
-**Document Version:** 1.6.0  
-**Date:** October 21, 2026  
+**Document Version:** 10.0  
+**Date:** October 25, 2026  
 **Status:** Completed (Production Ready)  
 **Target Environment:** PostgreSQL 17 (`edith_postgres_17`), OpenSearch 2.12 (`edith_opensearch_2`), .NET 10 Minimal APIs (`Edith.Gateway`), React 19 Frontend (`edith-portal`).
 
@@ -22,6 +22,11 @@
 | **Phase 10** | Searches Module Advanced UX & Engine Modernization (History, Diff, What-If, PEP Tiering, Batch) | `COMPLETED` |
 | **Phase 11** | Single Entity Enterprise Workflow Modernization (Personas, In-Line Adjudication, KYC Bridge, Clearance Slip) | `COMPLETED` |
 | **Phase 12** | Case Workspace Investigation Canvas Workflow & UX Modernization (Layout, Multi-Duration Lease, Tabs, Whitelist-on-Dismissal, AI Copilot, Categorized Notes) | `COMPLETED` |
+| **Phase 13** | EDITH Eagle SVG Brand Identity, Animated SVG Loader & Role-Gated Enterprise Dashboard Charts | `COMPLETED` |
+| **Phase 14** | Customer KYC 360 & EDD Dossier Workflow, UX & Feature Modernization (Live Wiring, Switcher, UBO Cascade Screening, OCR Inspector, SoW/SoF EDD Sign-off, Drift Monitor & WORM Dossier Export) | `COMPLETED` |
+| **Phase 15** | AML Rule Builder & Sandbox Workflow, UX & Feature Modernization (Full CRUD, Category Form Editor, Velocity Anomaly Engine, Draft "What-If" Backtesting, Sample Hit Inspector, 4-Eyes & Shadow Mode, Sandbox Promotion & WORM Audit) | `COMPLETED` |
+| **Phase 16** | AML Rule Backtesting Sandbox & Calibration Engine Modernization (Baseline vs. Draft Delta, Ground-Truth STR Confusion Matrix, Portfolio Overlap Check, Threshold Sensitivity Elbow Curve, Auto-Balancing Sliders & Live 50k Portfolio Replay) | `COMPLETED` |
+| **Phase 17** | Regulatory Reports, All 14 PDF Reports & WORM Audit Ledger Modernization (Route-Synced Report Hub, 16-Field Transaction Filter, 5-Dimension Analytics, 3d/7d SLA Watchdog, STR History Reopen/Branch Mail, Live WORM Chain Verifier & Certified Exports) | `COMPLETED` |
 
 ---
 
@@ -103,12 +108,12 @@
 
 ### [x] Phase 12: Case Workspace Investigation Canvas Workflow & UX Modernization (v1.6.0 Target)
 - [x] **1. Collapsible Vertical Case Queue & Status Filters**:
-  - Replace the horizontal top 3-column card block with a compact, scrollable vertical case list / split-pane.
+  - Compact, scrollable vertical case list / split-pane.
   - Interactive filter chips: `All Cases`, `My Locks`, `Escalated to MLRO`, `SLA Critical (<24h)`, and `Resolved`.
   - Instant client-side search by Case Number (`CAS-2026-XXXX`), Primary Subject Name, or Transaction Reference.
 - [x] **2. Live Lock Lease Countdown & Multi-Duration Renewal (15m, 30m, 1hr)**:
-  - Dynamic user-aware lock ownership check (comparing against current authenticated persona, removing hardcoded user strings).
-  - Real-time countdown timer badge (`🔒 Locked by You (12:45 remaining)`) with amber warning at `< 3:00` and critical alert at `< 1:00`.
+  - Dynamic user-aware lock ownership check (comparing against current authenticated persona).
+  - Real-time countdown timer badge with amber warning at `< 3:00` and critical alert at `< 1:00`.
   - Multi-duration lease renewal popover/dropdown with options: `15 Minutes`, `30 Minutes`, and `1 Hour`.
   - Locked-by-other banner surfacing active investigator name and lock expiration countdown with write-protection safeguards.
 - [x] **3. Tabbed Multi-Angle Investigation Console (Pane 2)**:
@@ -117,7 +122,7 @@
   - **Tab 3: Transaction Corridor & AML Typology Rules**: Geographic remittance flow map, FATF Grey/Black list corridor badges, and tripped typology rule conditions (`rules.aml_rules`).
   - **Tab 4: KYC 360 Customer Profile Bridge**: Direct slide-in or tabbed view of linked customer profile, identity documents, risk score, and screening history from `screening.customers`.
 - [x] **4. 4-Eyes Maker-Checker & Adjudication Workflows**:
-  - **Direct Whitelist-on-Dismissal**: Checkbox toggle in MLRO false-positive modal (`[x] Auto-provision Whitelist Exemption for Beneficiary (Scope: Exact Name, Expiry: 1 Year)`) calling `screening.whitelists` on sign-off.
+  - **Direct Whitelist-on-Dismissal**: Checkbox toggle in MLRO false-positive modal calling `screening.whitelists` on sign-off.
   - **Enhanced Due Diligence (EDD) / RFI Transition**: Analyst ability to move case into `UnderReview (EDD)` with structured checklist (*Source of Funds*, *Invoice Copy*, *Secondary ID Verification*).
   - **Dual Rationale Presentation**: Side-by-side display of Maker's Escalation Rationale and MLRO's Final Sign-off Rationale in the audit ledger.
 - [x] **5. Editable AI Copilot Narrative & 1-Click goAML XML Export**:
@@ -125,4 +130,77 @@
   - 1-Click XML download button (`goAML_STR_{CaseNumber}.xml`) with syntax-highlighted review and FIU copy buffer.
 - [x] **6. Categorized Note Types & Unified Audit Activity Stream**:
   - Note classification selector: `Investigation Note` (blue), `Supervisor Direction` (purple), and `Statutory Rationale` (amber) mapped to `cases.case_activities.note_type`.
-  - Chronological activity timeline unifying user notes with automated system events (*CBS Interceptor Hold*, *Lock Acquired*, *Escalated to MLRO*, *CBS Release Webhook Delivered*).
+  - Chronological activity timeline unifying user notes with automated system events.
+
+### [x] Phase 13: EDITH Eagle SVG Brand Identity, Animated Loader & Role-Adaptive Enterprise Dashboard (v1.7.0 Target)
+- [x] **1. Vectorized EDITH Eagle SVG Logo & Favicon**:
+  - Heraldic EDITH Eagle & Radar emblem into multi-layered vector SVG paths (`EdithLogo.tsx` & `public/favicon.svg`) with enterprise Investment Navy (`#1a237e`), Sovereign Gold (`#ffd54f` / `#d97706`), and Signal Emerald (`#059669`) color themes.
+  - Wired `/favicon.svg` into `index.html` and integrated `<EdithLogo />` into `Header.tsx`, `LoginView.tsx`, `DashboardView.tsx`, and printable compliance briefs.
+- [x] **2. Animated SVG Eagle Radar Loading Component (`EdithLoader`)**:
+  - Multi-part SVG loading animation featuring sequential radar arc sweeps across the 9 dashed segments, wing feather pulse waves, and telemetry status messages.
+- [x] **3. General Role-Gated Enterprise Dashboard**:
+  - Automatically show/hide charts, diagrams, and operational streams based on user access level (`ANALYST`, `EDD_ANALYST`, `AML_OFFICER`, `COMPLIANCE_OFFICER`, `MLRO`, `AUDITOR`, `ADMIN`).
+  - Global Timeframe Sync (`1H | 24H | 7D`) and 1-Click Printable Executive PDF Brief modal.
+- [x] **4. New Enterprise AML Charts & Architecture Diagrams**:
+  - *Chart 1*: Screening Throughput & Intercept Velocity Chart.
+  - *Diagram 2*: 5-Pass Deterministic Engine Resolution Funnel.
+  - *Chart 3*: Case SLA Aging & 4-Eyes Maker-Checker Pipeline.
+  - *Chart 4*: CBUAE / FATF Rec. 11 Governance & WORM Integrity Matrix.
+
+### [x] Phase 14: Customer KYC 360 & EDD Dossier Workflow, UX & Feature Modernization (v1.8.0 Target)
+- [x] **1. Live Backend Wiring, Tenant Scoping & Baseline Customer Dossier Seeding**:
+  - Seeded realistic high-risk corporate, PEP, and sanctioned customer dossiers (`screening.customers`, `screening.customer_documents`, `screening.transactions`, `screening.customer_screening_history`).
+  - Expose `GET /api/v1/kyc`, `GET /api/v1/kyc/{customerId}`, and `PUT /api/v1/kyc/{customerId}/edd`.
+- [x] **2. Deep-Linkable Customer Switcher & EDD Disposition Action Bar**:
+  - Live customer search/selector bar in `CustomerKyc360View.tsx` synced with `?customer=` URL query parameter.
+  - Actionable EDD Review & Sign-Off bar writing immutable SHA-256 WORM entries to `core.audit_ledgers`.
+- [x] **3. Interactive UBO Ownership Tree & 1-Click Cascade Screening**:
+  - Visual UBO ownership hierarchy with equity share bars, PEP/Sanctions badges, and per-UBO screening links.
+  - 1-Click **"Cascade Screen Corporate & UBO Tree"** running parallel 5-pass screening across entity and all UBOs.
+- [x] **4. Interactive OCR Document Inspector Modal & Document Verification**:
+  - Inspection drawer showing extracted JSONB fields, per-field OCR confidence bars, expiry countdown badges, and status toggles.
+- [x] **5. SoW / SoF Checklist, Activity Drift Monitor & Signed EDD Dossier Certificate**:
+  - Interactive SoW/SoF EDD corroboration checklist tracking required statutory evidence.
+  - Expected vs. Actual 90-Day Activity Drift monitor highlighting unapproved high-risk corridors.
+  - Printable/downloadable WORM-sealed Customer EDD Audit Dossier.
+
+### [x] Phase 15: AML Rule Builder & Sandbox Workflow, UX & Feature Modernization (v1.9.0 Target)
+- [x] **1. Complete Backend Rule Engine (`VelocityAnomaly`), Execution Modes & WORM Audit Wiring**:
+  - Implemented `RuleCategory.VelocityAnomaly` evaluation in `IRuleEngine.cs` and rolling-window burst detection in `IRuleBacktester.cs`.
+  - Persist `ExecutionMode` (`REALTIME`, `SHADOW`, `PENDING_APPROVAL`) in `rules.aml_rules.execution_mode`.
+- [x] **2. Full CRUD, Category-Aware Parameter Editor & Catalog Filtering in `RuleBuilderView.tsx`**:
+  - Search input and status/category filter pills (`ALL`, `ACTIVE`, `SHADOW`, `CRITICAL`).
+  - Category-aware parameter form editor (`TRANSACTION_THRESHOLD`, `HIGH_RISK_CORRIDOR`, `STRUCTURING_SMURFING`, `VELOCITY_ANOMALY`).
+- [x] **3. Pre-Save "What-If" Draft Backtesting & Sample Triggered Hit Inspector**:
+  - Upgraded `POST /api/v1/rules/backtest` to evaluate unsaved draft parameters directly against historical transactions.
+  - Interactive **Sample Triggered Transactions** table showing reference numbers, corridors, amounts, and trigger reasons.
+- [x] **4. Connect `RuleSandboxView.tsx` "Promote to Active Config" to Live System Masters**:
+  - Hydrated sliders from `GET /api/v1/settings/masters` and wired **"Promote to Active Config"** to `PUT /api/v1/settings/scoring-weights`.
+
+### [x] Phase 16: AML Rule Backtesting Sandbox & Calibration Engine Modernization (v2.0.0 Target)
+- [x] **1. Baseline vs. Candidate Delta, Portfolio Overlap & Rolling-Window Structuring Engine**:
+  - Evaluates both candidate and saved baseline rules simultaneously, detects rule overlap against active catalog, and generates 5-point `SensitivityCurve`.
+- [x] **2. Cohort-Aware Backtesting & Portfolio Scoring Sandbox Endpoint**:
+  - Added cohort dataset selection (`STANDARD_MIX`, `HIGH_RISK_CORRIDOR_SURGE`, `SMURFING_RING_ATTACK`, `VELOCITY_BURST_STRESS`).
+  - Exposed `POST /api/v1/rules/sandbox/simulate` evaluating 50,000-record archive projections.
+- [x] **3. Interactive Sensitivity "Elbow Curve", Sample Delta Filters & KYC 360 Bridge in `RuleBuilderView.tsx`**:
+  - Clickable 5-step **Threshold Sensitivity "Elbow Curve"** to apply optimal thresholds in 1 click.
+  - Sample Impacted Transactions table with `NEWLY_CAPTURED` / `NEWLY_SUPPRESSED` / `STR_FILED` filter pills.
+- [x] **4. Auto-Balancing Weightage Sliders, Live Histogram & Staged Shadow Promotion in `RuleSandboxView.tsx`**:
+  - Auto-Balance 100% with per-slider lock pins plus 1-click Normalize to 100%.
+  - Live `EdithApi.simulateSandboxPortfolio` telemetry and Stage 7-Day Shadow vs. Promote to Active Config actions.
+
+### [x] Phase 17: Regulatory Reports, All 14 PDF Reports & WORM Audit Ledger Modernization (v2.1.0 Target)
+- [x] **1. Live WORM Audit Ledger API, Baseline Auto-Seeding & Cryptographic Chain Verification**:
+  - Deterministic chained SHA-256 fallback blocks (`previousBlockHash` $\to$ `sha256Hash` down to `GENESIS`).
+  - Interactive **Verify WORM Cryptographic Chain** in `ReportsAuditView.tsx` with block payload inspector drawer.
+- [x] **2. Complete Coverage of All 6 PDF Section 4e Reports in `ReportsAuditView.tsx`**:
+  - Alert Reports, Transaction Report (16-field filter bar), Blacklist Report, Transaction Release Report, Online STR Report, Transaction Analytics.
+- [x] **3. Complete Coverage of All 5 PDF Section 4f Log Reports & 3 Cross-Module Reports**:
+  - Process Log, Upload Log, Suspicious Log, Custom Reports, Monthly Screen Data Report, STR History, Customer Screening Report, Delta Screening Log Report.
+- [x] **4. Self-Auditing CSV/JSON Exports & Printable WORM Regulatory Attestation Certificate**:
+  - Real `.csv` download with embedded WORM SHA-256 hash footer.
+  - Printable **Certified Regulatory Examination Report Modal** (`window.print()` + JSON bundle download).
+
+---
+*Maintained by the EDITH Architecture & Compliance Engineering Team (v10.0).*

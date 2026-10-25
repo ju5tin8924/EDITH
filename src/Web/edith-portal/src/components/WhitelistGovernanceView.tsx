@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ShieldCheck, 
   FileText, 
@@ -9,6 +10,7 @@ import {
   Search
 } from 'lucide-react';
 import { EdithApi } from '../services/api';
+import { usePageMeta } from '../config/pageMeta';
 
 interface WhitelistEntry {
   id: string;
@@ -158,23 +160,29 @@ export const WhitelistGovernanceView: React.FC = () => {
     e.accountNumber.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const pageMeta = usePageMeta(
+    'White List',
+    'Govern approved false-positive suppressions and time-bound entity clearances with dual-control authorization.'
+  );
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-surface p-4 rounded-xl border border-border">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-accent/10 text-accent border border-accent/20">
-              PAGE 6 // MOD-SCRN-WL
-            </span>
-            <span className="text-[10px] font-mono text-muted">Statutory Bypass Governance</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-lg sm:text-xl font-bold text-ink flex items-center gap-2.5">
+              <ShieldCheck className="w-5 h-5 text-accent" />
+              <span>{pageMeta.title}</span>
+            </h1>
+            {pageMeta.parent && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
+                {pageMeta.parent}
+              </span>
+            )}
           </div>
-          <h1 className="text-xl font-bold text-ink flex items-center gap-2.5 mt-1">
-            <ShieldCheck className="w-5 h-5 text-accent" />
-            Whitelist & Statutory Exception Governance
-          </h1>
           <p className="text-xs text-muted mt-1">
-            Centrally governed exception registry with mandatory time-decay TTLs, dual-authorization sign-offs, and immutable WORM audit ledgers.
+            {pageMeta.definition}
           </p>
         </div>
 
@@ -385,9 +393,9 @@ export const WhitelistGovernanceView: React.FC = () => {
       </div>
 
       {/* Add Exception Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 font-mono text-xs">
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 font-mono text-xs animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center pb-3 border-b border-border">
               <h3 className="text-sm font-bold text-ink flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-accent" />
@@ -484,7 +492,8 @@ export const WhitelistGovernanceView: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

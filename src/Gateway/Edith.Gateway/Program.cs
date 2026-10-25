@@ -79,27 +79,16 @@ var pgConn = builder.Configuration.GetConnectionString("EdithPostgres")
     ?? Environment.GetEnvironmentVariable("EDITH_PG_CONNECTION")
     ?? "Host=localhost;Port=5432;Database=edith_aml;Username=edith_admin;Password=EdithSecurePassword2026!";
 
-bool usePostgres = false;
-try
-{
-    using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=1");
-    probeConn.Open();
-    usePostgres = true;
-}
-catch
-{
-    usePostgres = false;
-}
-
 // 5. IAM & Tenant Resolution Services
 builder.Services.AddScoped<ITenantContextAccessor, TenantContextAccessor>();
 builder.Services.AddSingleton<ITokenService, JwtTokenService>();
 builder.Services.AddSingleton<IEntitlementsService, EntitlementsService>();
+builder.Services.AddSingleton<ITotpService, TotpService>();
+builder.Services.AddSingleton<IEmailNotificationService, SmtpEmailNotificationService>();
 
-// 6. Screening Engine Services (OpenSearch + PostgreSQL/In-Memory)
+// 6. Screening Engine Services (OpenSearch + PostgreSQL)
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizer>();
 builder.Services.AddSingleton<INameSimilarityScorer, NameSimilarityScorer>();
-builder.Services.AddSingleton<InMemoryWatchlistSearchEngine>();
 
 var openSearchConfig = builder.Configuration.GetSection("OpenSearch");
 var osOpts = new OpenSearchOptions
@@ -127,44 +116,23 @@ builder.Services.AddHttpClient<IWatchlistSearchEngine, OpenSearchWatchlistSearch
 
 builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
 
-if (usePostgres)
-{
-    builder.Services.AddSingleton<ITenantRegistry>(new PostgreSqlTenantRegistry(pgConn));
-    builder.Services.AddSingleton<IIamUserService>(new PostgreSqlIamUserService(pgConn));
-    builder.Services.AddSingleton<IIdempotencyStore>(new PostgreSqlIdempotencyStore(pgConn));
-    builder.Services.AddSingleton<IWhitelistService>(new PostgreSqlWhitelistService(pgConn));
+// 7. Live PostgreSQL Persistence Services (Live System Mode)
+builder.Services.AddSingleton<ITenantRegistry>(new PostgreSqlTenantRegistry(pgConn));
+builder.Services.AddSingleton<IIamUserService>(new PostgreSqlIamUserService(pgConn));
+builder.Services.AddSingleton<IIdempotencyStore>(new PostgreSqlIdempotencyStore(pgConn));
+builder.Services.AddSingleton<IWhitelistService>(new PostgreSqlWhitelistService(pgConn));
 
-    var pgLockMgr = new PostgreSqlCaseLockManager(pgConn);
-    builder.Services.AddSingleton<ICaseLockManager>(pgLockMgr);
-    builder.Services.AddSingleton<ICaseService>(new PostgreSqlCaseService(pgConn, pgLockMgr));
-    builder.Services.AddSingleton<IWebhookDeliveryLedger>(new PostgreSqlWebhookDeliveryLedger(pgConn));
+var pgLockMgr = new PostgreSqlCaseLockManager(pgConn);
+builder.Services.AddSingleton<ICaseLockManager>(pgLockMgr);
+builder.Services.AddSingleton<ICaseService>(new PostgreSqlCaseService(pgConn, pgLockMgr));
+builder.Services.AddSingleton<IWebhookDeliveryLedger>(new PostgreSqlWebhookDeliveryLedger(pgConn));
 
-    builder.Services.AddSingleton<IRuleRepository>(new PostgreSqlRuleRepository(pgConn));
-    builder.Services.AddSingleton<IBulkJobRepository>(new PostgreSqlBulkJobRepository(pgConn));
+builder.Services.AddSingleton<IRuleRepository>(new PostgreSqlRuleRepository(pgConn));
+builder.Services.AddSingleton<IBulkJobRepository>(new PostgreSqlBulkJobRepository(pgConn));
 
-    builder.Services.AddSingleton<IKycService>(new PostgreSqlKycService(pgConn));
-    builder.Services.AddSingleton<ISystemMastersService>(new PostgreSqlSystemMastersService(pgConn));
-    builder.Services.AddSingleton<IAuditLedgerService>(new PostgreSqlAuditLedgerService(pgConn));
-}
-else
-{
-    builder.Services.AddSingleton<ITenantRegistry, InMemoryTenantRegistry>();
-    builder.Services.AddSingleton<IIamUserService, InMemoryIamUserService>();
-    builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
-    builder.Services.AddSingleton<IWhitelistService, InMemoryWhitelistService>();
-
-    var memLockMgr = new CaseLockManager();
-    builder.Services.AddSingleton<ICaseLockManager>(memLockMgr);
-    builder.Services.AddSingleton<ICaseService>(new CaseService(memLockMgr));
-    builder.Services.AddSingleton<IWebhookDeliveryLedger, InMemoryWebhookDeliveryLedger>();
-
-    builder.Services.AddSingleton<IRuleRepository, InMemoryRuleRepository>();
-    builder.Services.AddSingleton<IBulkJobRepository, InMemoryBulkJobRepository>();
-
-    builder.Services.AddSingleton<IKycService, InMemoryKycService>();
-    builder.Services.AddSingleton<ISystemMastersService, InMemorySystemMastersService>();
-    builder.Services.AddSingleton<IAuditLedgerService, InMemoryAuditLedgerService>();
-}
+builder.Services.AddSingleton<IKycService>(new PostgreSqlKycService(pgConn));
+builder.Services.AddSingleton<ISystemMastersService>(new PostgreSqlSystemMastersService(pgConn));
+builder.Services.AddSingleton<IAuditLedgerService>(new PostgreSqlAuditLedgerService(pgConn));
 
 builder.Services.AddHttpClient<ICbsWebhookDispatcher, CbsWebhookDispatcher>();
 
@@ -207,6 +175,7 @@ builder.Services.AddReverseProxy()
 var app = builder.Build();
 
 // 13. Pipeline Configuration
+app.UseMiddleware<GlobalErrorHandlingMiddleware>();
 app.UseCors("AllowVitePortal");
 app.UseRouting();
 app.UseAuthentication();
@@ -233,6 +202,14 @@ app.MapGet("/health", () => Results.Ok(new
     service = "Edith.Gateway",
     version = "1.3.0",
     modules = Edith.Gateway.Program.ActiveModules,
+    timestamp = DateTimeOffset.UtcNow
+})).AllowAnonymous();
+
+app.MapGet("/healthz", () => Results.Ok(new
+{
+    status = "Healthy",
+    service = "Edith.Gateway",
+    version = "1.3.0",
     timestamp = DateTimeOffset.UtcNow
 })).AllowAnonymous();
 

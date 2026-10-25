@@ -6,38 +6,72 @@
   </Configurations>
   <Folder Name="/src/" />
   <Folder Name="/src/Database/">
-    <Project Path="src/Database/Edith.Database.Migrator/Edith.Database.Migrator.csproj" />
+    <Project Path="src/Database/Edith.Database.Migrator/Edith.Database.Migrator.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/src/Screening/">
     <Project Path="src/Screening/Edith.Screening.Api/Edith.Screening.Api.csproj" />
-    <Project Path="src/Screening/Edith.Screening.Bulk/Edith.Screening.Bulk.csproj" />
-    <Project Path="src/Screening/Edith.Screening.Core/Edith.Screening.Core.csproj" />
+    <Project Path="src/Screening/Edith.Screening.Bulk/Edith.Screening.Bulk.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="src/Screening/Edith.Screening.Core/Edith.Screening.Core.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/src/Gateway/">
     <Project Path="src/Gateway/Edith.Gateway/Edith.Gateway.csproj" />
   </Folder>
   <Folder Name="/src/Events/">
-    <Project Path="src/Events/Edith.Events/Edith.Events.csproj" />
+    <Project Path="src/Events/Edith.Events/Edith.Events.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/src/Cases/">
-    <Project Path="src/Cases/Edith.Cases/Edith.Cases.csproj" />
+    <Project Path="src/Cases/Edith.Cases/Edith.Cases.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/src/Rules/">
-    <Project Path="src/Rules/Edith.Rules/Edith.Rules.csproj" />
+    <Project Path="src/Rules/Edith.Rules/Edith.Rules.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/src/Addons/">
-    <Project Path="src/Addons/Edith.Addons/Edith.Addons.csproj" />
+    <Project Path="src/Addons/Edith.Addons/Edith.Addons.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Edith.Addons.Tests/Edith.Addons.Tests.csproj" />
-    <Project Path="tests/Edith.Cases.Tests/Edith.Cases.Tests.csproj" />
-    <Project Path="tests/Edith.Database.Migrator.Tests/Edith.Database.Migrator.Tests.csproj" />
-    <Project Path="tests/Edith.Events.Tests/Edith.Events.Tests.csproj" />
-    <Project Path="tests/Edith.Gateway.Tests/Edith.Gateway.Tests.csproj" />
-    <Project Path="tests/Edith.Performance.Benchmark/Edith.Performance.Benchmark.csproj" />
-    <Project Path="tests/Edith.Rules.Tests/Edith.Rules.Tests.csproj" />
-    <Project Path="tests/Edith.Screening.Api.Tests/Edith.Screening.Api.Tests.csproj" />
-    <Project Path="tests/Edith.Screening.Bulk.Tests/Edith.Screening.Bulk.Tests.csproj" />
-    <Project Path="tests/Edith.Screening.Tests/Edith.Screening.Tests.csproj" />
+    <Project Path="tests/Edith.Addons.Tests/Edith.Addons.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Cases.Tests/Edith.Cases.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Database.Migrator.Tests/Edith.Database.Migrator.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Events.Tests/Edith.Events.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Gateway.Tests/Edith.Gateway.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Performance.Benchmark/Edith.Performance.Benchmark.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Rules.Tests/Edith.Rules.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Screening.Api.Tests/Edith.Screening.Api.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Screening.Bulk.Tests/Edith.Screening.Bulk.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
+    <Project Path="tests/Edith.Screening.Tests/Edith.Screening.Tests.csproj">
+      <Build Solution="test|*" Project="false" />
+    </Project>
   </Folder>
 </Solution>

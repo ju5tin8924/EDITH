@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ShieldAlert, 
   CheckCircle2, 
@@ -30,6 +31,9 @@ import {
   PassLogDto
 } from '../types';
 import { EdithApi } from '../services/api';
+import { ShimmerButton, GridPattern } from './magicui';
+import { EdithLoader } from './EdithLogo';
+import { usePageMeta } from '../config/pageMeta';
 
 interface ScreeningConsoleProps {
   onOpenCase?: (caseId: string) => void;
@@ -334,21 +338,35 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
     return match ? parseInt(match[1], 10) : null;
   };
 
+  const pageMeta = usePageMeta(
+    'Sanction Screening',
+    'Evaluate real-time wire transfers and counterparties against OFAC, UN, EU, UK HMT, and CBUAE sanctions registries.'
+  );
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Top Banner & Quick Presets */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-surface p-4 rounded-xl border border-border">
-        <div>
-          <h1 className="text-xl font-bold text-ink flex items-center gap-2.5">
-            <ShieldAlert className="w-6 h-6 text-primary" />
-            P2 Real-Time Transaction Screening Console
-          </h1>
+      <div className="relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl border border-border shadow-xs">
+        <GridPattern className="opacity-35" width={24} height={24} />
+        
+        <div className="relative z-10 min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-lg sm:text-xl font-bold text-ink flex items-center gap-2.5">
+              <ShieldAlert className="w-5 h-5 text-primary shrink-0" />
+              <span>{pageMeta.title}</span>
+            </h1>
+            {pageMeta.parent && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
+                {pageMeta.parent}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted mt-1">
-            5-Pass deterministic pipeline evaluating Jaro-Winkler, Damerau-Levenshtein, and Double Metaphone phonetics.
+            {pageMeta.definition}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative z-10 flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted font-medium">Quick Test Scenarios:</span>
           <button
             onClick={() => applyPreset('sanction')}
@@ -375,7 +393,6 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 ? 'bg-primary text-white border-primary'
                 : 'bg-surface-muted text-ink border-border hover:bg-border/30'
             }`}
-            title="Configure sensitivity thresholds and scoring weights"
           >
             <Sliders className="w-3.5 h-3.5" />
             <span>Sensitivity Config</span>
@@ -384,7 +401,6 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
           <button
             onClick={handleReset}
             className="px-2.5 py-1 text-xs rounded bg-surface-muted text-ink border border-border hover:bg-border/30 transition font-medium flex items-center gap-1"
-            title="Clear all fields to default blank state"
           >
             <RotateCcw className="w-3 h-3 text-muted" />
             Clear Form
@@ -678,23 +694,23 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 <RotateCcw className="w-3.5 h-3.5 text-muted" />
                 Clear
               </button>
-              <button
+              <ShimmerButton
                 type="submit"
                 disabled={loading}
-                className="flex-1 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold font-mono text-xs flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl shadow-md"
               >
                 {loading ? (
                   <>
                     <Clock className="w-4 h-4 animate-spin" />
-                    Running 5-Pass Screening Pipeline...
+                    <span>Running 5-Pass Pipeline...</span>
                   </>
                 ) : (
                   <>
                     <Zap className="w-4 h-4 fill-white" />
-                    Execute Real-Time Screening (Pass 1-5)
+                    <span>Execute Real-Time Screening (Pass 1-5)</span>
                   </>
                 )}
-              </button>
+              </ShimmerButton>
             </div>
           </form>
         </div>
@@ -1061,6 +1077,14 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 )}
               </div>
             </div>
+          ) : loading ? (
+            <div className="h-full min-h-[400px] flex flex-col items-center justify-center bg-surface rounded-xl border border-border p-8">
+              <EdithLoader
+                size="md"
+                label="EVALUATING TRANSACTION..."
+                sublabel="Running compliance checks, please wait"
+              />
+            </div>
           ) : (
             <div className="h-full min-h-[400px] flex flex-col items-center justify-center bg-surface rounded-xl border border-border p-8 text-center space-y-3">
               <div className="w-14 h-14 rounded-2xl bg-surface-muted border border-border flex items-center justify-center text-muted">
@@ -1076,9 +1100,9 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
       </div>
 
       {/* 1-Click Whitelist Exception Modal */}
-      {whitelistModalCandidate && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono">
-          <div className="bg-surface rounded-xl border border-border shadow-xl max-w-lg w-full p-6 space-y-4 animate-in fade-in duration-150">
+      {whitelistModalCandidate && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[9999] p-4 font-mono">
+          <div className="bg-white rounded-2xl border border-border shadow-2xl max-w-lg w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-accent" />
@@ -1089,27 +1113,27 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
               <button
                 type="button"
                 onClick={() => setWhitelistModalCandidate(null)}
-                className="text-muted hover:text-ink"
+                className="text-muted hover:text-ink cursor-pointer p-1 rounded-lg hover:bg-slate-100"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleWhitelistSubmit} className="space-y-3 text-xs">
-              <div className="p-3 bg-surface-muted rounded-lg border border-border space-y-1">
+              <div className="p-3 bg-[#faf8ff] rounded-xl border border-border space-y-1">
                 <div className="text-muted text-[11px]">Target Entity & UID:</div>
                 <div className="font-bold text-ink">{whitelistModalCandidate.canonicalName} ({whitelistModalCandidate.candidateId})</div>
-                <div className="text-[11px] text-primary">
+                <div className="text-[11px] text-primary font-bold">
                   Score: {whitelistModalCandidate.confidenceScore.toFixed(1)}% ({whitelistModalCandidate.sanctionsList || 'OFAC'})
                 </div>
               </div>
 
               <div>
-                <label className="text-muted block mb-1">Match Scope</label>
+                <label className="text-muted block mb-1 font-bold">Match Scope</label>
                 <select
                   value={whitelistScope}
                   onChange={e => setWhitelistScope(e.target.value)}
-                  className="w-full bg-surface-muted border border-border rounded px-3 py-1.5 text-ink focus:outline-none focus:border-primary"
+                  className="w-full bg-slate-50 border border-border rounded-xl px-3 py-2 text-ink focus:outline-none focus:border-primary font-mono cursor-pointer"
                 >
                   <option value="EXACT">EXACT (Exact Name/Identifier suppression)</option>
                   <option value="FUZZY">FUZZY (Suppresses variations within score margin)</option>
@@ -1118,32 +1142,32 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
               </div>
 
               <div>
-                <label className="text-muted block mb-1">Statutory Rationale for 12-Month Exemption *</label>
+                <label className="text-muted block mb-1 font-bold">Statutory Rationale for 12-Month Exemption *</label>
                 <textarea
                   required
                   rows={3}
                   value={whitelistReason}
                   onChange={e => setWhitelistReason(e.target.value)}
-                  className="w-full bg-surface-muted border border-border rounded p-2.5 text-ink focus:outline-none focus:border-primary"
+                  className="w-full bg-slate-50 border border-border rounded-xl p-3 text-ink focus:outline-none focus:border-primary font-mono"
                 />
               </div>
 
-              <div className="p-2.5 rounded bg-surface-muted border border-border text-[11px] text-muted">
-                <strong>MLRO Policy Note:</strong> Pass 5 bypass policy will suppress alerts for 12 months. Requires annual MLRO recertification under FATF Rec. 11.
+              <div className="p-3 rounded-xl bg-[#faf8ff] border border-border text-[11px] text-muted leading-relaxed">
+                <strong className="text-ink">MLRO Policy Note:</strong> Pass 5 bypass policy will suppress alerts for 12 months. Requires annual MLRO recertification under FATF Rec. 11.
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setWhitelistModalCandidate(null)}
-                  className="px-3 py-1.5 rounded bg-surface-muted text-muted hover:text-ink text-xs"
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-ink text-xs font-bold cursor-pointer transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={whitelistSubmitting}
-                  className="px-4 py-1.5 rounded bg-accent text-white font-bold text-xs hover:bg-accent/90 flex items-center gap-1.5 shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-accent text-white font-bold text-xs hover:bg-accent/90 flex items-center gap-1.5 shadow-xs cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>{whitelistSubmitting ? 'Registering...' : 'Approve 12-Mo Whitelist'}</span>
@@ -1151,13 +1175,14 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Regulatory Screening Certificate Proof Modal */}
-      {certificateData && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono">
-          <div className="bg-surface rounded-xl border border-border shadow-2xl max-w-2xl w-full p-6 space-y-4 animate-in fade-in duration-150">
+      {certificateData && createPortal(
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-[9999] p-4 font-mono">
+          <div className="bg-white rounded-2xl border border-border shadow-2xl max-w-2xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-primary" />
@@ -1168,13 +1193,13 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
               <button
                 type="button"
                 onClick={() => setCertificateData(null)}
-                className="text-muted hover:text-ink"
+                className="text-muted hover:text-ink cursor-pointer p-1 rounded-lg hover:bg-slate-100"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-4 bg-background rounded-lg border border-border space-y-3 text-xs leading-relaxed">
+            <div className="p-4 bg-slate-50 rounded-xl border border-border space-y-3 text-xs leading-relaxed">
               <div className="flex justify-between items-center border-b border-border/80 pb-2">
                 <div>
                   <span className="text-[10px] text-muted">CERTIFICATE ID:</span>
@@ -1203,7 +1228,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 <span className="text-muted text-[11px]">5-Pass Logs & Latency ({certificateData.latencyMs}ms):</span>
                 <div className="mt-1 space-y-1">
                   {certificateData.passLogs.map((p: PassLogDto) => (
-                    <div key={p.passNumber} className="flex justify-between text-[11px] p-1 rounded bg-surface-muted border border-border">
+                    <div key={p.passNumber} className="flex justify-between text-[11px] p-1.5 rounded-lg bg-white border border-border">
                       <span className="font-bold text-primary">Pass {p.passNumber}: {p.matchType}</span>
                       <span className="text-muted">{p.details}</span>
                     </div>
@@ -1211,9 +1236,9 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 </div>
               </div>
 
-              <div className="p-2.5 rounded bg-surface-muted border border-border space-y-1">
+              <div className="p-2.5 rounded-lg bg-white border border-border space-y-1">
                 <span className="text-[10px] text-muted uppercase font-bold">Cryptographic WORM Proof (SHA-256):</span>
-                <div className="font-mono text-[10px] text-accent break-all">
+                <div className="font-mono text-[10px] text-accent break-all font-bold">
                   {certificateData.wormBlockHashSha256}
                 </div>
               </div>
@@ -1226,6 +1251,13 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
             <div className="flex justify-end gap-2 pt-2 border-t border-border">
               <button
                 type="button"
+                onClick={() => setCertificateData(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-ink text-xs font-bold cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   const blob = new Blob([JSON.stringify(certificateData, null, 2)], { type: 'application/json' });
                   const url = URL.createObjectURL(blob);
@@ -1235,7 +1267,7 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="px-3.5 py-1.5 rounded bg-surface-muted text-ink border border-border hover:bg-border/30 text-xs font-bold flex items-center gap-1.5"
+                className="px-3.5 py-2 rounded-xl bg-slate-100 text-ink border border-border hover:bg-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Download JSON Proof</span>
@@ -1243,14 +1275,15 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="px-4 py-1.5 rounded bg-primary text-white text-xs font-bold hover:bg-primary/90 flex items-center gap-1.5 shadow-xs"
+                className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span>Print Certificate</span>
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

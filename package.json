@@ -1,0 +1,9 @@
+{
+  "name": "edith",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix src/Web/edith-portal run dev",
+    "build": "npm --prefix src/Web/edith-portal run build",
+    "preview": "npm --prefix src/Web/edith-portal run preview"
+  }
+}

@@ -77,12 +77,13 @@ public sealed class PostgreSqlRuleRepository : IRuleRepository
                 min_transactions, structuring_min_amount, structuring_max_amount, created_at, updated_at
             )
             VALUES (
-                @id, @tenant_id, @rule_code, @rule_name, 'REALTIME', @category, @weightage, @is_active,
+                @id, @tenant_id, @rule_code, @rule_name, @execution_mode, @category, @weightage, @is_active,
                 @category, @risk_level, @threshold_amount, @currency, @high_risk_countries, @window_minutes,
                 @min_transactions, @structuring_min, @structuring_max, @created_at, @updated_at
             )
             ON CONFLICT (tenant_id, rule_code) DO UPDATE SET
                 rule_name = EXCLUDED.rule_name,
+                execution_mode = EXCLUDED.execution_mode,
                 risk_weightage = EXCLUDED.risk_weightage,
                 is_active = EXCLUDED.is_active,
                 category = EXCLUDED.category,
@@ -109,7 +110,7 @@ public sealed class PostgreSqlRuleRepository : IRuleRepository
         const string sql = """
             SELECT id, tenant_id, rule_code, rule_name, category, risk_level, risk_weightage, is_active,
                    threshold_amount, currency, high_risk_countries, window_minutes, min_transactions,
-                   structuring_min_amount, structuring_max_amount, created_at, updated_at
+                   structuring_min_amount, structuring_max_amount, created_at, updated_at, execution_mode
             FROM rules.aml_rules
             WHERE tenant_id = @tenant_id AND UPPER(rule_code) = UPPER(@rule_code);
             """;
@@ -135,7 +136,7 @@ public sealed class PostgreSqlRuleRepository : IRuleRepository
         const string sql = """
             SELECT id, tenant_id, rule_code, rule_name, category, risk_level, risk_weightage, is_active,
                    threshold_amount, currency, high_risk_countries, window_minutes, min_transactions,
-                   structuring_min_amount, structuring_max_amount, created_at, updated_at
+                   structuring_min_amount, structuring_max_amount, created_at, updated_at, execution_mode
             FROM rules.aml_rules
             WHERE tenant_id = @tenant_id AND (@active_only = false OR is_active = true)
             ORDER BY rule_code;
@@ -165,6 +166,7 @@ public sealed class PostgreSqlRuleRepository : IRuleRepository
             UPDATE rules.aml_rules
             SET rule_code = @rule_code,
                 rule_name = @rule_name,
+                execution_mode = @execution_mode,
                 rule_type = @category,
                 category = @category,
                 risk_level = @risk_level,
@@ -202,6 +204,7 @@ public sealed class PostgreSqlRuleRepository : IRuleRepository
         cmd.Parameters.AddWithValue("tenant_id", rule.TenantId);
         cmd.Parameters.AddWithValue("rule_code", rule.RuleCode);
         cmd.Parameters.AddWithValue("rule_name", rule.RuleName);
+        cmd.Parameters.AddWithValue("execution_mode", string.IsNullOrWhiteSpace(rule.ExecutionMode) ? "REALTIME" : rule.ExecutionMode.ToUpperInvariant());
         cmd.Parameters.AddWithValue("category", rule.Category.ToString());
         cmd.Parameters.AddWithValue("risk_level", rule.RiskLevel.ToString());
         cmd.Parameters.AddWithValue("weightage", rule.ScoreWeightage);
@@ -222,6 +225,7 @@ public sealed class PostgreSqlRuleRepository : IRuleRepository
     {
         var catStr = reader.IsDBNull(4) ? "TransactionThreshold" : reader.GetString(4);
         var riskStr = reader.IsDBNull(5) ? "High" : reader.GetString(5);
+        var execMode = reader.FieldCount > 17 && !reader.IsDBNull(17) ? reader.GetString(17) : "REALTIME";
 
         return new AmlRule
         {
@@ -232,6 +236,7 @@ public sealed class PostgreSqlRuleRepository : IRuleRepository
             Category = Enum.TryParse<RuleCategory>(catStr, true, out var c) ? c : RuleCategory.TransactionThreshold,
             RiskLevel = Enum.TryParse<RiskLevel>(riskStr, true, out var r) ? r : RiskLevel.High,
             ScoreWeightage = reader.GetDecimal(6),
+            ExecutionMode = execMode,
             IsActive = reader.GetBoolean(7),
             ThresholdAmount = reader.IsDBNull(8) ? null : reader.GetDecimal(8),
             Currency = reader.IsDBNull(9) ? null : reader.GetString(9),

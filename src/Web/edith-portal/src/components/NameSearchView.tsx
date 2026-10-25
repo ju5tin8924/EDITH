@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { usePageMeta } from '../config/pageMeta';
 import {
   Search,
-  ShieldAlert,
   CheckCircle2,
   Fingerprint,
   GitBranch,
@@ -45,6 +46,8 @@ import {
   AuditLogRecord 
 } from '../types';
 import { EdithApi } from '../services/api';
+import { EdithLoader } from './EdithLogo';
+import { GeneralErrorBanner } from './ErrorEngineUi';
 
 export type TargetPersona = 'INDIVIDUAL' | 'CORPORATE' | 'VESSEL';
 
@@ -577,36 +580,41 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
     return 'HELD';
   }, [response, filteredMatches]);
 
+  const pageMeta = usePageMeta(
+    'Name Search',
+    'Screen individuals, corporate entities, vessels, and identifiers against global sanctions, PEP, and adverse media lists.'
+  );
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Top Header Banner */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-surface p-5 rounded-xl border border-border shadow-2xs">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 bg-surface p-3.5 rounded-xl border border-border shadow-2xs">
         <div>
           <div className="flex items-center gap-2.5">
-            <Search className="w-6 h-6 text-primary" />
-            <h1 className="text-xl font-bold text-ink">
-              Universal Single Entity Sanctions & PEP Screening
+            <Search className="w-5 h-5 text-primary shrink-0" />
+            <h1 className="text-base sm:text-lg font-bold text-ink">
+              {pageMeta.title}
             </h1>
-            <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase rounded-full bg-accent/15 text-accent border border-accent/30 flex items-center gap-1">
-              <Users className="w-3 h-3" />
-              Institutional Hub
-            </span>
+            {pageMeta.parent && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
+                {pageMeta.parent}
+              </span>
+            )}
           </div>
-          <p className="text-xs text-muted mt-1">
-            Deterministic search across 47,600+ live PostgreSQL & OpenSearch records with Target-Type Personas, In-Line Audit Slips, and KYC 360 Bridge.
+          <p className="text-xs text-muted mt-0.5">
+            {pageMeta.definition}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
           <button
             type="button"
             onClick={() => setIsBatchPasteOpen(prev => !prev)}
-            className={`px-3 py-2 text-xs font-mono font-bold rounded-lg border transition flex items-center gap-1.5 ${
+            className={`px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg border transition flex items-center gap-1.5 cursor-pointer ${
               isBatchPasteOpen
                 ? 'bg-primary text-white border-primary shadow-xs'
                 : 'bg-surface-muted text-ink border-border hover:bg-border/40'
             }`}
-            title="Screen up to 10 entities/passports in rapid parallel batch"
           >
             <ClipboardList className="w-3.5 h-3.5" />
             <span>Multi-Line Batch</span>
@@ -616,11 +624,10 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
             <button
               type="button"
               onClick={handleReset}
-              className="px-3 py-2 text-xs font-mono font-bold rounded-lg bg-surface-muted text-ink border border-border hover:bg-border/40 transition flex items-center gap-1.5"
-              title="Clear all fields and reset for next entity (Esc)"
+              className="px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg bg-surface-muted text-ink border border-border hover:bg-border/40 transition flex items-center gap-1 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5 text-muted" />
-              <span>Clear Search</span>
+              <span>Clear</span>
               <span className="text-[10px] px-1 py-0.2 rounded bg-surface border border-border text-muted">Esc</span>
             </button>
           )}
@@ -628,10 +635,10 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
           <button
             type="button"
             onClick={() => setShowOverviewDiagram(prev => !prev)}
-            className="px-3 py-2 text-xs font-mono font-bold rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition flex items-center gap-2"
+            className="px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition flex items-center gap-1.5 cursor-pointer"
           >
-            <GitBranch className="w-4 h-4" />
-            {showOverviewDiagram ? 'Hide Diagram' : 'Engine Diagram'}
+            <GitBranch className="w-3.5 h-3.5" />
+            <span>{showOverviewDiagram ? 'Hide Diagram' : 'Engine Diagram'}</span>
           </button>
         </div>
       </div>
@@ -673,58 +680,6 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
         </div>
       )}
 
-      {/* UX 3: Session Recent Searches Breadcrumb Bar */}
-      {recentSearches.length > 0 && (
-        <div className="p-3 bg-surface rounded-xl border border-border flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-            <span className="text-muted flex items-center gap-1.5 font-bold uppercase text-[10px]">
-              <Clock className="w-3.5 h-3.5 text-primary" /> Recent Searches:
-            </span>
-            {recentSearches.map((rec, rIdx) => (
-              <button
-                key={rIdx}
-                type="button"
-                onClick={() => {
-                  setPersonaMode(rec.persona);
-                  setName(rec.name);
-                  setIdNumber(rec.idNumber);
-                  setBirthYear(rec.birthYear);
-                  setSearchMode(rec.mode);
-                  executeSearch(rec.name, rec.idNumber, rec.mode, rec.birthYear, rec.persona);
-                }}
-                className="px-2.5 py-1 rounded-md bg-surface-muted hover:bg-border/40 border border-border flex items-center gap-1.5 transition text-xs"
-                title={`Re-run search for "${rec.name || rec.idNumber}" (${rec.persona} - ${rec.mode})`}
-              >
-                <span className="font-semibold text-ink truncate max-w-[150px]">
-                  {rec.name || rec.idNumber}
-                </span>
-                <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                  rec.verdict === 'BLOCKED'
-                    ? 'bg-critical/20 text-critical'
-                    : rec.verdict === 'HELD'
-                    ? 'bg-warning/20 text-warning'
-                    : 'bg-accent/20 text-accent'
-                }`}>
-                  {rec.verdict} ({rec.matchCount})
-                </span>
-                <span className="text-[10px] text-muted">{rec.timestamp}</span>
-              </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setRecentSearches([]);
-              sessionStorage.removeItem(STORAGE_KEY_RECENT);
-            }}
-            className="text-muted hover:text-ink text-[11px] underline font-mono shrink-0"
-            title="Clear recent searches history"
-          >
-            Clear History
-          </button>
-        </div>
-      )}
 
       {/* Engine 7: Batch Clipboard Paste Screening Panel */}
       {isBatchPasteOpen && (
@@ -867,230 +822,258 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
         </div>
       )}
 
-      {/* Target-Type Persona Modes Selection Bar */}
-      <div className="bg-surface rounded-xl border border-border p-3.5 shadow-2xs flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-muted">
-            Target Persona:
-          </span>
-          <div className="flex items-center gap-1.5 p-1 bg-surface-muted rounded-lg border border-border">
-            <button
-              type="button"
-              onClick={() => handlePersonaChange('INDIVIDUAL')}
-              className={`px-3 py-1.5 rounded-md text-xs font-mono font-bold transition flex items-center gap-1.5 ${
-                personaMode === 'INDIVIDUAL'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-muted hover:text-ink'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>Individual Person</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handlePersonaChange('CORPORATE')}
-              className={`px-3 py-1.5 rounded-md text-xs font-mono font-bold transition flex items-center gap-1.5 ${
-                personaMode === 'CORPORATE'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-muted hover:text-ink'
-              }`}
-            >
-              <Building className="w-3.5 h-3.5" />
-              <span>Corporate / Commercial Entity</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handlePersonaChange('VESSEL')}
-              className={`px-3 py-1.5 rounded-md text-xs font-mono font-bold transition flex items-center gap-1.5 ${
-                personaMode === 'VESSEL'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-muted hover:text-ink'
-              }`}
-            >
-              <Anchor className="w-3.5 h-3.5" />
-              <span>Maritime Vessel / Cargo</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="text-[11px] font-mono text-muted">
-          {personaMode === 'INDIVIDUAL' && 'Screens Individuals against OFAC SDN, UN 1267, EU CFSP & PEP registers.'}
-          {personaMode === 'CORPORATE' && 'Screens Legal Entities, DED Trade Licenses, TRN & Corporate Aliases.'}
-          {personaMode === 'VESSEL' && 'Screens Maritime Vessels & Cargo by IMO 7-digit identifier & Flag State.'}
-        </div>
-      </div>
-
-      {/* Main Single Entity Search Box Form */}
-      <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 shadow-2xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-muted">
-              Select Search Mode:
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(['EXACT', 'FUZZY', 'EXACT_NAME_AND_ID'] as NameSearchMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => handleModeChange(mode)}
-                  className={`px-3 py-1 rounded-md text-xs font-mono font-bold transition ${
-                    searchMode === mode
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'bg-surface-muted text-muted hover:text-ink border border-border'
-                  }`}
+      {/* Unified Single Entity Screening Command Bar with Dropdowns */}
+      <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-3.5 space-y-3 shadow-2xs font-mono">
+        {/* Dropdowns Toolbar: Persona, Mode, Threshold, Scenarios, and Recents */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-border/80 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 1. Target Persona Dropdown */}
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] uppercase font-bold text-muted shrink-0">Persona:</label>
+              <div className="relative">
+                <select
+                  value={personaMode}
+                  onChange={(e) => handlePersonaChange(e.target.value as TargetPersona)}
+                  className="appearance-none bg-surface-muted hover:bg-surface border border-border hover:border-primary/50 text-ink text-xs font-semibold py-1.5 pl-7 pr-7 rounded-lg focus:outline-none focus:border-primary transition cursor-pointer shadow-2xs"
                 >
-                  {mode === 'EXACT' && 'Exact (100%)'}
-                  {mode === 'FUZZY' && 'Fuzzy & Phonetic'}
-                  {mode === 'EXACT_NAME_AND_ID' && (personaMode === 'VESSEL' ? 'Vessel Name + IMO' : personaMode === 'CORPORATE' ? 'Company + Trade Lic' : 'Dual-Factor Name + ID')}
-                </button>
-              ))}
+                  <option value="INDIVIDUAL">Individual Person</option>
+                  <option value="CORPORATE">Corporate Entity</option>
+                  <option value="VESSEL">Maritime Vessel</option>
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-muted pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                {personaMode === 'INDIVIDUAL' && <User className="w-3.5 h-3.5 text-primary pointer-events-none absolute left-2 top-1/2 -translate-y-1/2" />}
+                {personaMode === 'CORPORATE' && <Building className="w-3.5 h-3.5 text-primary pointer-events-none absolute left-2 top-1/2 -translate-y-1/2" />}
+                {personaMode === 'VESSEL' && <Anchor className="w-3.5 h-3.5 text-primary pointer-events-none absolute left-2 top-1/2 -translate-y-1/2" />}
+              </div>
+            </div>
+
+            {/* 2. Search Mode Dropdown */}
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] uppercase font-bold text-muted shrink-0">Mode:</label>
+              <div className="relative">
+                <select
+                  value={searchMode}
+                  onChange={(e) => handleModeChange(e.target.value as NameSearchMode)}
+                  className="appearance-none bg-surface-muted hover:bg-surface border border-border hover:border-primary/50 text-ink text-xs font-semibold py-1.5 pl-2.5 pr-7 rounded-lg focus:outline-none focus:border-primary transition cursor-pointer shadow-2xs"
+                >
+                  <option value="EXACT">Exact (100% Deterministic)</option>
+                  <option value="FUZZY">Fuzzy &amp; Phonetic</option>
+                  <option value="EXACT_NAME_AND_ID">
+                    {personaMode === 'VESSEL' ? 'Vessel Name + IMO' : personaMode === 'CORPORATE' ? 'Company + Trade Lic' : 'Dual-Factor Name + ID'}
+                  </option>
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-muted pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+
+            {/* 3. Sensitivity / Threshold Dropdown */}
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] uppercase font-bold text-muted shrink-0">Threshold:</label>
+              <div className="relative">
+                <select
+                  value={searchMode === 'FUZZY' ? minScore : 100}
+                  disabled={searchMode !== 'FUZZY'}
+                  onChange={(e) => setMinScore(Number(e.target.value))}
+                  className="appearance-none bg-surface-muted hover:bg-surface border border-border hover:border-primary/50 text-ink text-xs font-semibold py-1.5 pl-2.5 pr-7 rounded-lg focus:outline-none focus:border-primary transition cursor-pointer shadow-2xs disabled:opacity-60"
+                >
+                  {searchMode === 'FUZZY' ? (
+                    <>
+                      <option value={95}>95% (Ultra-Strict)</option>
+                      <option value={90}>90% (Strict)</option>
+                      <option value={85}>85% (Recommended)</option>
+                      <option value={80}>80% (Standard AML)</option>
+                      <option value={75}>75% (Broad Variant)</option>
+                      <option value={60}>60% (High Recall)</option>
+                    </>
+                  ) : (
+                    <option value={100}>100% Strict</option>
+                  )}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-muted pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+              </div>
             </div>
           </div>
 
-          <div className="text-[11px] text-muted font-mono">
-            {searchMode === 'EXACT' && 'Deterministic alias equality. Zero false positive tolerance.'}
-            {searchMode === 'FUZZY' && 'Jaro-Winkler + Levenshtein + Double Metaphone phonetic matching.'}
-            {searchMode === 'EXACT_NAME_AND_ID' && 'Dual-Attribute Match with official legal registration ID.'}
-          </div>
-        </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 4. 1-Click Scenario Preset Dropdown */}
+            <div className="relative">
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) return;
+                  if (personaMode === 'INDIVIDUAL') {
+                    if (val === '1') applyPreset('VIKTOR ANATOLYEVICH BOUT', '', 'EXACT', '1967', 'INDIVIDUAL');
+                    if (val === '2') applyPreset('Victor Bout', '', 'FUZZY', '1968', 'INDIVIDUAL');
+                    if (val === '3') applyPreset('Viktor Anatolyevich Bout', 'OFAC-9812', 'EXACT_NAME_AND_ID', '1967', 'INDIVIDUAL');
+                    if (val === '4') applyPreset('Fatima Salem Al-Nuaimi', '', 'EXACT', '1985', 'INDIVIDUAL');
+                    if (val === '5') applyPreset('Mansoor Mohammed Al-Marzooqi', '', 'FUZZY', '1975', 'INDIVIDUAL');
+                  } else if (personaMode === 'CORPORATE') {
+                    if (val === '1') applyPreset('Al-Baraka General Trading LLC', 'TL-DXB-991204', 'EXACT_NAME_AND_ID', 'AE', 'CORPORATE');
+                    if (val === '2') applyPreset('Al-Quds Logistics LLC', 'TL-DXB-889120', 'EXACT_NAME_AND_ID', 'IR', 'CORPORATE');
+                    if (val === '3') applyPreset('Dubai Retail Holdings LLC', 'TL-DXB-334455', 'EXACT', 'AE', 'CORPORATE');
+                  } else {
+                    if (val === '1') applyPreset('BELLA 1', '9234567', 'EXACT_NAME_AND_ID', 'IR', 'VESSEL');
+                    if (val === '2') applyPreset('NEPTUNE BREEZE', '9345678', 'EXACT', 'PA', 'VESSEL');
+                  }
+                  e.target.value = '';
+                }}
+                className="appearance-none bg-primary/10 hover:bg-primary/15 border border-primary/30 text-primary text-xs font-bold py-1.5 pl-7 pr-7 rounded-lg focus:outline-none focus:border-primary transition cursor-pointer shadow-2xs"
+              >
+                <option value="" disabled>⚡ Quick Scenarios...</option>
+                {personaMode === 'INDIVIDUAL' && (
+                  <>
+                    <option value="1">1. Exact Hit: Viktor Bout (1967) [OFAC]</option>
+                    <option value="2">2. Fuzzy Typo: Victor Bout</option>
+                    <option value="3">3. Dual-Factor: Viktor Bout + OFAC-9812</option>
+                    <option value="4">4. Clean Entity: Fatima Al-Nuaimi (0 Hits)</option>
+                    <option value="5">5. PEP Registry: Mansoor Al-Marzooqi</option>
+                  </>
+                )}
+                {personaMode === 'CORPORATE' && (
+                  <>
+                    <option value="1">1. Corporate Hit: Al-Baraka General Trading</option>
+                    <option value="2">2. High-Risk Corridor: Al-Quds Logistics</option>
+                    <option value="3">3. Clean UAE Entity: Dubai Retail Holdings</option>
+                  </>
+                )}
+                {personaMode === 'VESSEL' && (
+                  <>
+                    <option value="1">1. Sanctioned Vessel: BELLA 1 (IMO 9234567)</option>
+                    <option value="2">2. Clean Container Ship: NEPTUNE BREEZE</option>
+                  </>
+                )}
+              </select>
+              <Sparkles className="w-3.5 h-3.5 text-primary pointer-events-none absolute left-2 top-1/2 -translate-y-1/2" />
+              <ChevronDown className="w-3.5 h-3.5 text-primary pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+            </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-          {/* Target Name Field (Adaptive) */}
-          <div className="md:col-span-4">
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-xs font-semibold text-ink">
-                {personaMode === 'INDIVIDUAL' && 'Individual Full Legal Name'}
-                {personaMode === 'CORPORATE' && 'Corporate Registered Legal Name'}
-                {personaMode === 'VESSEL' && 'Vessel Name / Aircraft Registration'}
-              </label>
-              {name && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setName('');
-                    if (nameInputRef.current) nameInputRef.current.focus();
+            {/* 5. Recent Searches Dropdown */}
+            {recentSearches.length > 0 && (
+              <div className="relative">
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const idx = Number(e.target.value);
+                    const rec = recentSearches[idx];
+                    if (rec) {
+                      setPersonaMode(rec.persona);
+                      setName(rec.name);
+                      setIdNumber(rec.idNumber);
+                      setBirthYear(rec.birthYear);
+                      setSearchMode(rec.mode);
+                      executeSearch(rec.name, rec.idNumber, rec.mode, rec.birthYear, rec.persona);
+                    }
+                    e.target.value = '';
                   }}
-                  className="text-[10px] text-muted hover:text-critical flex items-center gap-0.5"
+                  className="appearance-none bg-surface-muted hover:bg-surface border border-border hover:border-primary/50 text-ink text-xs font-semibold py-1.5 pl-7 pr-7 rounded-lg focus:outline-none focus:border-primary transition cursor-pointer shadow-2xs"
                 >
-                  <X className="w-3 h-3" />
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="relative">
-              <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                ref={nameInputRef}
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder={
-                  personaMode === 'INDIVIDUAL' 
-                    ? 'e.g. Viktor Bout, Tariq Aziz...' 
-                    : personaMode === 'CORPORATE'
-                    ? 'e.g. Al-Baraka General Trading LLC...'
-                    : 'e.g. Bella 1, Neptune Breeze...'
-                }
-                className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-medium"
-              />
-            </div>
+                  <option value="" disabled>🕒 Recents ({recentSearches.length})...</option>
+                  {recentSearches.map((rec, rIdx) => (
+                    <option key={rIdx} value={rIdx}>
+                      {rec.name || rec.idNumber} [{rec.verdict}]
+                    </option>
+                  ))}
+                </select>
+                <Clock className="w-3.5 h-3.5 text-primary pointer-events-none absolute left-2 top-1/2 -translate-y-1/2" />
+                <ChevronDown className="w-3.5 h-3.5 text-muted pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Identifier Field (Adaptive) */}
-          <div className="md:col-span-3">
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-xs font-semibold text-ink">
-                {personaMode === 'INDIVIDUAL' && 'Sanctions UID / Passport / ID'}
-                {personaMode === 'CORPORATE' && 'Trade License / TRN / LEI Number'}
-                {personaMode === 'VESSEL' && 'IMO Number (7 Digits) / Call Sign'}
-              </label>
-            </div>
-            <div className="relative">
-              <Fingerprint className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={idNumber}
-                onChange={e => setIdNumber(e.target.value)}
-                placeholder={
-                  personaMode === 'INDIVIDUAL'
-                    ? 'e.g. OFAC-9812, WC-6211256...'
-                    : personaMode === 'CORPORATE'
-                    ? 'e.g. TL-DXB-889120, TRN-1002...'
-                    : 'e.g. IMO-9234567...'
-                }
-                className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-mono"
-              />
-            </div>
-          </div>
-
-          {/* Secondary Field (Adaptive) */}
-          <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-ink block mb-1">
-              {personaMode === 'INDIVIDUAL' && 'Birth Year (YOB)'}
-              {personaMode === 'CORPORATE' && 'Jurisdiction (ISO-2)'}
-              {personaMode === 'VESSEL' && 'Flag State (ISO-2)'}
-            </label>
+        {/* Primary Input Row: Name + ID + Secondary + Search Button */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5">
+          {/* Target Name Field */}
+          <div className="flex-1 relative min-w-[200px]">
+            <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
-              type={personaMode === 'INDIVIDUAL' ? 'number' : 'text'}
-              placeholder={personaMode === 'INDIVIDUAL' ? 'e.g. 1967' : 'e.g. AE, PA, LR'}
-              value={birthYear}
-              onChange={e => setBirthYear(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-mono"
+              ref={nameInputRef}
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder={
+                personaMode === 'INDIVIDUAL' 
+                  ? 'Enter Individual Full Legal Name (e.g. Viktor Bout)...' 
+                  : personaMode === 'CORPORATE'
+                  ? 'Enter Corporate Legal Name (e.g. Al-Baraka Trading)...'
+                  : 'Enter Vessel Name / IMO (e.g. Bella 1)...'
+              }
+              className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-medium shadow-2xs"
+            />
+            {name && (
+              <button
+                type="button"
+                onClick={() => {
+                  setName('');
+                  if (nameInputRef.current) nameInputRef.current.focus();
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink p-0.5 rounded cursor-pointer"
+                title="Clear Name"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Identifier Field */}
+          <div className="relative w-full md:w-56 shrink-0">
+            <Fingerprint className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={idNumber}
+              onChange={e => setIdNumber(e.target.value)}
+              placeholder={
+                personaMode === 'INDIVIDUAL'
+                  ? 'UID / Passport / National ID'
+                  : personaMode === 'CORPORATE'
+                  ? 'Trade Lic / TRN / LEI'
+                  : 'IMO Number (7 digits)'
+              }
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-mono shadow-2xs"
             />
           </div>
 
-          {searchMode === 'FUZZY' ? (
-            <div className="md:col-span-1">
-              <label className="block text-[11px] font-mono text-muted mb-1 flex items-center justify-between">
-                <span>Min</span>
-                <span className="font-bold text-ink">{minScore}%</span>
-              </label>
-              <input
-                type="range"
-                min={50}
-                max={95}
-                step={5}
-                value={minScore}
-                onChange={e => setMinScore(Number(e.target.value))}
-                className="w-full accent-primary cursor-pointer"
-              />
-            </div>
-          ) : (
-            <div className="md:col-span-1 text-center">
-              <label className="block text-[11px] font-mono text-muted mb-1">Threshold</label>
-              <span className="text-[10px] font-mono px-2 py-1.5 rounded bg-surface-muted border border-border text-muted block">
-                Strict 100%
-              </span>
-            </div>
-          )}
+          {/* Secondary Field */}
+          <div className="relative w-full md:w-28 shrink-0">
+            <input
+              type={personaMode === 'INDIVIDUAL' ? 'number' : 'text'}
+              placeholder={personaMode === 'INDIVIDUAL' ? 'YOB (1967)' : 'ISO-2 (AE)'}
+              value={birthYear}
+              onChange={e => setBirthYear(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background text-ink focus:outline-none focus:border-primary font-mono shadow-2xs"
+            />
+          </div>
 
-          <div className="md:col-span-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleReset}
-              className="py-2.5 px-3 rounded-lg bg-surface-muted hover:bg-border text-ink font-semibold text-xs transition flex items-center justify-center gap-1.5 border border-border shrink-0"
-              title="Clear all fields and reset for next entity (Esc)"
-            >
-              <RotateCcw className="w-4 h-4 text-muted" />
-              <span>Clear</span>
-            </button>
+          {/* Clear & Search Actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {(name || idNumber || response) && (
+              <button
+                type="button"
+                onClick={handleReset}
+                className="py-2 px-2.5 rounded-lg bg-surface-muted hover:bg-border text-ink font-semibold text-xs transition flex items-center justify-center gap-1 border border-border shadow-2xs cursor-pointer"
+                title="Clear all fields (Esc)"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-muted" />
+                <span className="hidden xl:inline">Clear</span>
+              </button>
+            )}
 
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 py-2.5 px-3 rounded-lg bg-primary text-white font-semibold text-xs uppercase tracking-wider hover:bg-primary/90 transition flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+              className="min-w-[120px] py-2 px-4 rounded-lg bg-primary hover:bg-primary-hover text-white font-mono font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow-sm active:translate-y-0.5 cursor-pointer disabled:opacity-50"
             >
               {loading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   <span>Searching...</span>
                 </>
               ) : (
                 <>
-                  <Search className="w-4 h-4" />
+                  <Search className="w-3.5 h-3.5" />
                   <span>Search</span>
+                  <span className="text-[10px] opacity-75 font-sans">↵</span>
                 </>
               )}
             </button>
@@ -1098,153 +1081,40 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
         </div>
 
         {isQueryDirty && response && (
-          <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs flex items-center justify-between animate-in fade-in duration-100">
+          <div className="p-2 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs flex items-center justify-between animate-in fade-in duration-100 font-mono">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>
-                Search inputs modified. You are viewing results for previous query: <strong>"{lastExecutedQuery?.name || lastExecutedQuery?.idNumber}"</strong>.
-              </span>
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>Inputs modified. Viewing results for: <strong>"{lastExecutedQuery?.name || lastExecutedQuery?.idNumber}"</strong></span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleReset}
-                className="px-2 py-0.5 rounded bg-surface text-ink text-[11px] border border-border hover:bg-border/30"
-              >
-                Clear Previous
-              </button>
-              <button
-                type="button"
                 onClick={() => executeSearch()}
-                className="px-2.5 py-0.5 rounded bg-primary text-white text-[11px] font-bold hover:bg-primary/90"
+                className="px-2.5 py-0.5 rounded bg-primary text-white text-[11px] font-bold hover:bg-primary/90 cursor-pointer"
               >
-                Run Updated Search
+                Re-Run Search ↵
               </button>
             </div>
           </div>
         )}
-
-        {/* 1-Click Persona-Specific Test Scenarios */}
-        <div className="pt-2 border-t border-border space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-muted font-mono text-[11px] font-bold uppercase">
-              1-Click {personaMode} Scenarios:
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {personaMode === 'INDIVIDUAL' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('VIKTOR ANATOLYEVICH BOUT', '', 'EXACT', '1967', 'INDIVIDUAL')}
-                  className="px-2.5 py-1 rounded-md bg-critical/10 text-critical border border-critical/30 hover:bg-critical/20 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <FileWarning className="w-3 h-3" />
-                  1. Exact Hit: "Viktor Bout" (1967)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('Victor Bout', '', 'FUZZY', '1968', 'INDIVIDUAL')}
-                  className="px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  2. Fuzzy Typo: "Victor Bout"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('Viktor Anatolyevich Bout', 'OFAC-9812', 'EXACT_NAME_AND_ID', '1967', 'INDIVIDUAL')}
-                  className="px-2.5 py-1 rounded-md bg-warning/15 text-warning border border-warning/30 hover:bg-warning/25 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <Fingerprint className="w-3 h-3" />
-                  3. Dual-Factor: "Viktor Bout" + "OFAC-9812"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('Fatima Salem Al-Nuaimi', '', 'EXACT', '1985', 'INDIVIDUAL')}
-                  className="px-2.5 py-1 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <CheckCircle2 className="w-3 h-3" />
-                  4. Clean Entity: "Fatima Al-Nuaimi" (0 Hits)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('Mansoor Mohammed Al-Marzooqi', '', 'FUZZY', '1975', 'INDIVIDUAL')}
-                  className="px-2.5 py-1 rounded-md bg-purple-500/10 text-purple-700 border border-purple-400/30 hover:bg-purple-500/20 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <Users className="w-3 h-3" />
-                  5. PEP Registry: "Mansoor Al-Marzooqi"
-                </button>
-              </>
-            )}
-
-            {personaMode === 'CORPORATE' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('Al-Baraka General Trading LLC', 'TL-DXB-991204', 'EXACT_NAME_AND_ID', 'AE', 'CORPORATE')}
-                  className="px-2.5 py-1 rounded-md bg-critical/10 text-critical border border-critical/30 hover:bg-critical/20 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <Building className="w-3 h-3" />
-                  1. Corporate Trade Hit: "Al-Baraka General Trading"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('Al-Quds Logistics LLC', 'TL-DXB-889120', 'EXACT_NAME_AND_ID', 'IR', 'CORPORATE')}
-                  className="px-2.5 py-1 rounded-md bg-warning/15 text-warning border border-warning/30 hover:bg-warning/25 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <Building className="w-3 h-3" />
-                  2. High-Risk Corridor: "Al-Quds Logistics"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('Dubai Retail Holdings LLC', 'TL-DXB-334455', 'EXACT', 'AE', 'CORPORATE')}
-                  className="px-2.5 py-1 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <CheckCircle2 className="w-3 h-3" />
-                  3. Clean UAE Entity: "Dubai Retail Holdings"
-                </button>
-              </>
-            )}
-
-            {personaMode === 'VESSEL' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('BELLA 1', '9234567', 'EXACT_NAME_AND_ID', 'IR', 'VESSEL')}
-                  className="px-2.5 py-1 rounded-md bg-critical/10 text-critical border border-critical/30 hover:bg-critical/20 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <Anchor className="w-3 h-3" />
-                  1. Sanctioned Vessel: "BELLA 1 (IMO 9234567)"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('NEPTUNE BREEZE', '9345678', 'EXACT', 'PA', 'VESSEL')}
-                  className="px-2.5 py-1 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 font-mono text-[11px] transition flex items-center gap-1"
-                >
-                  <CheckCircle2 className="w-3 h-3" />
-                  2. Clean Container Ship: "NEPTUNE BREEZE (IMO 9345678)"
-                </button>
-              </>
-            )}
-          </div>
-        </div>
       </form>
 
+      {(loading || batchLoading) && (
+        <EdithLoader
+          overlay
+          size="md"
+          label="PROCESSING SEARCH..."
+          sublabel="Evaluating records, please wait"
+        />
+      )}
+
       {error && (
-        <div className="p-4 rounded-xl bg-critical/10 border border-critical text-critical text-xs font-medium flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className="text-critical hover:text-ink p-1"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <GeneralErrorBanner
+          error={error}
+          category="VALIDATION"
+          onRetry={name.trim() || idNumber.trim() ? () => executeSearch() : undefined}
+          onDismiss={() => setError(null)}
+        />
       )}
 
       {/* Results Section */}
@@ -1865,8 +1735,8 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
       )}
 
       {/* KYC 360 & UBO Tree Slide-Over Drawer */}
-      {isKycDrawerOpen && linkedKycDossier && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-end z-50 font-mono">
+      {isKycDrawerOpen && linkedKycDossier && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-end z-[9999] font-mono">
           <div className="bg-surface w-full max-w-xl h-full shadow-2xl border-l border-border p-6 overflow-y-auto space-y-5 animate-in slide-in-from-right duration-200">
             <div className="flex justify-between items-center border-b border-border pb-3">
               <div className="flex items-center gap-2">
@@ -1964,7 +1834,7 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                 type="button"
                 onClick={() => {
                   setIsKycDrawerOpen(false);
-                  navigate('/kyc');
+                  navigate(`/kyc360?customer=${encodeURIComponent(linkedKycDossier.customerCode)}`);
                 }}
                 className="px-4 py-2 rounded-lg bg-primary text-white font-bold text-xs hover:bg-primary/90 flex items-center gap-1.5 shadow-xs"
               >
@@ -1973,12 +1843,13 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Onboarding AML Clearance Memo Modal */}
-      {isOnboardingMemoOpen && response && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono">
+      {isOnboardingMemoOpen && response && createPortal(
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-[9999] p-4 font-mono">
           <div className="bg-surface rounded-xl border border-border shadow-2xl max-w-2xl w-full p-6 space-y-4 animate-in fade-in duration-150">
             <div className="flex justify-between items-center border-b border-border pb-3">
               <div className="flex items-center gap-2">
@@ -2086,12 +1957,13 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 1-Click Whitelist Exception Modal */}
-      {whitelistModalMatch && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono">
+      {whitelistModalMatch && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[9999] p-4 font-mono">
           <div className="bg-surface rounded-xl border border-border shadow-xl max-w-lg w-full p-6 space-y-4 animate-in fade-in duration-150">
             <div className="flex justify-between items-center border-b border-border pb-3">
               <div className="flex items-center gap-2">
@@ -2163,12 +2035,13 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Regulatory Screening Certificate Proof Modal */}
-      {certificateData && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono">
+      {certificateData && createPortal(
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-[9999] p-4 font-mono">
           <div className="bg-surface rounded-xl border border-border shadow-2xl max-w-2xl w-full p-6 space-y-4 animate-in fade-in duration-150">
             <div className="flex justify-between items-center border-b border-border pb-3">
               <div className="flex items-center gap-2">
@@ -2262,7 +2135,8 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Briefcase, 
   Lock, 
@@ -34,6 +35,8 @@ import {
   CaseResolution
 } from '../types';
 import { EdithApi, getSession } from '../services/api';
+import { EdithLoader } from './EdithLogo';
+import { usePageMeta } from '../config/pageMeta';
 
 interface CaseWorkspaceProps {
   currentRole: UserRole;
@@ -98,6 +101,16 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
   useEffect(() => {
     loadCases();
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && modalType) {
+        setModalType(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modalType]);
 
   // Lock countdown timer
   useEffect(() => {
@@ -360,22 +373,29 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
     return items.sort((a, b) => new Date(a.timestampUtc).getTime() - new Date(b.timestampUtc).getTime());
   }, [caseDetail, showAuditLogsInTimeline]);
 
+  const pageMeta = usePageMeta(
+    'Alerts',
+    'Investigate flagged transactions, review phonetic match breakdowns, and adjudicate compliance alerts.'
+  );
+
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-[1700px] mx-auto text-ink">
       {/* 1. Header Toolbar */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-surface p-4 rounded-xl border border-border shadow-sm">
         <div>
-          <div className="flex items-center gap-2.5">
-            <Briefcase className="w-6 h-6 text-primary" />
-            <h1 className="text-xl font-bold font-mono tracking-tight text-ink">
-              Case Workspace & 4-Eyes Adjudication
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Briefcase className="w-5 h-5 text-primary" />
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-ink">
+              {pageMeta.title}
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-primary/10 text-primary border border-primary/30">
-              Phase 12
-            </span>
+            {pageMeta.parent && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
+                {pageMeta.parent}
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted mt-1">
-            Collapsible queue, multi-duration lock renewals (15m/30m/1hr), multi-angle investigation tabs, and WORM-signed adjudication.
+            {pageMeta.definition}
           </p>
         </div>
 
@@ -399,7 +419,6 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                   {/* Renew lock dropdown button */}
                   <button
                     onClick={() => setShowDurationPicker(!showDurationPicker)}
-                    title="Extend Lock Lease Duration"
                     className="px-2 py-1 rounded text-xs font-semibold bg-primary text-white hover:bg-primary-hover transition flex items-center gap-1"
                   >
                     <RefreshCw className="w-3 h-3" />
@@ -409,7 +428,6 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                   {/* Release Lock button */}
                   <button
                     onClick={toggleLock}
-                    title="Release active case lock"
                     className="px-2 py-1 rounded text-xs font-semibold bg-surface-hover text-muted hover:text-ink transition flex items-center gap-1"
                   >
                     <Unlock className="w-3 h-3" />
@@ -632,9 +650,12 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
           </div>
 
           {loading ? (
-            <div className="p-16 text-center text-muted font-mono text-xs flex items-center justify-center gap-2">
-              <Clock className="w-4 h-4 animate-spin text-primary" />
-              Loading case telemetry...
+            <div className="p-16 flex items-center justify-center">
+              <EdithLoader
+                size="sm"
+                label="LOADING CASE DETAILS..."
+                sublabel="Retrieving investigation records"
+              />
             </div>
           ) : caseDetail ? (
             <div>
@@ -906,6 +927,15 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                       <div><span className="text-muted">Nationality:</span> <strong className="text-ink">Russian Federation</strong></div>
                       <div><span className="text-muted">Risk Tier:</span> <strong className="text-critical">CRITICAL (Tier 1)</strong></div>
                     </div>
+                    <div className="pt-2 border-t border-border/60 flex justify-end">
+                      <a
+                        href={`/kyc360?customer=${encodeURIComponent(caseDetail.primarySubjectName)}`}
+                        className="px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-mono font-bold hover:bg-primary/90 inline-flex items-center gap-1.5"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>Open Full KYC 360 & EDD Dossier</span>
+                      </a>
+                    </div>
                   </div>
 
                   {/* Document Vault */}
@@ -1136,15 +1166,16 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
       {/* 3. Modals */}
 
       {/* Modal: AI STR Narrative Copilot (Editable) */}
-      {modalType === 'AI_NARRATIVE' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4">
-          <div className="bg-surface border border-border rounded-xl max-w-3xl w-full p-6 space-y-4 shadow-2xl">
+      {modalType === 'AI_NARRATIVE' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setModalType(null)} className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity duration-200" />
+          <div className="relative z-10 bg-white border border-border rounded-2xl max-w-3xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center pb-3 border-b border-border">
               <h3 className="font-mono font-bold text-base text-ink flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-secondary" />
-                FATF 5-Paragraph STR Narrative Copilot
+                <span>FATF 5-Paragraph STR Narrative Copilot</span>
               </h3>
-              <button onClick={() => setModalType(null)} className="text-muted hover:text-ink">
+              <button onClick={() => setModalType(null)} className="text-muted hover:text-ink cursor-pointer p-1 rounded-lg hover:bg-slate-100">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
@@ -1157,13 +1188,13 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
               rows={12}
               value={editableNarrative}
               onChange={(e) => setEditableNarrative(e.target.value)}
-              className="w-full bg-canvas-subtle border border-border rounded-lg p-3.5 text-xs font-mono text-ink focus:border-primary focus:outline-none leading-relaxed"
+              className="w-full bg-[#faf8ff] border border-border rounded-xl p-3.5 text-xs font-mono text-ink focus:border-primary focus:outline-none leading-relaxed"
             />
 
             <div className="flex flex-wrap justify-between items-center gap-3 pt-2 border-t border-border">
               <button
                 onClick={() => copyToClipboard(editableNarrative)}
-                className="px-3 py-2 rounded bg-surface-muted border border-border hover:bg-surface-hover text-xs font-semibold flex items-center gap-1.5 text-ink transition"
+                className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-border text-xs font-semibold flex items-center gap-1.5 text-ink transition cursor-pointer"
               >
                 {copiedSuccess ? <Check className="w-4 h-4 text-accent" /> : <Copy className="w-4 h-4 text-muted" />}
                 <span>{copiedSuccess ? 'Copied to Clipboard' : 'Copy Narrative'}</span>
@@ -1172,13 +1203,13 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
               <div className="flex gap-2">
                 <button
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded bg-surface-hover text-ink text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-ink text-xs font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleApplyNarrativeToRationale}
-                  className="px-4 py-2 rounded bg-primary text-white text-xs font-bold font-mono hover:bg-primary-hover flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold font-mono hover:bg-primary-hover flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Apply as Statutory Rationale</span>
@@ -1186,31 +1217,33 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal: goAML XML Export (1-Click Download) */}
-      {modalType === 'GOAML' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4">
-          <div className="bg-surface border border-border rounded-xl max-w-3xl w-full p-6 space-y-4 shadow-2xl">
+      {modalType === 'GOAML' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setModalType(null)} className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity duration-200" />
+          <div className="relative z-10 bg-white border border-border rounded-2xl max-w-3xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center pb-3 border-b border-border">
               <h3 className="font-mono font-bold text-base text-ink flex items-center gap-2">
                 <FileCode className="w-5 h-5 text-accent" />
-                UAE Financial Intelligence Unit (goAML XML Export)
+                <span>UAE Financial Intelligence Unit (goAML XML Export)</span>
               </h3>
-              <button onClick={() => setModalType(null)} className="text-muted hover:text-ink">
+              <button onClick={() => setModalType(null)} className="text-muted hover:text-ink cursor-pointer p-1 rounded-lg hover:bg-slate-100">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
 
-            <pre className="p-4 rounded-lg bg-canvas-subtle border border-border text-xs font-mono text-ink overflow-x-auto max-h-96 whitespace-pre-wrap">
+            <pre className="p-4 rounded-xl bg-[#faf8ff] border border-border text-xs font-mono text-ink overflow-x-auto max-h-96 whitespace-pre-wrap">
               {modalContent}
             </pre>
 
             <div className="flex justify-between items-center pt-2 border-t border-border">
               <button
                 onClick={() => copyToClipboard(modalContent)}
-                className="px-3 py-2 rounded bg-surface-muted border border-border hover:bg-surface-hover text-xs font-semibold flex items-center gap-1.5 text-ink"
+                className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-border text-xs font-semibold flex items-center gap-1.5 text-ink cursor-pointer"
               >
                 {copiedSuccess ? <Check className="w-4 h-4 text-accent" /> : <Copy className="w-4 h-4 text-muted" />}
                 <span>{copiedSuccess ? 'Copied XML' : 'Copy XML'}</span>
@@ -1219,13 +1252,13 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
               <div className="flex gap-2">
                 <button
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded bg-surface-hover text-ink text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-ink text-xs font-semibold cursor-pointer"
                 >
                   Close
                 </button>
                 <button
                   onClick={handleDownloadGoAmlXml}
-                  className="px-4 py-2 rounded bg-accent text-white text-xs font-bold font-mono hover:bg-accent/80 flex items-center gap-1.5 shadow"
+                  className="px-4 py-2 rounded-xl bg-accent text-white text-xs font-bold font-mono hover:bg-accent/80 flex items-center gap-1.5 shadow cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
                   <span>Download .xml File</span>
@@ -1233,45 +1266,47 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal: Case Resolution (with Whitelist on Dismissal) */}
-      {modalType === 'RESOLVE' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4">
-          <div className="bg-surface border border-border rounded-xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
+      {modalType === 'RESOLVE' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setModalType(null)} className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity duration-200" />
+          <div className="relative z-10 bg-white border border-border rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center pb-3 border-b border-border">
               <h3 className="font-mono font-bold text-base text-ink flex items-center gap-2">
                 <AlertTriangle className={`w-5 h-5 ${resolveType === 'FalsePositive' ? 'text-accent' : 'text-critical'}`} />
                 <span>Statutory Adjudication: {resolveType === 'FalsePositive' ? 'Dismiss False Positive' : 'Confirm Hit (STR Freeze)'}</span>
               </h3>
-              <button onClick={() => setModalType(null)} className="text-muted hover:text-ink">
+              <button onClick={() => setModalType(null)} className="text-muted hover:text-ink cursor-pointer p-1 rounded-lg hover:bg-slate-100">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
+            <div className="space-y-4 text-xs font-mono">
               <div>
-                <label className="text-muted block mb-1 font-semibold">Statutory Case Rationale</label>
+                <label className="text-muted block mb-1.5 font-bold">Statutory Case Rationale</label>
                 <textarea
                   rows={4}
                   required
                   placeholder="Provide detailed statutory rationale for this adjudication decision..."
                   value={resolveRationale}
                   onChange={(e) => setResolveRationale(e.target.value)}
-                  className="w-full bg-canvas-subtle border border-border rounded-lg p-3 text-ink font-mono focus:border-primary focus:outline-none"
+                  className="w-full bg-[#faf8ff] border border-border rounded-xl p-3 text-ink font-mono focus:border-primary focus:outline-none"
                 />
               </div>
 
               {/* Direct Whitelist-on-Dismissal Toggle for False Positives */}
               {resolveType === 'FalsePositive' && (
-                <div className="p-3 bg-surface-muted border border-border rounded-lg space-y-1.5">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                <div className="p-3.5 bg-[#faf8ff] border border-border rounded-xl space-y-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={autoWhitelist}
                       onChange={(e) => setAutoWhitelist(e.target.checked)}
-                      className="w-4 h-4 text-primary rounded border-border focus:ring-primary"
+                      className="w-4 h-4 text-primary rounded border-border focus:ring-primary cursor-pointer"
                     />
                     <span className="font-bold text-ink text-xs">Auto-provision Whitelist Exemption</span>
                   </label>
@@ -1284,33 +1319,35 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
               <div className="flex justify-end gap-3 pt-2 border-t border-border">
                 <button
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded bg-surface-hover text-ink text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-ink text-xs font-bold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmResolution}
                   disabled={!resolveRationale.trim()}
-                  className="px-4 py-2 rounded bg-primary text-white font-bold hover:bg-primary-hover font-mono text-xs disabled:opacity-50"
+                  className="px-4 py-2 rounded-xl bg-primary text-white font-bold hover:bg-primary-hover font-mono text-xs disabled:opacity-50 cursor-pointer shadow-xs"
                 >
                   Submit Statutory Adjudication
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal: Enhanced Due Diligence (EDD) Checklist */}
-      {modalType === 'EDD_CHECKLIST' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4">
-          <div className="bg-surface border border-border rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+      {modalType === 'EDD_CHECKLIST' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setModalType(null)} className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity duration-200" />
+          <div className="relative z-10 bg-white border border-border rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center pb-3 border-b border-border">
               <h3 className="font-mono font-bold text-base text-ink flex items-center gap-2">
                 <CheckSquare className="w-5 h-5 text-primary" />
-                Initiate Enhanced Due Diligence (EDD)
+                <span>Initiate Enhanced Due Diligence (EDD)</span>
               </h3>
-              <button onClick={() => setModalType(null)} className="text-muted hover:text-ink">
+              <button onClick={() => setModalType(null)} className="text-muted hover:text-ink cursor-pointer p-1 rounded-lg hover:bg-slate-100">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
@@ -1319,15 +1356,15 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
               Mark verified items before transitioning this case into active investigation:
             </p>
 
-            <div className="space-y-2.5 text-xs bg-canvas-subtle p-3.5 rounded-lg border border-border">
+            <div className="space-y-2.5 text-xs bg-[#faf8ff] p-3.5 rounded-xl border border-border font-mono">
               <label className="flex items-center gap-2.5 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={eddChecklist.sourceOfFunds}
                   onChange={(e) => setEddChecklist(prev => ({ ...prev, sourceOfFunds: e.target.checked }))}
-                  className="w-4 h-4 text-primary rounded"
+                  className="w-4 h-4 text-primary rounded cursor-pointer"
                 />
-                <span className="font-semibold text-ink">Source of Funds & Wealth Verified</span>
+                <span className="font-bold text-ink">Source of Funds &amp; Wealth Verified</span>
               </label>
 
               <label className="flex items-center gap-2.5 cursor-pointer">
@@ -1335,9 +1372,9 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                   type="checkbox"
                   checked={eddChecklist.commercialInvoices}
                   onChange={(e) => setEddChecklist(prev => ({ ...prev, commercialInvoices: e.target.checked }))}
-                  className="w-4 h-4 text-primary rounded"
+                  className="w-4 h-4 text-primary rounded cursor-pointer"
                 />
-                <span className="font-semibold text-ink">Commercial Contracts & Invoices Inspected</span>
+                <span className="font-bold text-ink">Commercial Contracts &amp; Invoices Inspected</span>
               </label>
 
               <label className="flex items-center gap-2.5 cursor-pointer">
@@ -1345,9 +1382,9 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                   type="checkbox"
                   checked={eddChecklist.uboAttestation}
                   onChange={(e) => setEddChecklist(prev => ({ ...prev, uboAttestation: e.target.checked }))}
-                  className="w-4 h-4 text-primary rounded"
+                  className="w-4 h-4 text-primary rounded cursor-pointer"
                 />
-                <span className="font-semibold text-ink">Ultimate Beneficial Ownership (UBO) Attested (&gt;25%)</span>
+                <span className="font-bold text-ink">Ultimate Beneficial Ownership (UBO) Attested (&gt;25%)</span>
               </label>
 
               <label className="flex items-center gap-2.5 cursor-pointer">
@@ -1355,28 +1392,29 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                   type="checkbox"
                   checked={eddChecklist.adverseMediaRecheck}
                   onChange={(e) => setEddChecklist(prev => ({ ...prev, adverseMediaRecheck: e.target.checked }))}
-                  className="w-4 h-4 text-primary rounded"
+                  className="w-4 h-4 text-primary rounded cursor-pointer"
                 />
-                <span className="font-semibold text-ink">Adverse Media Negative News Screened</span>
+                <span className="font-bold text-ink">Adverse Media Negative News Screened</span>
               </label>
             </div>
 
             <div className="flex justify-end gap-3 pt-2 border-t border-border">
               <button
                 onClick={() => setModalType(null)}
-                className="px-4 py-2 rounded bg-surface-hover text-ink text-xs font-semibold"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-ink text-xs font-bold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmEddTransition}
-                className="px-4 py-2 rounded bg-primary text-white font-bold font-mono text-xs hover:bg-primary-hover"
+                className="px-4 py-2 rounded-xl bg-primary text-white font-bold font-mono text-xs hover:bg-primary-hover cursor-pointer shadow-xs"
               >
-                Confirm & Transition to UnderReview
+                Confirm &amp; Transition to UnderReview
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

@@ -6,5 +6,6 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <UseAppHost>false</UseAppHost>
   </PropertyGroup>
 </Project>

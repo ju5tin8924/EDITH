@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Edith.Database.Migrator": {
+      "commandName": "Project",
+      "commandLineArgs": "--seed"
+    }
+  }
+}

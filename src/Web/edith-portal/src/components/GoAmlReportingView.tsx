@@ -10,6 +10,7 @@ import {
   Building2, 
   ShieldCheck
 } from 'lucide-react';
+import { usePageMeta } from '../config/pageMeta';
 
 export const GoAmlReportingView: React.FC = () => {
   const [reportType, setReportType] = useState<'STR' | 'SAR' | 'AIF'>('STR');
@@ -70,23 +71,29 @@ export const GoAmlReportingView: React.FC = () => {
     setTimeout(() => setIsDispatched(false), 5000);
   };
 
+  const pageMeta = usePageMeta(
+    'Authorization',
+    'Review and authorize pending sanction alerts, customer risk recalculations, and regulatory filings.'
+  );
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-surface p-4 rounded-xl border border-border">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
-              PAGE 9 // MOD-GOAML-GCC
-            </span>
-            <span className="text-[10px] font-mono text-muted">UNODC goAML v4.0 Schema Standard</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-lg sm:text-xl font-bold text-ink flex items-center gap-2.5">
+              <FileText className="w-5 h-5 text-primary" />
+              <span>{pageMeta.title}</span>
+            </h1>
+            {pageMeta.parent && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
+                {pageMeta.parent}
+              </span>
+            )}
           </div>
-          <h1 className="text-xl font-bold text-ink flex items-center gap-2.5 mt-1">
-            <FileText className="w-5 h-5 text-primary" />
-            Automated goAML Regulatory Reporting Studio
-          </h1>
           <p className="text-xs text-muted mt-1">
-            Generates, validates against central bank XSD schemas, and dispatches cryptographically signed Suspicious Transaction Reports (STRs).
+            {pageMeta.definition}
           </p>
         </div>
 

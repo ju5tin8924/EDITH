@@ -10,6 +10,7 @@ import {
   ToggleLeft, 
   ToggleRight
 } from 'lucide-react';
+import { usePageMeta } from '../config/pageMeta';
 
 interface NotificationRule {
   id: string;
@@ -59,23 +60,29 @@ export const NotificationAdminView: React.FC = () => {
     setRules(prev => prev.map(r => r.id === id ? { ...r, shiftAware: !r.shiftAware } : r));
   };
 
+  const pageMeta = usePageMeta(
+    'Log Report',
+    'Configure real-time compliance alert routing and inspect system process, upload, and dispatch logs.'
+  );
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-surface p-4 rounded-xl border border-border">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
-              PAGE 10 // MOD-NOTIF-DYN
-            </span>
-            <span className="text-[10px] font-mono text-muted">Multi-Channel Relay & Teams Integration</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-lg sm:text-xl font-bold text-ink flex items-center gap-2.5">
+              <BellRing className="w-5 h-5 text-primary" />
+              <span>{pageMeta.title}</span>
+            </h1>
+            {pageMeta.parent && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
+                {pageMeta.parent}
+              </span>
+            )}
           </div>
-          <h1 className="text-xl font-bold text-ink flex items-center gap-2.5 mt-1">
-            <BellRing className="w-5 h-5 text-primary" />
-            Dynamic Notification & Webhook Relay Administration
-          </h1>
           <p className="text-xs text-muted mt-1">
-            Configure shift-aware alert routing, interactive Microsoft Teams Adaptive Cards, and cryptographically signed Core Banking callbacks.
+            {pageMeta.definition}
           </p>
         </div>
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   RefreshCw, 
   CheckCircle2, 
@@ -6,9 +7,14 @@ import {
   ShieldAlert, 
   ChevronRight,
   TrendingUp,
-  Check
+  Check,
+  Download,
+  Filter,
+  FileSpreadsheet
 } from 'lucide-react';
 import { EdithApi } from '../services/api';
+import { EdithLoader } from './EdithLogo';
+import { usePageMeta } from '../config/pageMeta';
 
 interface DeltaHit {
   id: string;
@@ -80,6 +86,8 @@ const MOCK_DELTA_HITS: DeltaHit[] = [
 ];
 
 export const DeltaRescreeningView: React.FC = () => {
+  const navigate = useNavigate();
+
   const [hits, setHits] = useState<DeltaHit[]>(MOCK_DELTA_HITS);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeHit, setActiveHit] = useState<DeltaHit | null>(MOCK_DELTA_HITS[0]);
@@ -87,6 +95,11 @@ export const DeltaRescreeningView: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [latestBatchId, setLatestBatchId] = useState('BATCH-2026-10-19-0200');
   const [scannedCount, setScannedCount] = useState(47618);
+
+  // PDF p. 59 Delta Screening Report Log filter fields
+  const [filterCustomerCode, setFilterCustomerCode] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => 
@@ -100,6 +113,28 @@ export const DeltaRescreeningView: React.FC = () => {
     } else {
       setSelectedIds(hits.map(h => h.id));
     }
+  };
+
+  const handleExportDeltaLogCsv = async () => {
+    const csvRows = [
+      ['CustomerCode', 'CustomerName', 'Nationality', 'WatchlistSource', 'Score', 'Status', 'Date'],
+      ...hits.map(h => [h.customerCode, `"${h.customerName}"`, h.nationality, `"${h.watchlistSource}"`, h.newScore, h.status, h.updatedAt])
+    ];
+    const csvContent = csvRows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Delta_Screening_Report_Log_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    await EdithApi.recordAuditEvent({
+      action: 'DELTA_LOG_REPORT_EXPORTED',
+      targetEntity: 'Delta Screening Report Log',
+      details: 'Exported authorized delta customers log CSV per iShield specifications.'
+    });
+    setBatchActionFeedback('Exported Delta Screening Report Log CSV and recorded action in WORM ledger.');
+    setTimeout(() => setBatchActionFeedback(null), 4000);
   };
 
   const handleTriggerAdHocSync = async () => {
@@ -157,23 +192,38 @@ export const DeltaRescreeningView: React.FC = () => {
     setTimeout(() => setBatchActionFeedback(null), 4000);
   };
 
+  const pageMeta = usePageMeta(
+    'Delta',
+    'Rescreen existing customer portfolios against newly published nightly watchlist additions and modifications.'
+  );
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      {syncing && (
+        <EdithLoader
+          overlay
+          size="md"
+          label="SYNCHRONIZING WATCHLIST..."
+          sublabel="Evaluating customer records for updated matches"
+        />
+      )}
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-surface p-4 rounded-xl border border-border">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
-              PAGE 14 // MOD-SCRN-DELTA
-            </span>
-            <span className="text-[10px] font-mono text-muted">Daily Automated Watchlist Ingestion</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-lg sm:text-xl font-bold text-ink flex items-center gap-2.5">
+              <RefreshCw className="w-5 h-5 text-primary" />
+              <span>{pageMeta.title}</span>
+            </h1>
+            {pageMeta.parent && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">
+                {pageMeta.parent}
+              </span>
+            )}
           </div>
-          <h1 className="text-xl font-bold text-ink flex items-center gap-2.5 mt-1">
-            <RefreshCw className="w-5 h-5 text-primary" />
-            Delta Rescreening & Watchlist Synchronization Hub
-          </h1>
           <p className="text-xs text-muted mt-1">
-            Nightly delta synchronization evaluating customer records against latest OFAC, UN, World-Check, and UAE EOCN sanction additions.
+            {pageMeta.definition}
           </p>
         </div>
 
@@ -224,6 +274,53 @@ export const DeltaRescreeningView: React.FC = () => {
           <span>{batchActionFeedback}</span>
         </div>
       )}
+
+      {/* PDF p. 59: Delta Screening Report Log Filter Bar when on /delta/log-report or toggleable */}
+      <div className="bg-surface p-4 rounded-xl border border-border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-mono text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-bold uppercase text-muted flex items-center gap-1">
+            <Filter className="w-3 h-3 text-primary" /> Filter Delta Log:
+          </span>
+          <input
+            type="text"
+            value={filterCustomerCode}
+            onChange={e => setFilterCustomerCode(e.target.value)}
+            placeholder="Customer Code..."
+            className="px-2.5 py-1 rounded-lg bg-surface-muted border border-border text-ink text-xs"
+          />
+          <input
+            type="date"
+            value={filterStartDate}
+            onChange={e => setFilterStartDate(e.target.value)}
+            className="px-2.5 py-1 rounded-lg bg-surface-muted border border-border text-ink text-xs"
+          />
+          <input
+            type="date"
+            value={filterEndDate}
+            onChange={e => setFilterEndDate(e.target.value)}
+            className="px-2.5 py-1 rounded-lg bg-surface-muted border border-border text-ink text-xs"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportDeltaLogCsv}
+            className="px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-hover text-ink font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export Log CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/reports')}
+            className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary font-bold hover:bg-primary/20 flex items-center gap-1.5 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>All 14 Reports &amp; WORM Hub →</span>
+          </button>
+        </div>
+      </div>
 
       {/* Main Content Layout: Table & Inspector Drawer */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

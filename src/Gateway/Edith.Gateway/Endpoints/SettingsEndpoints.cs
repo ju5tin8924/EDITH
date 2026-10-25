@@ -85,12 +85,13 @@ public static class SettingsEndpoints
 
         // 4. WORM Immutable Audit Trail: Query from PostgreSQL
         reportsGroup.MapGet("/audit", async (
+            [FromQuery] int? limit,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
         {
             var tenantId = ResolveTenant(tenantHeader);
-            var logs = await auditService.GetAuditLogsAsync(tenantId, limit: 50, ct: ct);
+            var logs = await auditService.GetAuditLogsAsync(tenantId, limit: Math.Clamp(limit ?? 100, 1, 500), ct: ct);
             return Results.Ok(logs.Select(l => new
             {
                 id = l.Id,

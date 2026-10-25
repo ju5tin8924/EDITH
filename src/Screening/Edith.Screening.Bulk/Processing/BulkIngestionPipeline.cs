@@ -353,32 +353,39 @@ public sealed partial class BulkScreeningBackgroundWorker : BackgroundService
     {
         LogWorkerStarted(_logger);
 
-        await foreach (var item in _channel.ReadAllAsync(stoppingToken))
+        try
         {
-            try
+            await foreach (var item in _channel.ReadAllAsync(stoppingToken))
             {
-                using var stream = new MemoryStream(item.Content);
-                using var scope = _scopeFactory.CreateScope();
-                var pipeline = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<IBulkIngestionPipeline>(scope.ServiceProvider);
+                try
+                {
+                    using var stream = new MemoryStream(item.Content);
+                    using var scope = _scopeFactory.CreateScope();
+                    var pipeline = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<IBulkIngestionPipeline>(scope.ServiceProvider);
 
-                await pipeline.ProcessStreamAsync(
-                    item.JobId,
-                    item.TenantId,
-                    item.UserId,
-                    item.FileName,
-                    item.Format,
-                    stream,
-                    item.KeepSkipped,
-                    item.SkippedFormat,
-                    item.Config,
-                    stoppingToken);
+                    await pipeline.ProcessStreamAsync(
+                        item.JobId,
+                        item.TenantId,
+                        item.UserId,
+                        item.FileName,
+                        item.Format,
+                        stream,
+                        item.KeepSkipped,
+                        item.SkippedFormat,
+                        item.Config,
+                        stoppingToken);
 
-                LogJobProcessed(_logger, item.JobId, item.FileName);
+                    LogJobProcessed(_logger, item.JobId, item.FileName);
+                }
+                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    LogJobError(_logger, ex, item.JobId);
+                }
             }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
-            {
-                LogJobError(_logger, ex, item.JobId);
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Graceful shutdown on host cancellation
         }
     }
 }

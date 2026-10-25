@@ -1,6 +1,15 @@
 // Types definition for EDITH AML Intelligence Platform
 
-export type UserRole = 'SUPER_ADMIN' | 'MLRO' | 'ANALYST' | 'AUDITOR';
+export type UserRole = 
+  | 'SUPER_ADMIN' 
+  | 'ADMIN' 
+  | 'AML_OFFICER' 
+  | 'EDD_ANALYST' 
+  | 'ISTR_MLRO' 
+  | 'MLRO' 
+  | 'ANALYST' 
+  | 'AUDITOR' 
+  | 'COMPLIANCE_OFFICER';
 
 export interface UserSession {
   token: string;
@@ -16,6 +25,8 @@ export interface MenuItemEntitlement {
   path: string;
   icon: string;
   enabled: boolean;
+  subGroup?: string;
+  subMenus?: MenuItemEntitlement[];
 }
 
 export interface EntitlementsResponse {
@@ -176,25 +187,121 @@ export interface BulkJobSummary {
   completedAtUtc?: string;
 }
 
+export type RuleTypeCode = 'TRANSACTION_THRESHOLD' | 'HIGH_RISK_CORRIDOR' | 'STRUCTURING_SMURFING' | 'VELOCITY_ANOMALY' | string;
+export type RuleExecutionMode = 'REALTIME' | 'SHADOW' | 'PENDING_APPROVAL';
+
 export interface RuleDefinition {
   id: string;
   ruleCode: string;
   ruleName: string;
-  ruleType: 'TRANSACTION_THRESHOLD' | 'HIGH_RISK_CORRIDOR' | 'STRUCTURING_SMURFING';
+  ruleType: RuleTypeCode;
   severity: CasePriority;
+  scoreWeightage?: number;
+  executionMode?: RuleExecutionMode;
   isActive: boolean;
+  thresholdAmount?: number | null;
+  currency?: string;
+  highRiskCountries?: string[];
+  windowMinutes?: number | null;
+  minTransactions?: number | null;
+  structuringMinAmount?: number | null;
+  structuringMaxAmount?: number | null;
   parametersJson: string;
   description: string;
   updatedAtUtc: string;
 }
 
+export type BacktestDatasetCohort =
+  | 'STANDARD_MIX'
+  | 'HIGH_RISK_CORRIDOR_SURGE'
+  | 'SMURFING_RING_ATTACK'
+  | 'VELOCITY_BURST_STRESS';
+
+export interface BacktestSampleHit {
+  transactionRefNo: string;
+  senderName: string;
+  beneficiaryName: string;
+  amount: number;
+  currency: string;
+  corridor: string;
+  triggerReason: string;
+  deltaStatus?: 'NEWLY_CAPTURED' | 'RETAINED' | 'NEWLY_SUPPRESSED' | string;
+  groundTruthLabel?: 'STR_FILED' | 'CLEARED_FP' | 'UNREVIEWED' | string;
+  overlappingRules?: string[];
+}
+
+export interface SensitivityCurvePoint {
+  label: string;
+  parameterValue: number;
+  triggeredCount: number;
+  hitRatePercent: number;
+  truePositivesCaptured: number;
+  isCurrentCandidate: boolean;
+}
+
 export interface BacktestResult {
   ruleCode: string;
+  datasetCohort?: BacktestDatasetCohort;
   simulatedTransactions: number;
   triggeredAlerts: number;
+  baselineTriggeredAlerts?: number;
+  netAlertDelta?: number;
+  newlyCapturedCount?: number;
+  newlySuppressedCount?: number;
+  uniqueHitsCount?: number;
+  overlappingHitsCount?: number;
+  truePositivesCaptured?: number;
+  totalHistoricalStrs?: number;
+  falsePositivesFlagged?: number;
   triggerRatePercent: number;
   falsePositiveRateEstimate: number;
   averageEvaluationLatencyUs: number;
+  estimatedDailyAlerts?: number;
+  sampleTriggeredRefNos?: string[];
+  sensitivityCurve?: SensitivityCurvePoint[];
+  sampleHits?: BacktestSampleHit[];
+}
+
+export interface SandboxImpactedEntity {
+  referenceId: string;
+  entityName: string;
+  corridor: string;
+  baselineScore: number;
+  simulatedScore: number;
+  nameMatchScore: number;
+  secondaryIdScore: number;
+  deltaStatus: 'NEWLY_CAPTURED' | 'NEWLY_SUPPRESSED' | 'RETAINED_HIT' | string;
+  groundTruth: 'STR_CONFIRMED' | 'CLEARED_FP' | 'STANDARD_REVIEW' | string;
+}
+
+export interface SandboxSimulationResult {
+  datasetCohort: BacktestDatasetCohort;
+  evaluatedRecords: number;
+  projectedAlerts: number;
+  baselineAlerts: number;
+  netAlertDelta: number;
+  newlyCapturedAlerts: number;
+  newlySuppressedAlerts: number;
+  fpReductionPercent: number;
+  estimatedP99LatencyMs: number;
+  truePositivesRetained: number;
+  totalHistoricalStrs: number;
+  falsePositivesSuppressed: number;
+  activePortfolioRulesEvaluated: number;
+  scoreBands: Array<{
+    band: string;
+    count: number;
+    pct: number;
+    color: string;
+  }>;
+  thresholdSensitivity: Array<{
+    threshold: number;
+    projectedAlerts: number;
+    strRecallCount: number;
+    totalStrCount: number;
+    isSelected: boolean;
+  }>;
+  sampleImpactedEntities: SandboxImpactedEntity[];
 }
 
 export type NameSearchMode = 'EXACT' | 'FUZZY' | 'EXACT_NAME_AND_ID';
@@ -275,6 +382,47 @@ export interface IamUserRecord {
   shiftStatus: 'ON_DUTY' | 'OFF_DUTY';
   lastLogin: string;
   passwordHashScheme?: string;
+  mustChangePassword?: boolean;
+  invitationToken?: string;
+}
+
+export interface CreateIamUserResponse {
+  user: IamUserRecord;
+  generatedTemporaryPassword?: string;
+  emailStatus: 'SENT' | 'FAILED' | 'SKIPPED';
+  emailError?: string;
+}
+
+export interface LoginResponse {
+  status: 'SUCCESS' | 'MFA_REQUIRED' | 'ONBOARDING_REQUIRED' | 'INVALID_CREDENTIALS' | 'ACCOUNT_LOCKED';
+  accessToken?: string;
+  mfaSessionToken?: string;
+  onboardingToken?: string;
+  role?: UserRole;
+  tenantId?: string;
+  message?: string;
+}
+
+export interface MenuMasterItem {
+  id: string;
+  parentMenuId?: string | null;
+  menuName: string;
+  menuCode: string;
+  path: string;
+  position: number;
+  icon: string;
+  isActive: boolean;
+}
+
+export interface GroupMenuMapping {
+  groupId: string;
+  menuId: string;
+  menuName: string;
+  menuCode: string;
+  path: string;
+  canView: boolean;
+  canEdit: boolean;
+  canAuthorize: boolean;
 }
 
 export interface IamGroupPermission {
@@ -292,11 +440,34 @@ export interface IamGroupRecord {
   permissions: IamGroupPermission[];
 }
 
+export interface KycSowChecklistItemDto {
+  code: string;
+  label: string;
+  category: string;
+  verified: boolean;
+  evidenceRef?: string;
+}
+
+export interface KycAlertSummaryDto {
+  alertId: string;
+  title: string;
+  description: string;
+  status: string;
+  severity: string;
+  linkedCaseNumber?: string;
+}
+
 export interface KycDocumentDto {
   id: string;
   title: string;
   status: string;
   expiryDate: string;
+  docType?: string;
+  docNumber?: string;
+  issueCountry?: string;
+  issuedDate?: string;
+  ocrConfidence?: number;
+  extractedFields?: Record<string, string>;
 }
 
 export interface KycTransactionDto {
@@ -306,6 +477,9 @@ export interface KycTransactionDto {
   currency: string;
   counterparty: string;
   status: string;
+  corridor?: string;
+  riskScore?: number;
+  linkedCaseNumber?: string | null;
 }
 
 export interface KycDossierDto {
@@ -320,6 +494,21 @@ export interface KycDossierDto {
   uboIdentities: string[];
   documents: KycDocumentDto[];
   recentTransactions: KycTransactionDto[];
+  registrationNumber?: string;
+  jurisdiction?: string;
+  pepStatus?: string;
+  riskTier?: string;
+  isBlocked?: boolean;
+  blockReason?: string;
+  onboardingStatus?: string;
+  onboardedDate?: string;
+  nextReviewDate?: string;
+  relationshipManager?: string;
+  primaryAccount?: string;
+  expectedMonthlyTurnoverUsd?: number;
+  approvedCorridors?: string[];
+  sowChecklist?: KycSowChecklistItemDto[];
+  historicalAlerts?: KycAlertSummaryDto[];
 }
 
 export interface AuditLogRecord {

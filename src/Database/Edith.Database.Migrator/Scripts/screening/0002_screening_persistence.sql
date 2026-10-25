@@ -4,7 +4,7 @@ ALTER TABLE screening.bulk_screening_jobs ADD COLUMN IF NOT EXISTS skipped_recor
 ALTER TABLE screening.bulk_screening_jobs ADD COLUMN IF NOT EXISTS keep_skipped BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE screening.bulk_screening_jobs ADD COLUMN IF NOT EXISTS skipped_format VARCHAR(10) NOT NULL DEFAULT 'csv';
 
-CREATE TABLE screening.bulk_job_skipped (
+CREATE TABLE IF NOT EXISTS screening.bulk_job_skipped (
     id BIGSERIAL PRIMARY KEY,
     job_id UUID NOT NULL REFERENCES screening.bulk_screening_jobs(id) ON DELETE CASCADE,
     row_index INT NOT NULL DEFAULT 0,
@@ -37,7 +37,7 @@ ALTER TABLE screening.bulk_screening_items ALTER COLUMN input_name TYPE TEXT;
 
 ALTER TABLE screening.whitelists DROP CONSTRAINT IF EXISTS whitelists_tenant_id_fkey;
 
-CREATE TABLE screening.idempotency_cache (
+CREATE TABLE IF NOT EXISTS screening.idempotency_cache (
     tenant_id UUID NOT NULL,
     idempotency_key VARCHAR(200) NOT NULL,
     response_json JSONB NOT NULL,

@@ -21,24 +21,32 @@ import { ReportsAuditView } from './components/ReportsAuditView';
 import { NotificationAdminView } from './components/NotificationAdminView';
 import { SystemMastersView } from './components/SystemMastersView';
 import { IamAccessView } from './components/IamAccessView';
+import { OnboardingView } from './components/OnboardingView';
+import { LoginView } from './components/LoginView';
+import { EdithErrorBoundary, GlobalErrorHost } from './components/ErrorEngineUi';
 
-import { UserRole, MenuItemEntitlement } from './types';
-import { EdithApi } from './services/api';
+import { UserRole, MenuItemEntitlement, UserSession } from './types';
+import { EdithApi, getSession, setSession, clearSession, isAuthenticated } from './services/api';
 
 const ScreeningPageWrapper: React.FC = () => {
   const navigate = useNavigate();
   return <ScreeningConsole onOpenCase={() => navigate('/cases')} />;
 };
 
-export const AppContent: React.FC = () => {
-  const [currentRole, setCurrentRole] = useState<UserRole>('ANALYST');
+interface AppContentProps {
+  onLogout: () => void;
+  session: UserSession;
+  onRoleChange: (role: UserRole) => void;
+}
+
+export const AppContent: React.FC<AppContentProps> = ({ onLogout, session, onRoleChange }) => {
   const [shiftStatus, setShiftStatus] = useState<'ON_DUTY' | 'OFF_DUTY'>('ON_DUTY');
   const [menuItems, setMenuItems] = useState<MenuItemEntitlement[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     loadEntitlements();
-  }, [currentRole]);
+  }, [session.role]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -56,10 +64,6 @@ export const AppContent: React.FC = () => {
     setMenuItems(data.menuItems);
   };
 
-  const handleRoleChange = (newRole: UserRole) => {
-    setCurrentRole(newRole);
-  };
-
   const handleShiftToggle = () => {
     setShiftStatus(prev => prev === 'ON_DUTY' ? 'OFF_DUTY' : 'ON_DUTY');
   };
@@ -71,17 +75,20 @@ export const AppContent: React.FC = () => {
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         activeLatencyMs={8.4} 
         shiftStatus={shiftStatus}
+        currentRole={session.role}
       />
 
       {/* Central Multi-Page Workspace */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Persistent Left Sidebar with 14 Grouped Menus & User Profile Drawer at the bottom */}
+        {/* Persistent Left Sidebar with 12 Grouped Menus & User Profile Drawer at the bottom */}
         <Sidebar 
           menuItems={menuItems} 
-          currentRole={currentRole}
-          onRoleChange={handleRoleChange}
+          currentRole={session.role}
+          onRoleChange={onRoleChange}
           shiftStatus={shiftStatus}
           onShiftStatusToggle={handleShiftToggle}
+          onLogout={onLogout}
+          username={session.username}
         />
 
         {/* Routed Multi-Page Content Area */}
@@ -89,26 +96,79 @@ export const AppContent: React.FC = () => {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             
-            {/* Group 1: Operational Screening & Ingestion */}
-            <Route path="/dashboard" element={<DashboardView />} />
+            {/* 1. Home / Dashboard */}
+            <Route path="/dashboard" element={<DashboardView currentRole={session.role} />} />
+
+            {/* 2. Blacklist */}
             <Route path="/name-search" element={<NameSearchView />} />
             <Route path="/screening" element={<ScreeningPageWrapper />} />
+            <Route path="/blacklist/screening" element={<ScreeningPageWrapper />} />
+            <Route path="/blacklist/watchlist" element={<WhitelistGovernanceView />} />
+            <Route path="/blacklist/bulk" element={<BulkScreeningView />} />
             <Route path="/bulk" element={<BulkScreeningView />} />
-            <Route path="/delta" element={<DeltaRescreeningView />} />
+
+            {/* 3. White List */}
             <Route path="/whitelist" element={<WhitelistGovernanceView />} />
 
-            {/* Group 2: Case Investigation & Regulatory */}
-            <Route path="/cases" element={<CaseWorkspace currentRole={currentRole} />} />
-            <Route path="/kyc360" element={<CustomerKyc360View />} />
-            <Route path="/goaml" element={<GoAmlReportingView />} />
-
-            {/* Group 3: Rules, Analytics & Governance */}
+            {/* 4. AML */}
             <Route path="/rules" element={<RuleBuilderView />} />
+            <Route path="/aml/rules" element={<RuleBuilderView />} />
             <Route path="/sandbox" element={<RuleSandboxView />} />
+            <Route path="/aml/process" element={<RuleSandboxView />} />
+            <Route path="/aml/str-history" element={<ReportsAuditView />} />
+            <Route path="/aml/mlro-monitoring" element={<CaseWorkspace currentRole={session.role} />} />
+
+            {/* 5. STR Process */}
+            <Route path="/cases" element={<CaseWorkspace currentRole={session.role} />} />
+            <Route path="/str-process/alerts" element={<CaseWorkspace currentRole={session.role} />} />
+            <Route path="/str-process/edd-analyst" element={<CustomerKyc360View />} />
+            <Route path="/str-process/istr-mlro" element={<CaseWorkspace currentRole={session.role} />} />
+            <Route path="/str-process/edd-monitoring" element={<CaseWorkspace currentRole={session.role} />} />
+
+            {/* 6. Reports */}
             <Route path="/reports" element={<ReportsAuditView />} />
+            <Route path="/reports/*" element={<ReportsAuditView />} />
+
+            {/* 7. Log Report */}
             <Route path="/notifications" element={<NotificationAdminView />} />
-            <Route path="/settings" element={<SystemMastersView />} />
-            <Route path="/iam" element={<IamAccessView />} />
+            <Route path="/log-report" element={<ReportsAuditView />} />
+            <Route path="/log-report/*" element={<ReportsAuditView />} />
+
+            {/* 8. Settings */}
+            <Route path="/settings" element={<SystemMastersView initialTab="RISK_RATES" />} />
+            <Route path="/settings/user-groups" element={<IamAccessView initialTab="GROUPS" />} />
+            <Route path="/settings/users" element={<IamAccessView initialTab="USERS" />} />
+            <Route path="/settings/menu-master" element={<IamAccessView initialTab="MENU_MASTER" />} />
+            <Route path="/settings/menu-mappings" element={<IamAccessView initialTab="MENU_MAPPINGS" />} />
+            <Route path="/settings/risk-rates" element={<SystemMastersView initialTab="RISK_RATES" />} />
+            <Route path="/settings/screening-score" element={<SystemMastersView initialTab="SCREENING_SCORE" />} />
+            <Route path="/settings/setup-control" element={<SystemMastersView initialTab="SETUP_CONTROL" />} />
+            <Route path="/settings/risk-assessment" element={<SystemMastersView initialTab="RISK_ASSESSMENT" />} />
+            <Route path="/settings/change-password" element={<SystemMastersView initialTab="CHANGE_PASSWORD" />} />
+            <Route path="/iam" element={<IamAccessView initialTab="USERS" />} />
+
+            {/* 9. Master */}
+            <Route path="/master" element={<SystemMastersView initialTab="COUNTRIES" />} />
+            <Route path="/master/country" element={<SystemMastersView initialTab="COUNTRIES" />} />
+            <Route path="/master/nationality" element={<SystemMastersView initialTab="NATIONALITIES" />} />
+            <Route path="/master/unblock-customer" element={<SystemMastersView initialTab="UNBLOCK_CUSTOMER" />} />
+
+            {/* 10. Authorization */}
+            <Route path="/goaml" element={<GoAmlReportingView />} />
+            <Route path="/authorization" element={<GoAmlReportingView />} />
+            <Route path="/authorization/sanction-alerts" element={<CaseWorkspace currentRole={session.role} />} />
+            <Route path="/authorization/risk-calculate" element={<GoAmlReportingView />} />
+            <Route path="/authorization/customer" element={<GoAmlReportingView />} />
+
+            {/* 11. Customer */}
+            <Route path="/kyc360" element={<CustomerKyc360View />} />
+            <Route path="/customer/kyc" element={<CustomerKyc360View />} />
+            <Route path="/customer/screening-report" element={<ReportsAuditView />} />
+
+            {/* 12. Delta */}
+            <Route path="/delta" element={<DeltaRescreeningView />} />
+            <Route path="/delta/authorization" element={<DeltaRescreeningView />} />
+            <Route path="/delta/log-report" element={<DeltaRescreeningView />} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
@@ -128,10 +188,65 @@ export const AppContent: React.FC = () => {
 };
 
 export const App: React.FC = () => {
+  const [session, setSessionState] = useState<UserSession>(getSession());
+  const [authed, setAuthed] = useState<boolean>(isAuthenticated());
+
+  const handleLoginSuccess = () => {
+    const active = getSession();
+    setSessionState(active);
+    setAuthed(true);
+  };
+
+  const handleLogout = () => {
+    clearSession();
+    setSessionState(getSession());
+    setAuthed(false);
+  };
+
+  const handleRoleChange = (newRole: UserRole) => {
+    const updated = { ...session, role: newRole };
+    setSession(updated);
+    setSessionState(updated);
+  };
+
   return (
-    <BrowserRouter>
-      <AppContent />
-    </BrowserRouter>
+    <EdithErrorBoundary>
+      <BrowserRouter>
+        <GlobalErrorHost />
+        <Routes>
+          {/* Public Onboarding Flow */}
+          <Route path="/onboarding" element={<OnboardingView />} />
+
+          {/* Dedicated Login Flow */}
+          <Route 
+            path="/login" 
+            element={
+              authed ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <LoginView onLoginSuccess={handleLoginSuccess} />
+              )
+            } 
+          />
+
+          {/* Protected Application Workspace */}
+          <Route
+            path="/*"
+            element={
+              authed ? (
+                <AppContent 
+                  onLogout={handleLogout} 
+                  session={session} 
+                  onRoleChange={handleRoleChange} 
+                />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </EdithErrorBoundary>
   );
 };
 

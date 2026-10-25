@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { 
   ShieldAlert, 
   Briefcase, 
@@ -18,11 +18,17 @@ import {
   Settings,
   Users,
   ChevronUp,
+  ChevronDown,
+  ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   BadgeCheck,
-  Search
+  Search,
+  X
 } from 'lucide-react';
 import { MenuItemEntitlement, UserRole } from '../types';
 import { UserProfileDrawer } from './UserProfileDrawer';
+import { REPORT_SUB_MENUS } from '../config/reportCategories';
 
 interface SidebarProps {
   menuItems: MenuItemEntitlement[];
@@ -30,6 +36,8 @@ interface SidebarProps {
   onRoleChange: (role: UserRole) => void;
   shiftStatus: 'ON_DUTY' | 'OFF_DUTY';
   onShiftStatusToggle: () => void;
+  onLogout?: () => void;
+  username?: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -37,9 +45,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentRole,
   onRoleChange,
   shiftStatus,
-  onShiftStatusToggle
+  onShiftStatusToggle,
+  onLogout,
+  username = 'admin@edith.aml.cloud'
 }) => {
+  const location = useLocation();
   const [isProfileDrawerOpen, setIsProfileDrawerOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('edith_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [filterQuery, setFilterQuery] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [expandedSubMenus, setExpandedSubMenus] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('edith_sidebar_collapsed', String(isCollapsed));
+    } catch {}
+  }, [isCollapsed]);
+
+  // Auto-expand ONLY the active parent menu and auto-collapse all others on route change
+  useEffect(() => {
+    const activeParent = menuItems.find(item => {
+      const isReports = item.code === 'MENU_REPORTS' || item.code === 'REPORTS';
+      const subs = isReports ? REPORT_SUB_MENUS : item.subMenus;
+      return (
+        item.path === location.pathname ||
+        subs?.some(sub => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/'))
+      );
+    });
+    if (activeParent) {
+      setExpandedSubMenus({ [activeParent.code]: true });
+    } else {
+      setExpandedSubMenus({});
+    }
+  }, [location.pathname, menuItems]);
+
+  const toggleGroup = (title: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [title]: !prev[title] }));
+  };
+
+  // Single-open accordion: opening one menu automatically collapses any other open menu
+  const toggleSubMenu = (code: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setExpandedSubMenus(prev => (prev[code] ? {} : { [code]: true }));
+  };
 
   const getIcon = (iconName: string) => {
     switch (iconName) {
@@ -62,184 +117,315 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  // Group definitions matching EDITH Master Architecture Outline (Section 2.3)
   const menuGroups = [
     {
-      title: 'OPERATIONAL SCREENING',
-      codes: ['DASHBOARD', 'NAME_SEARCH', 'SCREENING', 'BULK', 'DELTA', 'WHITELIST']
+      title: 'Screening',
+      codes: [
+        'DASHBOARD', 'MENU_DASHBOARD', 
+        'NAME_SEARCH', 
+        'SCREENING', 'MENU_BLACKLIST', 
+        'BULK', 
+        'DELTA', 'MENU_DELTA', 
+        'WHITELIST', 'MENU_WHITELIST'
+      ]
     },
     {
-      title: 'CASE INVESTIGATION',
-      codes: ['CASES', 'KYC360', 'GOAML']
+      title: 'Investigation',
+      codes: [
+        'CASES', 'MENU_STR_PROCESS', 
+        'KYC360', 'MENU_CUSTOMER', 
+        'GOAML', 'MENU_AUTHORIZATION'
+      ]
     },
     {
-      title: 'RULES & GOVERNANCE',
-      codes: ['RULES', 'SANDBOX', 'REPORTS', 'NOTIFICATIONS', 'SETTINGS', 'IAM']
+      title: 'Governance',
+      codes: [
+        'RULES', 'MENU_AML', 
+        'SANDBOX', 
+        'REPORTS', 'MENU_REPORTS', 
+        'SETTINGS', 'MENU_SETTINGS', 
+        'MASTER', 'MENU_MASTER', 
+        'IAM'
+      ]
     }
   ];
 
+  const q = filterQuery.trim().toLowerCase();
+
   return (
-    <aside className="w-64 border-r border-border bg-[#faf8ff] flex flex-col justify-between shrink-0 select-none overflow-y-auto">
-      <div className="p-3 space-y-4">
-        {/* Taskforce Unit Banner */}
-        <div className="p-2.5 rounded-xl bg-white border border-border shadow-xs flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-mono text-xs font-bold shrink-0">
-            U4
+    <aside 
+      className={`${
+        isCollapsed ? 'w-[68px]' : 'w-60'
+      } border-r border-border bg-white flex flex-col justify-between shrink-0 select-none transition-all duration-200 ease-out`}
+    >
+      {/* Top Toolbar: Quick Filter + Collapse Toggle */}
+      <div className="p-2.5 border-b border-border/70 flex items-center justify-between gap-2 bg-[#faf8ff]">
+        {!isCollapsed && (
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-3.5 h-3.5 text-muted absolute left-2.5 top-2 pointer-events-none" />
+            <input
+              type="text"
+              value={filterQuery}
+              onChange={e => setFilterQuery(e.target.value)}
+              placeholder="Filter navigation..."
+              className="w-full pl-8 pr-6 py-1 text-xs rounded-lg bg-white border border-border text-ink placeholder:text-muted/70 focus:outline-none focus:border-primary transition"
+            />
+            {filterQuery && (
+              <button
+                type="button"
+                onClick={() => setFilterQuery('')}
+                className="absolute right-2 top-2 text-muted hover:text-ink cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
-          <div className="min-w-0">
-            <div className="text-[10px] font-mono uppercase text-ink tracking-wider font-bold truncate">
-              FINCRIM TASKFORCE
-            </div>
-            <div className="text-[10px] font-mono text-muted truncate">
-              Unit 04 • High-Risk Desk
-            </div>
-          </div>
-        </div>
+        )}
 
-        {/* Grouped Navigation Sections */}
-        <div className="space-y-4">
-          {menuGroups.map(group => {
-            const groupItems = menuItems.filter(item => group.codes.includes(item.code));
-            if (groupItems.length === 0) return null;
+        <button
+          type="button"
+          onClick={() => setIsCollapsed(prev => !prev)}
+          title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+          className={`p-1.5 rounded-lg border border-border bg-white hover:bg-primary/5 hover:border-primary/30 text-muted hover:text-primary transition-colors cursor-pointer ${
+            isCollapsed ? 'mx-auto' : 'shrink-0'
+          }`}
+        >
+          {isCollapsed ? (
+            <PanelLeftOpen className="w-4 h-4" />
+          ) : (
+            <PanelLeftClose className="w-4 h-4" />
+          )}
+        </button>
+      </div>
 
-            return (
-              <div key={group.title} className="space-y-1">
-                <div className="px-2 mb-1 text-[9px] font-mono uppercase tracking-wider text-muted font-bold">
-                  {group.title}
-                </div>
-                <nav className="space-y-0.5">
+      {/* Scrollable Navigation Rail */}
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-4">
+        {menuGroups.map(group => {
+          const groupItems = menuItems.map(item => {
+            if (item.code === 'MENU_REPORTS' || item.code === 'REPORTS') {
+              return { ...item, label: 'Reports', subMenus: REPORT_SUB_MENUS };
+            }
+            return item;
+          }).filter(item => {
+            if (!group.codes.includes(item.code)) return false;
+            if (!q) return true;
+            const matchSelf = item.label.toLowerCase().includes(q);
+            const matchSub = item.subMenus?.some(s => s.label.toLowerCase().includes(q));
+            return matchSelf || matchSub;
+          });
+
+          if (groupItems.length === 0) return null;
+          const isGroupCollapsed = !q && !!collapsedGroups[group.title];
+
+          return (
+            <div key={group.title} className="space-y-1">
+              {/* Group Section Header */}
+              {!isCollapsed ? (
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.title)}
+                  className="w-full px-2 py-1 flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-muted hover:text-ink font-bold cursor-pointer transition-colors"
+                >
+                  <span>{group.title}</span>
+                  {isGroupCollapsed ? (
+                    <ChevronRight className="w-3 h-3 text-muted" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3 text-muted" />
+                  )}
+                </button>
+              ) : (
+                <div className="h-px bg-border/80 mx-2 my-2" />
+              )}
+
+              {/* Group Items */}
+              {!isGroupCollapsed && (
+                <nav className="space-y-1">
                   {groupItems.map(item => {
                     const targetPath = item.path || `/${item.code.toLowerCase()}`;
+                    const hasSubMenus = !!(item.subMenus && item.subMenus.length > 0);
+                    const isSubExpanded = !!q || !!expandedSubMenus[item.code];
+                    const isParentActive =
+                      location.pathname === targetPath ||
+                      !!item.subMenus?.some(
+                        sub => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/')
+                      );
 
                     if (!item.enabled) {
                       return (
                         <div
                           key={item.code}
-                          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs font-medium text-disabled opacity-50 cursor-not-allowed bg-transparent"
+                          title={isCollapsed ? `${item.label} (Restricted)` : undefined}
+                          className={`w-full flex items-center ${
+                            isCollapsed ? 'justify-center p-2' : 'justify-between px-2.5 py-2'
+                          } rounded-xl text-xs font-medium text-disabled opacity-45 cursor-not-allowed`}
                         >
                           <div className="flex items-center gap-2.5">
-                            {getIcon(item.icon)}
-                            <span className="text-[11px]">{item.label}</span>
+                            <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+                              {getIcon(item.icon)}
+                            </div>
+                            {!isCollapsed && <span className="truncate">{item.label}</span>}
                           </div>
-                          <Lock className="w-3 h-3 text-disabled" />
+                          {!isCollapsed && <Lock className="w-3 h-3 text-disabled shrink-0" />}
                         </div>
                       );
                     }
 
                     return (
-                      <NavLink
-                        key={item.code}
-                        to={targetPath}
-                        className={({ isActive }) =>
-                          `w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                            isActive
-                              ? 'bg-[#e8eaf6] text-primary border-l-4 border-primary font-bold shadow-xs'
-                              : 'text-ink hover:text-primary hover:bg-[#eef1fb] rounded'
-                          }`
-                        }
-                      >
-                        {({ isActive }) => (
-                          <>
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className={isActive ? 'text-primary' : 'text-muted'}>
-                                {getIcon(item.icon)}
-                              </div>
-                              <span className="text-[11px] truncate">{item.label}</span>
-                            </div>
+                      <div key={item.code} className="space-y-0.5">
+                        <NavLink
+                          to={targetPath}
+                          title={isCollapsed ? item.label : undefined}
+                          onClick={(e) => {
+                            if (hasSubMenus) {
+                              if (location.pathname === targetPath) {
+                                e.preventDefault();
+                                setExpandedSubMenus(prev => (prev[item.code] ? {} : { [item.code]: true }));
+                              } else {
+                                setExpandedSubMenus({ [item.code]: true });
+                              }
+                            } else {
+                              setExpandedSubMenus({});
+                            }
+                          }}
+                          className={() =>
+                            `group relative w-full flex items-center ${
+                              isCollapsed ? 'justify-center p-1.5' : 'justify-between px-2.5 py-1.5'
+                            } rounded-xl text-xs transition-all duration-150 ${
+                              isParentActive
+                                ? 'bg-primary/10 text-primary font-bold shadow-2xs'
+                                : 'text-ink hover:text-primary hover:bg-[#f3f5fc] font-medium'
+                            }`
+                          }
+                        >
+                          {() => (
+                            <>
+                              {/* Left Active Accent Bar */}
+                              {isParentActive && (
+                                <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-primary" />
+                              )}
 
-                            {/* Contextual Badges */}
-                            {item.code === 'NAME_SEARCH' && (
-                              <span className="px-1.5 py-0.2 text-[9px] font-mono bg-accent/15 text-accent rounded font-bold border border-accent/30 shrink-0">
-                                ALL ROLES
-                              </span>
-                            )}
-                            {item.code === 'SCREENING' && (
-                              <span className="px-1.5 py-0.2 text-[9px] font-mono bg-primary text-white rounded font-bold shrink-0">
-                                LIVE
-                              </span>
-                            )}
-                            {item.code === 'CASES' && (
-                              <span className="px-1.5 py-0.2 text-[9px] font-mono bg-warning/20 text-warning rounded font-bold border border-warning/40 shrink-0">
-                                42
-                              </span>
-                            )}
-                            {item.code === 'DELTA' && (
-                              <span className="px-1.5 py-0.2 text-[9px] font-mono bg-critical/20 text-critical rounded font-bold shrink-0">
-                                4 NEW
-                              </span>
-                            )}
-                          </>
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all duration-150 ${
+                                    isParentActive
+                                      ? 'bg-primary text-white shadow-xs'
+                                      : 'bg-[#faf8ff] border border-border/80 text-muted group-hover:text-primary group-hover:border-primary/30 group-hover:bg-white'
+                                  }`}
+                                >
+                                  {getIcon(item.icon)}
+                                </div>
+                                {!isCollapsed && (
+                                  <span className="truncate text-[12px]">{item.label}</span>
+                                )}
+                              </div>
+
+                              {/* Submenu Accordion Toggle Button */}
+                              {!isCollapsed && hasSubMenus && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => toggleSubMenu(item.code, e)}
+                                  className="p-1 rounded-md hover:bg-primary/10 text-muted hover:text-primary transition-colors cursor-pointer"
+                                >
+                                  {isSubExpanded ? (
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </NavLink>
+
+                        {/* Collapsible Indented Sub-Menus with Section Subheadings */}
+                        {!isCollapsed && hasSubMenus && isSubExpanded && (
+                          <div className="pl-3 pr-1 py-1 space-y-1 border-l-2 border-primary/20 ml-5 my-0.5">
+                            {(() => {
+                              const filteredSubs = item.subMenus!.filter(sub => !q || sub.label.toLowerCase().includes(q));
+                              let lastGroup: string | undefined = undefined;
+
+                              return filteredSubs.map(sub => {
+                                const showSubheading = sub.subGroup && sub.subGroup !== lastGroup;
+                                if (sub.subGroup) {
+                                  lastGroup = sub.subGroup;
+                                }
+
+                                return (
+                                  <React.Fragment key={sub.code}>
+                                    {showSubheading && (
+                                      <div className="pt-2 pb-1 px-2 text-[10px] font-mono font-bold uppercase tracking-wider text-muted border-t border-border/60 first:border-t-0 first:pt-0">
+                                        {sub.subGroup}
+                                      </div>
+                                    )}
+                                    <NavLink
+                                      to={sub.path}
+                                      end={sub.path === '/reports'}
+                                      className={({ isActive }) =>
+                                        `block px-2 py-1 rounded-lg text-[11px] transition-colors truncate ${
+                                          isActive
+                                            ? 'text-primary font-bold bg-primary/10'
+                                            : 'text-muted hover:text-ink hover:bg-[#f3f5fc]'
+                                        }`
+                                      }
+                                    >
+                                      {sub.label}
+                                    </NavLink>
+                                  </React.Fragment>
+                                );
+                              });
+                            })()}
+                          </div>
                         )}
-                      </NavLink>
+                      </div>
                     );
                   })}
                 </nav>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Live System Stack Status */}
-        <div className="p-3 bg-white rounded-xl border border-border space-y-2 shadow-xs">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-ink font-bold flex items-center justify-between">
-            <span>Stack Matrix</span>
-            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-          </div>
-          <div className="space-y-1 text-[10px] font-mono text-ink">
-            <div className="flex justify-between items-center">
-              <span className="text-muted">PostgreSQL 17</span>
-              <span className="text-accent font-semibold">33 Tables (OK)</span>
+              )}
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted">Kafka 3.9 KRaft</span>
-              <span className="text-accent font-semibold">3 Replicas (OK)</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted">OpenSearch 2.x</span>
-              <span className="text-accent font-semibold">Index Green</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted">Redis Dep</span>
-              <span className="text-muted">Zero (Disabled)</span>
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
 
-      {/* User Profile Drawer Anchor Trigger (Docked at the bottom of the sidebar) */}
-      <div className="p-3 border-t border-border bg-[#faf8ff] sticky bottom-0">
+      {/* Bottom User Profile Trigger (Works in Expanded & Collapsed Icon-Rail Modes) */}
+      <div className="p-2.5 border-t border-border bg-[#faf8ff] sticky bottom-0">
         <button
+          type="button"
           onClick={() => setIsProfileDrawerOpen(true)}
-          className="w-full p-2.5 rounded-xl bg-white border border-border hover:border-primary/40 hover:bg-[#eef1fb] transition-all flex items-center justify-between shadow-xs group text-left"
+          title={isCollapsed ? `${username} (${currentRole})` : undefined}
+          className={`w-full ${
+            isCollapsed ? 'p-1.5 justify-center' : 'p-2 justify-between'
+          } rounded-xl bg-white border border-border hover:border-primary/40 hover:bg-[#eef1fb] transition-all flex items-center shadow-2xs group text-left cursor-pointer`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="relative shrink-0">
-              <div className="w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center font-mono text-xs font-bold shadow-xs">
-                FA
+              <div className="w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center font-mono text-xs font-bold shadow-xs uppercase">
+                {username ? username.substring(0, 2) : 'OP'}
               </div>
               <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
                 shiftStatus === 'ON_DUTY' ? 'bg-accent' : 'bg-slate-400'
               }`} />
             </div>
 
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-ink truncate flex items-center gap-1">
-                <span>F. Al-Nuaimi</span>
-                <BadgeCheck className="w-3.5 h-3.5 text-accent" />
+            {!isCollapsed && (
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-ink truncate flex items-center gap-1">
+                  <span className="truncate">{username.split('@')[0]}</span>
+                  <BadgeCheck className="w-3.5 h-3.5 text-accent shrink-0" />
+                </div>
+                <div className="text-[10px] font-mono text-muted flex items-center gap-1.5 mt-0.5">
+                  <span className="px-1.5 py-0.2 rounded bg-primary/10 text-primary text-[9px] font-bold">
+                    {currentRole}
+                  </span>
+                </div>
               </div>
-              <div className="text-[10px] font-mono text-muted flex items-center gap-1.5">
-                <span className="px-1 py-0.2 rounded bg-primary/10 text-primary text-[9px] font-bold">
-                  {currentRole}
-                </span>
-                <span className="truncate">CCO // U04</span>
-              </div>
-            </div>
+            )}
           </div>
 
-          <ChevronUp className="w-4 h-4 text-muted group-hover:text-primary transition-transform group-hover:-translate-y-0.5 shrink-0" />
+          {!isCollapsed && (
+            <ChevronUp className="w-4 h-4 text-muted group-hover:text-primary transition-transform group-hover:-translate-y-0.5 shrink-0" />
+          )}
         </button>
 
-        {/* User Profile Drawer Modal/Panel */}
         <UserProfileDrawer
           isOpen={isProfileDrawerOpen}
           onClose={() => setIsProfileDrawerOpen(false)}
@@ -247,6 +433,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onRoleChange={onRoleChange}
           shiftStatus={shiftStatus}
           onShiftStatusToggle={onShiftStatusToggle}
+          onLogout={onLogout}
+          username={username}
         />
       </div>
     </aside>

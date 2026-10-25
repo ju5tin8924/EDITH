@@ -28,3 +28,163 @@ code, kbd, samp, pre {
 ::-webkit-scrollbar-thumb:hover {
   background: #5c6bc0;
 }
+
+/* Magic UI Shimmer Animation Keyframes */
+@keyframes shimmer-slide {
+  to {
+    transform: translate(calc(100cqw - 100%), 0);
+  }
+}
+
+@keyframes spin-around {
+  0% {
+    transform: translateZ(0) rotate(0);
+  }
+  15%, 35% {
+    transform: translateZ(0) rotate(90deg);
+  }
+  65%, 85% {
+    transform: translateZ(0) rotate(270deg);
+  }
+  100% {
+    transform: translateZ(0) rotate(360deg);
+  }
+}
+
+.animate-shimmer-slide {
+  animation: shimmer-slide var(--speed, 3s) ease-in-out infinite alternate;
+}
+
+.animate-spin-around {
+  animation: spin-around calc(var(--speed, 3s) * 2) infinite linear;
+}
+
+/* Magic UI Marquee Animations */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-100% - var(--gap)));
+  }
+}
+
+@keyframes marquee-vertical {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-100% - var(--gap)));
+  }
+}
+
+.animate-marquee {
+  animation: marquee var(--duration, 40s) linear infinite;
+}
+
+.animate-marquee-vertical {
+  animation: marquee-vertical var(--duration, 40s) linear infinite;
+}
+
+/* Magic UI Border Beam Animation */
+@keyframes border-beam {
+  100% {
+    offset-distance: 100%;
+  }
+}
+
+.animate-border-beam {
+  animation: border-beam var(--duration, 12s) infinite linear;
+}
+
+/* EDITH Sovereign Eagle SVG Animations */
+@keyframes edith-radar-dash {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.97);
+    transform-origin: 512px 512px;
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.7));
+    transform: scale(1.03);
+    transform-origin: 512px 512px;
+  }
+}
+
+@keyframes edith-arc-glow {
+  0%, 100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 10px rgba(255, 213, 79, 0.45));
+  }
+}
+
+@keyframes edith-wing-breathe {
+  0%, 100% {
+    transform: scale(1);
+    transform-origin: 512px 512px;
+  }
+  50% {
+    transform: scale(1.015);
+    transform-origin: 512px 512px;
+  }
+}
+
+@keyframes edith-feather-wave {
+  0%, 100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-edith-radar-dash {
+  animation: edith-radar-dash 1.8s ease-in-out infinite;
+}
+
+.animate-edith-arc-glow {
+  animation: edith-arc-glow 2.4s ease-in-out infinite;
+}
+
+.animate-edith-wing-breathe {
+  animation: edith-wing-breathe 2.4s ease-in-out infinite;
+}
+
+.animate-edith-feather-wave {
+  animation: edith-feather-wave 1.8s ease-in-out infinite;
+}
+
+/* Certified Regulatory Report Print Stylesheet */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #certified-report-print-sheet,
+  #certified-report-print-sheet * {
+    visibility: visible;
+  }
+  #certified-report-print-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 24px !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+}

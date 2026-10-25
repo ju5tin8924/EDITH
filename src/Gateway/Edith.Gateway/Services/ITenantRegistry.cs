@@ -14,7 +14,7 @@ public sealed class InMemoryTenantRegistry : ITenantRegistry
 {
     private readonly ConcurrentDictionary<Guid, TenantContext> _tenants = new();
 
-    public static readonly Guid DefaultTenantId = Guid.Parse("01931000-0000-7000-8000-000000000000");
+    public static readonly Guid DefaultTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     public static readonly Guid SecondaryTenantId = Guid.Parse("01931000-0000-7000-8000-000000000002");
     public static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 

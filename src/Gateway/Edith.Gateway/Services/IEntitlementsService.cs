@@ -4,15 +4,23 @@ namespace Edith.Gateway.Services;
 
 public interface IEntitlementsService
 {
+    Task<UserEntitlementsResponse> GetEntitlementsAsync(Guid userId, string username, string role, TenantContext tenant, CancellationToken ct = default);
     UserEntitlementsResponse GetEntitlements(Guid userId, string username, string role, TenantContext tenant);
 }
 
 public sealed class EntitlementsService : IEntitlementsService
 {
-    public UserEntitlementsResponse GetEntitlements(Guid userId, string username, string role, TenantContext tenant)
+    private readonly IIamUserService _iamService;
+
+    public EntitlementsService(IIamUserService iamService)
+    {
+        _iamService = iamService;
+    }
+
+    public async Task<UserEntitlementsResponse> GetEntitlementsAsync(Guid userId, string username, string role, TenantContext tenant, CancellationToken ct = default)
     {
         var normalizedRole = role.ToUpperInvariant();
-        var (permissions, menus) = BuildEntitlements(normalizedRole);
+        var (permissions, menus) = await BuildDatabaseEntitlementsAsync(userId, username, normalizedRole, tenant.TenantId, ct);
 
         return new UserEntitlementsResponse
         {
@@ -27,124 +35,205 @@ public sealed class EntitlementsService : IEntitlementsService
         };
     }
 
-    private static (List<string> Permissions, List<MenuEntitlementDto> Menus) BuildEntitlements(string role)
+    public UserEntitlementsResponse GetEntitlements(Guid userId, string username, string role, TenantContext tenant)
     {
-        var permissions = new List<string>();
-        var menus = new List<MenuEntitlementDto>();
+        return GetEntitlementsAsync(userId, username, role, tenant, CancellationToken.None).GetAwaiter().GetResult();
+    }
 
-        // 1. Dashboard & Name Search (Accessible by ALL roles)
-        menus.Add(new MenuEntitlementDto
-        {
-            Key = "dashboard",
-            Label = "Executive Cockpit",
-            Icon = "LayoutDashboard",
-            Route = "/dashboard",
-            OrderIndex = 1,
-            AllowedActions = ["view", "filter"]
-        });
-        menus.Add(new MenuEntitlementDto
-        {
-            Key = "name_search",
-            Label = "Name & ID Search",
-            Icon = "Search",
-            Route = "/name-search",
-            OrderIndex = 2,
-            AllowedActions = ["search", "view"]
-        });
-        permissions.Add("dashboard:view");
-        permissions.Add("screening:name_search");
+    private async Task<(List<string> Permissions, List<MenuEntitlementDto> Menus)> BuildDatabaseEntitlementsAsync(
+        Guid userId, string username, string role, Guid tenantId, CancellationToken ct)
+    {
+        var permissions = new List<string> { "dashboard:view", "screening:name_search" };
+        var isAdmin = role is EdithRoles.SuperAdmin or EdithRoles.Admin;
+        var isMlro = role is EdithRoles.IstrMlro or EdithRoles.Mlro;
+        var isAnalyst = role is EdithRoles.EddAnalyst or EdithRoles.Analyst;
 
+        // 1. Fetch user to check assigned group
+        var user = await _iamService.GetUserByUsernameAsync(tenantId, username, ct) 
+                ?? await _iamService.GetUserByIdAsync(tenantId, userId, ct);
+
+        // 2. Query all menus from PostgreSQL (core.menus)
+        var allMenusFromDb = await _iamService.GetMenusAsync(ct);
+
+        // 3. Query group permissions if user has a group assigned
+        IReadOnlyList<GroupMenuMappingDto> groupMappings = [];
+        if (user?.GroupId != null)
+        {
+            groupMappings = await _iamService.GetMenuMappingsAsync(tenantId, user.GroupId.Value, ct);
+        }
+
+        var visibleMenuCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var authMenuCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var editMenuCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (isAdmin)
+        {
+            // Admins have access to all menus
+            foreach (var m in allMenusFromDb) visibleMenuCodes.Add(m.MenuCode);
+            permissions.AddRange([
+                "settings:manage", "users:manage", "groups:manage", "masters:manage",
+                "screening:execute", "screening:view", "screening:bulk", "cases:freeze", "cases:investigate"
+            ]);
+        }
+        else if (groupMappings.Count > 0)
+        {
+            foreach (var mapping in groupMappings)
+            {
+                if (mapping.CanView) visibleMenuCodes.Add(mapping.MenuCode);
+                if (mapping.CanAuthorize) authMenuCodes.Add(mapping.MenuCode);
+                if (mapping.CanEdit) editMenuCodes.Add(mapping.MenuCode);
+            }
+
+            if (isMlro)
+            {
+                permissions.AddRange([
+                    "str:mlro_supervise", "cases:freeze", "cases:unfreeze", "aml:monitoring",
+                    "reports:view", "reports:export", "log:view", "customer:kyc"
+                ]);
+            }
+            else if (isAnalyst)
+            {
+                permissions.AddRange([
+                    "str:edd_investigate", "customer:kyc", "customer:screening", "whitelist:view"
+                ]);
+            }
+            else
+            {
+                permissions.AddRange([
+                    "authorization:execute", "str:alerts", "aml:rules", "aml:process",
+                    "blacklist:screen", "whitelist:manage", "delta:authorize"
+                ]);
+            }
+        }
+        else
+        {
+            // Role fallback matching user permissions spec
+            AssignRoleFallback(role, visibleMenuCodes, permissions);
+        }
+
+        // Always ensure Home / Dashboard is visible
+        visibleMenuCodes.Add("MENU_DASHBOARD");
+
+        // 4. Build hierarchical tree: parent menus + sub-menus
+        var parentMenus = allMenusFromDb.Where(m => m.ParentMenuId == null).OrderBy(m => m.Position).ToList();
+        var subMenus = allMenusFromDb.Where(m => m.ParentMenuId != null).OrderBy(m => m.Position).ToList();
+
+        var resultMenus = new List<MenuEntitlementDto>();
+        foreach (var parent in parentMenus)
+        {
+            if (!visibleMenuCodes.Contains(parent.MenuCode))
+            {
+                continue;
+            }
+
+            // Find child sub-menus
+            var children = subMenus.Where(s => s.ParentMenuId == parent.Id).ToList();
+            List<MenuEntitlementDto>? mappedChildren = null;
+
+            if (children.Count > 0)
+            {
+                mappedChildren = children.Select(c => new MenuEntitlementDto
+                {
+                    Key = c.MenuCode,
+                    Label = c.MenuName,
+                    Icon = c.Icon,
+                    Route = c.Path,
+                    OrderIndex = c.Position,
+                    AllowedActions = DetermineAllowedActions(role, c.MenuCode, authMenuCodes.Contains(c.MenuCode), editMenuCodes.Contains(c.MenuCode))
+                }).ToList();
+            }
+
+            resultMenus.Add(new MenuEntitlementDto
+            {
+                Key = parent.MenuCode,
+                Label = parent.MenuName,
+                Icon = parent.Icon,
+                Route = parent.Path,
+                OrderIndex = parent.Position,
+                AllowedActions = DetermineAllowedActions(role, parent.MenuCode, authMenuCodes.Contains(parent.MenuCode), editMenuCodes.Contains(parent.MenuCode)),
+                SubMenus = mappedChildren
+            });
+        }
+
+        return (permissions.Distinct().ToList(), resultMenus.OrderBy(m => m.OrderIndex).ToList());
+    }
+
+    private static void AssignRoleFallback(string role, HashSet<string> visibleMenuCodes, List<string> permissions)
+    {
         switch (role)
         {
-            case EdithRoles.SuperAdmin:
-                permissions.AddRange([
-                    "screening:execute", "screening:view", "screening:bulk",
-                    "cases:view", "cases:investigate", "cases:lock", "cases:dispose", "cases:freeze", "cases:str_export",
-                    "rules:view", "rules:create", "rules:edit", "rules:simulate",
-                    "whitelists:view", "whitelists:create", "whitelists:delete",
-                    "admin:masters", "admin:tenants", "audit:view", "audit:export"
-                ]);
-
-                menus.AddRange([
-                    new MenuEntitlementDto { Key = "screening", Label = "Real-time Screening", Icon = "Search", Route = "/screening", OrderIndex = 2, AllowedActions = ["screen", "view"] },
-                    new MenuEntitlementDto { Key = "screening_bulk", Label = "Bulk Screening Hub", Icon = "FileSpreadsheet", Route = "/screening/bulk", OrderIndex = 3, AllowedActions = ["upload", "process", "download"] },
-                    new MenuEntitlementDto { Key = "cases", Label = "Case Investigation Canvas", Icon = "Briefcase", Route = "/cases", OrderIndex = 4, AllowedActions = ["view", "investigate", "lock", "dispose", "freeze", "str_export"] },
-                    new MenuEntitlementDto { Key = "rules", Label = "AML Rule Builder & Sandbox", Icon = "Sliders", Route = "/rules", OrderIndex = 5, AllowedActions = ["view", "create", "edit", "simulate"] },
-                    new MenuEntitlementDto { Key = "whitelists", Label = "Whitelist Governance", Icon = "ShieldCheck", Route = "/whitelists", OrderIndex = 6, AllowedActions = ["view", "create", "delete"] },
-                    new MenuEntitlementDto { Key = "masters", Label = "System Masters & Tenancy", Icon = "Settings", Route = "/admin/masters", OrderIndex = 7, AllowedActions = ["manage"] },
-                    new MenuEntitlementDto { Key = "audit", Label = "Immutable Audit Ledger", Icon = "FileText", Route = "/audit", OrderIndex = 8, AllowedActions = ["view", "export"] }
-                ]);
-                break;
-
-            case EdithRoles.Mlro:
-                permissions.AddRange([
-                    "screening:execute", "screening:view", "screening:bulk",
-                    "cases:view", "cases:investigate", "cases:lock", "cases:dispose", "cases:freeze", "cases:str_export",
-                    "rules:view", "rules:simulate",
-                    "whitelists:view", "whitelists:create", "whitelists:delete",
-                    "audit:view", "audit:export"
-                ]);
-
-                menus.AddRange([
-                    new MenuEntitlementDto { Key = "screening", Label = "Real-time Screening", Icon = "Search", Route = "/screening", OrderIndex = 2, AllowedActions = ["screen", "view"] },
-                    new MenuEntitlementDto { Key = "cases", Label = "Case Investigation Canvas", Icon = "Briefcase", Route = "/cases", OrderIndex = 4, AllowedActions = ["view", "investigate", "lock", "dispose", "freeze", "str_export"] },
-                    new MenuEntitlementDto { Key = "whitelists", Label = "Whitelist Governance", Icon = "ShieldCheck", Route = "/whitelists", OrderIndex = 6, AllowedActions = ["view", "create", "delete"] },
-                    new MenuEntitlementDto { Key = "audit", Label = "Immutable Audit Ledger", Icon = "FileText", Route = "/audit", OrderIndex = 8, AllowedActions = ["view", "export"] }
-                ]);
-                break;
-
+            case EdithRoles.AmlOfficer:
             case EdithRoles.ComplianceOfficer:
-                permissions.AddRange([
-                    "screening:execute", "screening:view", "screening:bulk",
-                    "cases:view", "cases:investigate", "cases:lock", "cases:dispose", "cases:freeze",
-                    "rules:view", "rules:create", "rules:edit", "rules:simulate",
-                    "whitelists:view", "whitelists:create",
-                    "audit:view"
-                ]);
-
-                menus.AddRange([
-                    new MenuEntitlementDto { Key = "screening", Label = "Real-time Screening", Icon = "Search", Route = "/screening", OrderIndex = 2, AllowedActions = ["screen", "view"] },
-                    new MenuEntitlementDto { Key = "screening_bulk", Label = "Bulk Screening Hub", Icon = "FileSpreadsheet", Route = "/screening/bulk", OrderIndex = 3, AllowedActions = ["upload", "process"] },
-                    new MenuEntitlementDto { Key = "cases", Label = "Case Investigation Canvas", Icon = "Briefcase", Route = "/cases", OrderIndex = 4, AllowedActions = ["view", "investigate", "lock", "dispose"] },
-                    new MenuEntitlementDto { Key = "rules", Label = "AML Rule Builder & Sandbox", Icon = "Sliders", Route = "/rules", OrderIndex = 5, AllowedActions = ["view", "create", "edit", "simulate"] },
-                    new MenuEntitlementDto { Key = "whitelists", Label = "Whitelist Governance", Icon = "ShieldCheck", Route = "/whitelists", OrderIndex = 6, AllowedActions = ["view", "create"] }
-                ]);
+                permissions.AddRange(["authorization:execute", "str:alerts", "aml:rules", "aml:process", "blacklist:screen", "whitelist:manage", "delta:authorize"]);
+                foreach (var code in new[] { "MENU_DASHBOARD", "MENU_AUTHORIZATION", "MENU_STR_PROCESS", "MENU_AML", "MENU_BLACKLIST", "MENU_WHITELIST", "MENU_DELTA" })
+                    visibleMenuCodes.Add(code);
                 break;
 
+            case EdithRoles.EddAnalyst:
             case EdithRoles.Analyst:
-                permissions.AddRange([
-                    "screening:execute", "screening:view",
-                    "cases:view", "cases:investigate", "cases:lock",
-                    "whitelists:view"
-                ]);
+                permissions.AddRange(["str:edd_investigate", "customer:kyc", "customer:screening", "whitelist:view"]);
+                foreach (var code in new[] { "MENU_DASHBOARD", "MENU_STR_PROCESS", "MENU_CUSTOMER", "MENU_WHITELIST" })
+                    visibleMenuCodes.Add(code);
+                break;
 
-                menus.AddRange([
-                    new MenuEntitlementDto { Key = "screening", Label = "Real-time Screening", Icon = "Search", Route = "/screening", OrderIndex = 2, AllowedActions = ["screen", "view"] },
-                    new MenuEntitlementDto { Key = "cases", Label = "Case Investigation Canvas", Icon = "Briefcase", Route = "/cases", OrderIndex = 4, AllowedActions = ["view", "investigate", "lock", "recommend"] },
-                    new MenuEntitlementDto { Key = "whitelists", Label = "Whitelist Governance", Icon = "ShieldCheck", Route = "/whitelists", OrderIndex = 6, AllowedActions = ["view"] }
-                ]);
+            case EdithRoles.IstrMlro:
+            case EdithRoles.Mlro:
+                permissions.AddRange(["str:mlro_supervise", "cases:freeze", "cases:unfreeze", "aml:monitoring", "reports:view", "reports:export", "log:view", "customer:kyc"]);
+                foreach (var code in new[] { "MENU_DASHBOARD", "MENU_STR_PROCESS", "MENU_AML", "MENU_REPORTS", "MENU_CUSTOMER" })
+                    visibleMenuCodes.Add(code);
                 break;
 
             case EdithRoles.Auditor:
-                permissions.AddRange([
-                    "cases:view",
-                    "audit:view", "audit:export"
-                ]);
+                permissions.AddRange(["reports:view", "log:view", "audit:view"]);
+                foreach (var code in new[] { "MENU_DASHBOARD", "MENU_REPORTS" })
+                    visibleMenuCodes.Add(code);
+                break;
 
-                menus.AddRange([
-                    new MenuEntitlementDto { Key = "cases", Label = "Case Records (Read-Only)", Icon = "Briefcase", Route = "/cases", OrderIndex = 4, AllowedActions = ["view"] },
-                    new MenuEntitlementDto { Key = "audit", Label = "Immutable Audit Ledger", Icon = "FileText", Route = "/audit", OrderIndex = 8, AllowedActions = ["view", "export"] }
-                ]);
+            default:
+                foreach (var code in new[] { "MENU_DASHBOARD", "MENU_BLACKLIST", "MENU_CUSTOMER" })
+                    visibleMenuCodes.Add(code);
                 break;
         }
+    }
 
-        return (permissions, menus.OrderBy(m => m.OrderIndex).ToList());
+    private static List<string> DetermineAllowedActions(string role, string menuCode, bool canAuthorize, bool canEdit)
+    {
+        var actions = new List<string> { "view", "filter" };
+
+        if (role is EdithRoles.SuperAdmin or EdithRoles.Admin)
+        {
+            return ["view", "filter", "edit", "create", "manage", "authorize", "freeze", "unfreeze", "dispose", "str_export"];
+        }
+
+        if (role is EdithRoles.IstrMlro or EdithRoles.Mlro)
+        {
+            if (menuCode is "MENU_STR_PROCESS" or "cases")
+            {
+                return ["view", "filter", "dispose", "freeze", "unfreeze", "str_export", "escalate"];
+            }
+            return ["view", "filter", "authorize", "freeze", "unfreeze"];
+        }
+
+        if (role is EdithRoles.EddAnalyst or EdithRoles.Analyst)
+        {
+            if (menuCode is "MENU_STR_PROCESS" or "cases")
+            {
+                return ["view", "filter", "recommend", "investigate", "classify"];
+            }
+            return ["view", "filter", "investigate"];
+        }
+
+        if (canAuthorize) actions.AddRange(["authorize", "release", "reject"]);
+        if (canEdit) actions.AddRange(["edit", "create", "dispose"]);
+
+        return actions.Distinct().ToList();
     }
 
     private static string FormatDisplayName(string username)
     {
-        if (string.IsNullOrWhiteSpace(username)) return "EDITH User";
-        var parts = username.Split(['.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
+        if (string.IsNullOrWhiteSpace(username)) return "EDITH Officer";
+        var namePart = username.Split('@')[0];
+        var parts = namePart.Split(['.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
         return string.Join(" ", parts.Select(p => char.ToUpperInvariant(p[0]) + p[1..].ToLowerInvariant()));
     }
 }

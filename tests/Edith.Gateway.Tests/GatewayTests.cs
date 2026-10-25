@@ -87,14 +87,14 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(InMemoryTenantRegistry.DefaultTenantId, entitlements.TenantId);
 
         // MLRO must have case disposal, freeze, and STR export actions
-        var caseMenu = entitlements.Menus.FirstOrDefault(m => m.Key == "cases");
+        var caseMenu = entitlements.Menus.FirstOrDefault(m => m.Key is "cases" or "MENU_STR_PROCESS");
         Assert.NotNull(caseMenu);
         Assert.Contains("dispose", caseMenu.AllowedActions);
         Assert.Contains("freeze", caseMenu.AllowedActions);
         Assert.Contains("str_export", caseMenu.AllowedActions);
 
         // MLRO should NOT have system masters/admin menu
-        Assert.DoesNotContain(entitlements.Menus, m => m.Key == "masters");
+        Assert.DoesNotContain(entitlements.Menus, m => m.Key is "masters" or "MENU_MASTER" or "MENU_SETTINGS");
     }
 
     [Fact]
@@ -124,15 +124,15 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(EdithRoles.Analyst, entitlements.Role);
 
         // Analyst must NOT have dispose or freeze permissions
-        var caseMenu = entitlements.Menus.FirstOrDefault(m => m.Key == "cases");
+        var caseMenu = entitlements.Menus.FirstOrDefault(m => m.Key is "cases" or "MENU_STR_PROCESS");
         Assert.NotNull(caseMenu);
         Assert.DoesNotContain("dispose", caseMenu.AllowedActions);
         Assert.DoesNotContain("freeze", caseMenu.AllowedActions);
         Assert.Contains("recommend", caseMenu.AllowedActions);
 
         // Analyst must NOT have rules builder or masters menu
-        Assert.DoesNotContain(entitlements.Menus, m => m.Key == "rules");
-        Assert.DoesNotContain(entitlements.Menus, m => m.Key == "masters");
+        Assert.DoesNotContain(entitlements.Menus, m => m.Key is "rules" or "MENU_AML");
+        Assert.DoesNotContain(entitlements.Menus, m => m.Key is "masters" or "MENU_MASTER" or "MENU_SETTINGS");
     }
 
     [Fact]
@@ -299,7 +299,9 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
             "Sanctions Triage Unit",
             "ON_DUTY"));
         Assert.Equal(HttpStatusCode.Created, createUserRes.StatusCode);
-        var createdUser = await createUserRes.Content.ReadFromJsonAsync<IamUserDto>(JsonOptions);
+        var createPayload = await createUserRes.Content.ReadFromJsonAsync<CreateIamUserResponse>(JsonOptions);
+        Assert.NotNull(createPayload);
+        var createdUser = createPayload.User;
         Assert.NotNull(createdUser);
         Assert.Equal("Nadia Al-Hashimi", createdUser.FullName);
 
@@ -347,5 +349,118 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(HttpStatusCode.OK, certRes.StatusCode);
         var certJson = await certRes.Content.ReadAsStringAsync();
         Assert.Contains("wormBlockHashSha256", certJson);
+
+        // 6. Malformed JSON request is caught by GlobalErrorHandlingMiddleware and returns general error with EDITH-ERR reference
+        using var badReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/iam/login")
+        {
+            Content = new StringContent("{ invalid json", System.Text.Encoding.UTF8, "application/json")
+        };
+        var badRes = await _client.SendAsync(badReq);
+        Assert.Equal(HttpStatusCode.BadRequest, badRes.StatusCode);
+        var badBody = await badRes.Content.ReadAsStringAsync();
+        Assert.Contains("EDITH-ERR-", badBody);
+        Assert.Contains("Invalid Information", badBody);
+    }
+
+    [Fact]
+    public async Task Kyc360_Directory_Dossier_And_Edd_Workflow_Updates_Succeed()
+    {
+        // 1. List KYC dossiers
+        var listRes = await _client.GetAsync("/api/v1/kyc");
+        Assert.Equal(HttpStatusCode.OK, listRes.StatusCode);
+        var list = await listRes.Content.ReadFromJsonAsync<List<KycDossierDto>>(JsonOptions);
+        Assert.NotNull(list);
+        Assert.NotEmpty(list);
+
+        // 2. Lookup specific dossier by code
+        var getRes = await _client.GetAsync("/api/v1/kyc/CUST-AE-88902");
+        Assert.Equal(HttpStatusCode.OK, getRes.StatusCode);
+        var dossier = await getRes.Content.ReadFromJsonAsync<KycDossierDto>(JsonOptions);
+        Assert.NotNull(dossier);
+        Assert.Equal("CUST-AE-88902", dossier.CustomerCode);
+        Assert.NotEmpty(dossier.UboIdentities);
+        Assert.NotEmpty(dossier.Documents);
+
+        // 3. Complete Periodic EDD Review Sign-Off
+        var eddRes = await _client.PutAsJsonAsync("/api/v1/kyc/CUST-AE-88902/edd", new KycEddUpdateRequest(
+            Action: "COMPLETE_EDD_REVIEW",
+            RiskTier: "HIGH",
+            NextReviewDate: "2027-10-25",
+            Notes: "Periodic EDD Review signed off in integration test."));
+        Assert.Equal(HttpStatusCode.OK, eddRes.StatusCode);
+        var updated = await eddRes.Content.ReadFromJsonAsync<KycDossierDto>(JsonOptions);
+        Assert.NotNull(updated);
+        Assert.Equal("EDD_APPROVED", updated.OnboardingStatus);
+    }
+
+    [Fact]
+    public async Task Rules_Crud_DraftBacktest_And_Audit_Workflow_Succeeds()
+    {
+        // 1. Create a structuring rule in SHADOW mode
+        var createRes = await _client.PostAsJsonAsync("/api/v1/rules", new
+        {
+            ruleCode = "RULE_TEST_SMURF_09",
+            ruleName = "Test Structuring Avoidance Band",
+            ruleType = "STRUCTURING_SMURFING",
+            severity = "CRITICAL",
+            weightage = 45m,
+            executionMode = "SHADOW",
+            isActive = true,
+            currency = "AED",
+            windowMinutes = 1440,
+            minTransactions = 3,
+            structuringMinAmount = 45000m,
+            structuringMaxAmount = 54999m
+        });
+        Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+
+        var createdJson = await createRes.Content.ReadAsStringAsync();
+        using var createdDoc = JsonDocument.Parse(createdJson);
+        var ruleId = createdDoc.RootElement.GetProperty("id").GetString()!;
+        Assert.Equal("STRUCTURING_SMURFING", createdDoc.RootElement.GetProperty("ruleType").GetString());
+        Assert.Equal("SHADOW", createdDoc.RootElement.GetProperty("executionMode").GetString());
+        Assert.Equal(45000m, createdDoc.RootElement.GetProperty("structuringMinAmount").GetDecimal());
+        Assert.Equal(54999m, createdDoc.RootElement.GetProperty("structuringMaxAmount").GetDecimal());
+
+        // 2. Promote rule to REALTIME via PUT
+        var updateRes = await _client.PutAsJsonAsync($"/api/v1/rules/{ruleId}", new
+        {
+            ruleCode = "RULE_TEST_SMURF_09",
+            ruleName = "Test Structuring Avoidance Band",
+            ruleType = "STRUCTURING_SMURFING",
+            severity = "CRITICAL",
+            weightage = 50m,
+            executionMode = "REALTIME",
+            isActive = true,
+            currency = "AED",
+            windowMinutes = 1440,
+            minTransactions = 3,
+            structuringMinAmount = 40000m,
+            structuringMaxAmount = 54999m
+        });
+        Assert.Equal(HttpStatusCode.OK, updateRes.StatusCode);
+        var updatedJson = await updateRes.Content.ReadAsStringAsync();
+        using var updatedDoc = JsonDocument.Parse(updatedJson);
+        Assert.Equal("REALTIME", updatedDoc.RootElement.GetProperty("executionMode").GetString());
+        Assert.Equal(40000m, updatedDoc.RootElement.GetProperty("structuringMinAmount").GetDecimal());
+
+        // 3. Run Draft What-If Backtest with custom overrides
+        var backtestRes = await _client.PostAsJsonAsync("/api/v1/rules/backtest", new
+        {
+            ruleCode = "RULE_TEST_SMURF_09",
+            ruleType = "TRANSACTION_THRESHOLD",
+            thresholdAmount = 250000m,
+            currency = "AED"
+        });
+        Assert.Equal(HttpStatusCode.OK, backtestRes.StatusCode);
+        var btJson = await backtestRes.Content.ReadAsStringAsync();
+        using var btDoc = JsonDocument.Parse(btJson);
+        Assert.Equal(1000, btDoc.RootElement.GetProperty("simulatedTransactions").GetInt32());
+        Assert.True(btDoc.RootElement.GetProperty("triggeredAlerts").GetInt32() > 0);
+        Assert.True(btDoc.RootElement.GetProperty("sampleHits").GetArrayLength() > 0);
+
+        // 4. Delete rule
+        var delRes = await _client.DeleteAsync($"/api/v1/rules/{ruleId}");
+        Assert.Equal(HttpStatusCode.OK, delRes.StatusCode);
     }
 }

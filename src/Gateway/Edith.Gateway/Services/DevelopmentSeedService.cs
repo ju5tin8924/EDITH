@@ -21,6 +21,7 @@ public sealed partial class DevelopmentSeedService : IHostedService
     private readonly IRuleRepository _ruleRepo;
     private readonly IWhitelistService _whitelistService;
     private readonly IAuditLedgerService _auditService;
+    private readonly IKycService _kycService;
     private readonly ILogger<DevelopmentSeedService> _logger;
 
     public DevelopmentSeedService(
@@ -30,6 +31,7 @@ public sealed partial class DevelopmentSeedService : IHostedService
         IRuleRepository ruleRepo,
         IWhitelistService whitelistService,
         IAuditLedgerService auditService,
+        IKycService kycService,
         ILogger<DevelopmentSeedService> logger)
     {
         _searchEngine = searchEngine;
@@ -38,6 +40,7 @@ public sealed partial class DevelopmentSeedService : IHostedService
         _ruleRepo = ruleRepo;
         _whitelistService = whitelistService;
         _auditService = auditService;
+        _kycService = kycService;
         _logger = logger;
     }
 
@@ -97,8 +100,26 @@ public sealed partial class DevelopmentSeedService : IHostedService
             Category = RuleCategory.TransactionThreshold,
             RiskLevel = RiskLevel.Medium,
             ScoreWeightage = 20.0m,
+            ExecutionMode = "REALTIME",
             IsActive = true,
             ThresholdAmount = 500000m,
+            Currency = "AED"
+        }, cancellationToken);
+
+        await _ruleRepo.CreateRuleAsync(new AmlRule
+        {
+            Id = Guid.Parse("01931000-0000-7000-8000-000000000104"),
+            TenantId = DefaultTenantId,
+            RuleCode = "RULE_VELOCITY_BURST",
+            RuleName = "Rapid Cross-Border Velocity Burst (Shadow)",
+            Category = RuleCategory.VelocityAnomaly,
+            RiskLevel = RiskLevel.High,
+            ScoreWeightage = 40.0m,
+            ExecutionMode = "SHADOW",
+            IsActive = true,
+            WindowMinutes = 120,
+            MinTransactions = 3,
+            ThresholdAmount = 150000m,
             Currency = "AED"
         }, cancellationToken);
 
@@ -182,8 +203,9 @@ public sealed partial class DevelopmentSeedService : IHostedService
             IsActive = true
         }, cancellationToken);
 
-        // 5. Seed Baseline Immutable WORM Audit Ledger
+        // 5. Seed Baseline Immutable WORM Audit Ledger & Customer KYC 360 Dossiers
         await _auditService.EnsureBaselineAuditLedgerAsync(DefaultTenantId, cancellationToken);
+        await _kycService.EnsureBaselineCustomersAsync(DefaultTenantId, cancellationToken);
 
         LogSeedingCompleted(_logger);
     }

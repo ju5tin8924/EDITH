@@ -237,5 +237,134 @@ public sealed class RuleEngineTests
         Assert.Equal(5.0, result.HitRatePercentage);
         Assert.Equal(500.0, result.EstimatedDailyAlerts); // 5% of 10,000 avg volume
         Assert.Equal(5, result.SampleTriggeredRefNos.Count);
+        Assert.Equal(5, result.SampleHits.Count);
+    }
+
+    [Fact]
+    public void VelocityAnomaly_Triggers_On_Burst_Floor_And_Rolling_Window()
+    {
+        var ruleEngine = new RuleEngine();
+        var backtester = new RuleBacktester(ruleEngine);
+
+        var velocityRule = new AmlRule
+        {
+            TenantId = TestTenantId,
+            RuleCode = "RULE-VEL-001",
+            RuleName = "Rapid Velocity Burst",
+            Category = RuleCategory.VelocityAnomaly,
+            RiskLevel = RiskLevel.High,
+            ExecutionMode = "SHADOW",
+            IsActive = false, // Even if paused, backtester simulates candidate as active
+            WindowMinutes = 60,
+            MinTransactions = 3,
+            ThresholdAmount = 100000m
+        };
+
+        var now = DateTimeOffset.UtcNow;
+        var txs = new List<ScreeningTransaction>
+        {
+            new()
+            {
+                TenantId = TestTenantId,
+                CustomerId = Guid.NewGuid(),
+                TransactionRefNo = "VEL-TX-01",
+                IdempotencyKey = "VEL-1",
+                TransactionType = "WIRE",
+                Amount = 120000m,
+                Currency = "AED",
+                LcyAmount = 120000m,
+                SenderName = "Rapid Trader LLC",
+                SenderNationality = "AE",
+                SenderCountry = "AE",
+                BeneficiaryName = "Offshore Corp",
+                BeneficiaryCountry = "CH",
+                TransactionDate = now.AddMinutes(-30)
+            }
+        };
+
+        var result = backtester.BacktestRule(velocityRule, txs);
+        Assert.Equal(1, result.TriggeredCount);
+        Assert.Single(result.SampleHits);
+        Assert.Contains("Velocity burst anomaly", result.SampleHits[0].TriggerReason);
+    }
+
+    [Fact]
+    public void RuleBacktester_Computes_BaselineDelta_Overlap_And_SensitivityCurve()
+    {
+        var ruleEngine = new RuleEngine();
+        var backtester = new RuleBacktester(ruleEngine);
+
+        var baselineRule = new AmlRule
+        {
+            TenantId = TestTenantId,
+            RuleCode = "RULE-AE-LCTR-001",
+            RuleName = "Large Wire Reporting >= 100k",
+            Category = RuleCategory.TransactionThreshold,
+            RiskLevel = RiskLevel.High,
+            ScoreWeightage = 35m,
+            ThresholdAmount = 100000m
+        };
+
+        var candidateRule = baselineRule with { ThresholdAmount = 50000m };
+
+        var portfolioCorridorRule = new AmlRule
+        {
+            TenantId = TestTenantId,
+            RuleCode = "RULE-FATF-CORRIDOR",
+            RuleName = "FATF High Risk Corridor",
+            Category = RuleCategory.HighRiskCorridor,
+            RiskLevel = RiskLevel.Critical,
+            ScoreWeightage = 50m,
+            HighRiskCountries = ["IR", "KP"],
+            IsActive = true
+        };
+
+        var txs = new List<ScreeningTransaction>
+        {
+            new()
+            {
+                TenantId = TestTenantId,
+                CustomerId = Guid.NewGuid(),
+                TransactionRefNo = "TX-DELTA-01",
+                IdempotencyKey = "D-1",
+                TransactionType = "WIRE",
+                Amount = 120000m,
+                Currency = "AED",
+                LcyAmount = 120000m,
+                SenderName = "Trader A",
+                SenderNationality = "AE",
+                SenderCountry = "AE",
+                BeneficiaryName = "Tehran Corp",
+                BeneficiaryCountry = "IR"
+            },
+            new()
+            {
+                TenantId = TestTenantId,
+                CustomerId = Guid.NewGuid(),
+                TransactionRefNo = "TX-DELTA-02",
+                IdempotencyKey = "D-2",
+                TransactionType = "WIRE",
+                Amount = 65000m,
+                Currency = "AED",
+                LcyAmount = 65000m,
+                SenderName = "Trader B",
+                SenderNationality = "AE",
+                SenderCountry = "AE",
+                BeneficiaryName = "Dubai Corp",
+                BeneficiaryCountry = "AE"
+            }
+        };
+
+        var result = backtester.BacktestRule(candidateRule, txs, baselineRule, [portfolioCorridorRule]);
+
+        Assert.Equal(2, result.TriggeredCount);
+        Assert.Equal(1, result.BaselineTriggeredCount);
+        Assert.Equal(1, result.NetAlertDelta);
+        Assert.Equal(1, result.NewlyCapturedCount);
+        Assert.Equal(0, result.NewlySuppressedCount);
+        Assert.Equal(1, result.OverlappingHitsCount);
+        Assert.Equal(1, result.UniqueHitsCount);
+        Assert.Equal(5, result.SensitivityCurve.Count);
+        Assert.Contains(result.SampleHits, h => h.TransactionRefNo == "TX-DELTA-02" && h.DeltaStatus == "NEWLY_CAPTURED");
     }
 }
