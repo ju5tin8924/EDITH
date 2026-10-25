@@ -1,4 +1,4 @@
-# EDITH Platform — Visual Studio & Web Portal Run Guide (v10.0)
+﻿# EDITH Platform — Visual Studio & Web Portal Run Guide (v10.0)
 
 **Document ID:** EDITH-RUN-GUIDE-v10.0  
 **Environment:** Local Development (Visual Studio 2022 / 2026 + React 19 / Vite + Docker)  
@@ -54,7 +54,7 @@ docker ps --filter "name=edith"
 ```
 
 ### Step 2: Apply Migrations & Seed Baseline Data
-Run the database migrator to initialize the 5 schemas (`core`, `screening`, `cases`, `rules`, `notifications`) and seed baseline test data:
+Run the database migrator to initialize the 5 schemas (`core`, `screening`, `cases`, `rules`, `notifications` — 39 total tables) and seed baseline test data:
 ```powershell
 dotnet run --project F:\EDITH\src\Database\Edith.Database.Migrator
 ```

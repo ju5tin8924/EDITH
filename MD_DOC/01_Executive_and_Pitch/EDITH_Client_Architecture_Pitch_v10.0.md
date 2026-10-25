@@ -1,4 +1,4 @@
-# EDITH AML Intelligence Platform
+﻿# EDITH AML Intelligence Platform
 ## Enterprise Architecture & Client Pitch (Version 10.0)
 
 **Document ID:** EDITH-PITCH-v10.0  
@@ -391,7 +391,7 @@ EDITH operationalizes compliance through **18 distinct, interconnected workflows
 
 ### Proven Engineering Quality
 
-The EDITH engine is verified by a test harness spanning **10 distinct automated test projects** and **96/96 passing test cases (100% green)**, ensuring uncompromising operational resilience under high-concurrency enterprise workloads.
+The EDITH engine is verified by a test harness spanning **10 distinct automated test projects** and **100/100 passing test cases (100% green)**, ensuring uncompromising operational resilience under high-concurrency enterprise workloads.
 
 ---
 

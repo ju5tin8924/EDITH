@@ -1,4 +1,4 @@
-# EDITH AML Platform — Infrastructure & Application Credentials (v10.0)
+﻿# EDITH AML Platform — Infrastructure & Application Credentials (v10.0)
 
 **Document ID:** EDITH-CREDENTIALS-v10.0  
 **Environment:** Local Docker Compose (`docker/docker-compose.yaml`) & Production K8s Deployment  
@@ -18,7 +18,7 @@
 | **Database Name** | `edith_aml` |
 | **Username** | `edith_admin` |
 | **Password** | `EdithSecurePassword2026!` |
-| **Schemas** | `core`, `rules`, `screening`, `cases`, `notifications`, `public` |
+| **Schemas** | `core`, `rules`, `screening`, `cases`, `notifications` (39 production tables) |
 
 ### Connection Strings
 ```text

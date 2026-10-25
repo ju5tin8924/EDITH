@@ -1,4 +1,4 @@
-# Master Product Requirements Document (PRD v10.0)
+﻿# Master Product Requirements Document (PRD v10.0)
 
 **Product Name:** EDITH Next-Gen AML Intelligence Platform  
 **Target Architecture:** Modular Monolith (.NET 10 LTS + React 19 Portal + OpenSearch 2.12 + PostgreSQL 17)  

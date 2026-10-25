@@ -1,4 +1,4 @@
-# EDITH Next-Gen AML Intelligence Platform
+﻿# EDITH Next-Gen AML Intelligence Platform
 ## Master Technical Architecture & Engineering Specification (v10.0)
 
 **Document ID:** EDITH-ARCH-SPEC-v10.0  
@@ -78,7 +78,7 @@ flowchart TD
 
 ## 2. Infrastructure & Persistence Architecture
 
-* **PostgreSQL 17 (`localhost:5432`, DB: `edith_aml`):** Schema-per-module isolation across 5 dedicated schemas:
+* **PostgreSQL 17 (`localhost:5432`, DB: `edith_aml`):** Schema-per-module isolation across 5 dedicated schemas (39 total production tables):
   - `core`: Tenants, users, user groups, group menu permissions, TOTP secrets, and immutable audit ledgers.
   - `screening`: Watchlists, customer KYC profiles, customer documents (OCR JSONB), transactions, delta batches, and whitelists.
   - `cases`: AML investigation cases, candidate hits, case activities, and pessimistic lease locks.
@@ -222,8 +222,8 @@ flowchart LR
 
 ```
 Total Test Projects:  10
-Total Test Cases:     96
-Passed:               96 (100%)
+Total Test Cases:     100
+Passed:               100 (100%)
 Failed:               0
 Skipped:              0
 Frontend Build:       tsc -b && vite build (0 errors)
