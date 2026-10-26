@@ -146,10 +146,11 @@ export const ROUTE_PAGE_META: Record<string, PageMeta> = {
     definition: 'Evaluate corridor risk concentration, SLA adherence metrics, and false-positive reduction performance.'
   },
 
-  // 7. Log Report
+  // 7. Notification & Webhook Admin
   '/notifications': {
-    title: 'Log Report',
-    definition: 'Configure real-time compliance alert routing and inspect system process, upload, and dispatch logs.'
+    title: 'Notification & Webhook Admin',
+    parent: 'Rules & Governance',
+    definition: 'Configure real-time compliance alert routing, manage on-duty shift rosters, and inspect CBS webhook delivery ledgers.'
   },
   '/log-report': {
     title: 'Log Report',
@@ -251,6 +252,16 @@ export const ROUTE_PAGE_META: Record<string, PageMeta> = {
     title: 'Country Master',
     parent: 'Master',
     definition: 'Maintain sovereign country risk scores and FATF Black and Grey list designations.'
+  },
+  '/settings/currencies': {
+    title: 'Currency Reporting Thresholds',
+    parent: 'Settings',
+    definition: 'Configure statutory mandatory reporting thresholds (e.g. CBUAE AED 55,000) and internal high-risk escalation limits.'
+  },
+  '/master/currencies': {
+    title: 'Currency Reporting Thresholds',
+    parent: 'Master',
+    definition: 'Configure statutory mandatory reporting thresholds (e.g. CBUAE AED 55,000) and internal high-risk escalation limits.'
   },
   '/master/unblock-customer': {
     title: 'Unblock Customer',

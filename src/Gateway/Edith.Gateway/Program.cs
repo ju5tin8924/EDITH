@@ -191,6 +191,7 @@ app.MapBulkScreeningEndpoints(pgConn);
 app.MapAddonEndpoints();
 app.MapKycEndpoints();
 app.MapSettingsEndpoints();
+app.MapNotificationEndpoints();
 
 // 15. Map Real-Time SignalR WebSockets Hubs
 app.MapHub<CaseHub>("/hubs/cases");

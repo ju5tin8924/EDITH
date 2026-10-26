@@ -27,6 +27,9 @@
 | **Phase 15** | AML Rule Builder & Sandbox Workflow, UX & Feature Modernization (Full CRUD, Category Form Editor, Velocity Anomaly Engine, Draft "What-If" Backtesting, Sample Hit Inspector, 4-Eyes & Shadow Mode, Sandbox Promotion & WORM Audit) | `COMPLETED` |
 | **Phase 16** | AML Rule Backtesting Sandbox & Calibration Engine Modernization (Baseline vs. Draft Delta, Ground-Truth STR Confusion Matrix, Portfolio Overlap Check, Threshold Sensitivity Elbow Curve, Auto-Balancing Sliders & Live 50k Portfolio Replay) | `COMPLETED` |
 | **Phase 17** | Regulatory Reports, All 14 PDF Reports & WORM Audit Ledger Modernization (Route-Synced Report Hub, 16-Field Transaction Filter, 5-Dimension Analytics, 3d/7d SLA Watchdog, STR History Reopen/Branch Mail, Live WORM Chain Verifier & Certified Exports) | `COMPLETED` |
+| **Phase 18** | Notification Admin & Webhook Reliability Modernization (Dead-Letter Replay, Live Multi-Channel CRUD, Shift Roster Engine, Global Notification Center & Test Sandbox) | `COMPLETED` |
+| **Phase 19** | IAM Access System Workflow, UX/UI & Enterprise Security Modernization (In-Place Edit Drawer, Faceted Directory, Structured Offboarding, Hierarchical Sub-Menu Matrix, Active Sessions & Audit Console) | `COMPLETED` |
+| **Phase 20** | System Masters & Calibration Hub Workflow, UX/UI & Feature Modernization (Full PostgreSQL CRUD Wiring, Auto-Balancing Sliders, Domain Separation, Currency Master, Real-Time Impact Calculator, Version History & 4-Eyes Staging) | `COMPLETED` |
 
 ---
 
@@ -201,6 +204,110 @@
 - [x] **4. Self-Auditing CSV/JSON Exports & Printable WORM Regulatory Attestation Certificate**:
   - Real `.csv` download with embedded WORM SHA-256 hash footer.
   - Printable **Certified Regulatory Examination Report Modal** (`window.print()` + JSON bundle download).
+
+### [x] Phase 18: Notification Admin & Webhook Reliability Modernization (v2.2.0 Target)
+- [x] **1. Navigation, Page Metadata & Global Header Notification Center**:
+  - Re-aligned `/notifications` route metadata in `pageMeta.ts` from mislabeled `"Log Report"` to `"Notification & Webhook Admin"`.
+  - Added explicit entry in `Sidebar.tsx` / `api.ts` menu entitlements under Settings and unified with Command Palette (`Ctrl+K`).
+  - Upgraded the inert bell button in `Header.tsx` to an active sliding **Notification Inbox Drawer** with unread count badge, real-time alert triage feed, acknowledge actions, and deep links into `/cases`.
+- [x] **2. Full CRUD Visual Rule Authoring Drawer & Multi-Condition Trigger Engine**:
+  - Replaced static `MOCK_RULES` with dynamic state and persistent storage (`notifications.notification_rules`).
+  - Interactive drawer for rule creation/editing: Alert Type, Severity Tier (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), Trigger Event, Target Channels (`TEAMS`, `EMAIL`, `SMS`, `WEBHOOK`), and Shift-Presence toggle.
+  - Action buttons: Add New Rule, Edit Rule, Clone Rule, Toggle Active, and Four-Eyes Delete Protection.
+- [x] **3. Delivery Ledgers & Dead-Letter Queue (DLQ) Reconciliation Console**:
+  - Dedicated Ledgers & DLQ tab backed by `notifications.delivery_ledgers` and `CbsWebhookDispatcher`.
+  - Filter by status (`ALL`, `DELIVERED`, `DEAD_LETTER`), channel, and trace ID.
+  - Interactive 1-click **"Replay Failed Callback"** and **"Bulk Replay All Dead-Letters"** with live retry status updates.
+  - Diagnostic payload inspector drawer displaying request headers (`X-Edith-Signature`, `X-Edith-Timestamp`), payload body, and remote HTTP error responses.
+- [x] **4. Shift Schedule Roster & On-Duty Substitution Management**:
+  - Connected UI to `notifications.user_shifts` and `DynamicNotificationEngine.cs`.
+  - Visual duty roster displaying current shift periods (APAC, EMEA, Americas) and on-duty analysts.
+  - On-call substitution delegation: when an analyst marks `OFF_DUTY`, nominate a substitute analyst or fallback to MLRO On-Duty Escalation.
+- [x] **5. Dynamic Multi-Channel Simulation Studio & Pre-Flight Test-Fire Sandbox**:
+  - Upgraded static Teams card preview to an interactive 4-channel simulation studio: Microsoft Teams Adaptive Card, HTML Email template, SMS (160 char preview), and Outbound Webhook JSON payload.
+  - Dynamic token chips insertion (`{{CaseRef}}`, `{{MatchedName}}`, `{{Amount}}`, `{{RiskScore}}`, `{{ActionUrl}}`).
+  - Pre-flight **"Test Fire Alert"** action sending mock/synthetic compliance alerts to verify endpoint connectivity, response latency, and rendering before publishing.
+- [x] **6. Backend Gateway API Endpoints & Service Integration**:
+  - Implemented notification and webhook endpoints in `Edith.Gateway` (`NotificationEndpoints.cs`) and portal service layer (`EdithApi`) supporting rules CRUD, delivery ledger queries, manual retry execution, shift updates, in-app notification center, and test dispatch.
+
+### [x] Phase 19: IAM Access System Workflow, UX/UI & Enterprise Security Modernization (v2.3.0 Target)
+- [x] **1. Faceted Filtering & Exportable User Inventory Console (`IamAccessView.tsx`)**:
+  - Multi-criteria filter bar: Filter by Role (`ALL`, `ADMIN`, `AML_OFFICER`, `EDD_ANALYST`, `ISTR_MLRO`), Shift Status (`ALL`, `ON_DUTY`, `OFF_DUTY`), 2FA Enrollment (`ALL`, `ENROLLED`, `PENDING_ACTIVATION`), and Account State (`ACTIVE`, `SUSPENDED`).
+  - 1-Click CSV export of current filtered compliance officer directory with role, department, shift status, and 2FA health for regulatory access reviews.
+- [x] **2. Slide-Out Officer Detail & In-Place Editing Drawer (`UserDrawer`)**:
+  - Interactive profile drawer on row click for inspecting and updating Full Name, Department, and Assigned Role.
+  - Quick Security Actions: 1-Click 2FA Secret Reset (invalidates TOTP secret, re-flags `mfa_enabled = false`, and forces re-enrollment on next login), Trigger Mandatory Password Rotation, and Soft Account Suspension toggle (`is_active = false`).
+- [x] **3. Structured Offboarding & Case Reassignment Confirmation Modal**:
+  - Replaces harsh browser `window.confirm` with a rich dialog modal with danger styling.
+  - Simulates/detects pending sanctions cases and prompts selecting an active On-Duty officer for clean handover before de-provisioning.
+- [x] **4. Onboarding Setup Link Fallback & Direct Sharing**:
+  - Return `invitationToken` from backend provisioning and resend endpoints.
+  - Provide a 1-click **"Copy Onboarding Setup Link"** in the provisioning result modal to support on-premise deployments where outbound SMTP is firewalled.
+- [x] **5. Hierarchical Sub-Menu Permissions Matrix & Column Bulk Toggles**:
+  - Accordion expand/collapse on all 12 root menus in `MENU_MAPPINGS` tab to view and configure individual sub-menus (`Sanction Screening`, `Watchlist`, `Freeze/Unfreeze`, `Customize Rules`, etc.).
+  - Role column header bulk controls: **"Grant All"** / **"Clear All"** for rapid role profile provisioning.
+- [x] **6. Active Sessions, Concurrent Logins & Security Audit Ledger Tab**:
+  - 5th tab `AUDIT_SESSIONS`: Live active operator sessions monitor with client IP, last active timestamp, and 1-click **"Revoke / Kill Session"**.
+  - Visual timeline feed of recent IAM security actions (user creation, 2FA enrollment, password rotation, permission modifications) committed to `core.audit_ledgers`.
+- [x] **7. Backend Gateway Endpoints & Service Layer Updates**:
+  - Upgraded `UpdateIamUserRequest` in `IIamUserService.cs` and `PostgreSqlIamUserService` to support updating `FullName`, `Department`, `Role`, `IsActive`, `ShiftStatus`, and resetting `MfaEnabled`.
+  - Added direct onboarding link token support in `CreateIamUserResponse`.
+  - Updated `EdithApi` in `api.ts` to support expanded user updates and audit sessions.
+
+### [x] Phase 20: System Masters & Calibration Hub Workflow, UX/UI & Feature Modernization (v2.4.0 Target)
+- [x] **1. Full PostgreSQL CRUD Wiring & Missing Endpoints in Gateway (`SettingsEndpoints.cs`, `ISystemMastersService.cs`)**:
+  - Persist `rules.risk_rate_settings` (Customer & Transaction Risk Benchmarks).
+  - Persist `rules.setup_controls` (Automated SysControl scenario toggles).
+  - Persist `rules.risk_assessment_masters` (EWRA category weights: Geo, Client, Product).
+  - Persist `rules.nationality_masters` (Nationality demonyms catalog with risk tiers & high-risk flags).
+  - Expose Currency & Mandatory Reporting Thresholds (`AED`, `USD`, `EUR`) with update API and WORM audit logging.
+- [x] **2. Auto-Balancing Constraint Sliders with Pin-Locks & Real-Time Math**:
+  - Strict 100% sum constraint on Multi-Factor Screening Weights (`Name`, `Nationality`, `DOB`, `ID`) preventing negative ID weights.
+  - Strict 100% sum constraint on Enterprise-Wide Risk Assessment (EWRA) weights.
+  - Individual pin-lock controls to fix key weights while auto-balancing the remaining sliders.
+- [x] **3. Domain Separation & Information Architecture Consolidation**:
+  - Eject `UNBLOCK_CUSTOMER` from System Masters; relocate to an authenticated Administrative Hold / Unblock Action in `CustomerKyc360View.tsx`.
+  - Move `CHANGE_PASSWORD` out of System Masters to `UserProfileDrawer.tsx`.
+  - Introduce **Currency & Reporting Thresholds** tab.
+  - Consolidate navigation under unified categories with dirty-state indicator.
+- [x] **4. High-Density Country & Nationality Master Grids**:
+  - Hydrate full country names, ISO-2/3 codes, flags, and accurate FATF status badges (`BLACKLIST`, `GREYLIST`, `MONITORED`, `COOPERATIVE`).
+  - Search debounce, risk tier filter chips, and inline risk score adjustment.
+- [x] **5. Real-Time "What-If" Sensitivity & Alert Volume Impact Preview**:
+  - Live impact mini-calculator showing estimated alert volume surge, SLA impact, and historical recall when adjusting match thresholds.
+- [x] **6. Configuration Version History & Rollback Drawer**:
+  - Interactive slide-over drawer showing immutable configuration change timeline from `core.audit_ledgers` with side-by-side diffs and 1-click restore.
+- [x] **7. 4-Eyes Maker-Checker Configuration Staging**:
+  - Option to stage parameter updates as `PENDING_APPROVAL` drafts requiring MLRO cryptographic sign-off before committing to the live 5-pass screening engine.
+
+### [x] Phase 21: Delta Rescreening Workflow, UX/UI & System Modernization (v2.5.0 Target)
+- [x] **1. Filter Bar Wiring, Quick Search & Active Preset Chips (`DeltaRescreeningView.tsx`)**:
+  - Connected previously disconnected filter states (`filterCustomerCode`, `filterStartDate`, `filterEndDate`) to live `useMemo` table filtering and CSV export.
+  - Quick-search across Customer Name, Code, Source List, and Watchlist Rationale.
+  - Preset filter chips: `Critical Jumps (Δ ≥ 50%)`, `Pending Review`, `OFAC Updates`, `EU/UN Designations`.
+- [x] **2. Closed-Loop Case Provisioning & Deep Links into Case Workspace**:
+  - Escalating a delta hit calls `POST /api/v1/delta/escalate-case`, automatically provisioning an active EDD case in `cases.aml_cases`.
+  - Display clickable badge `Case #{caseNumber} →` linking directly into `CaseWorkspace.tsx` with pre-filled delta provenance.
+- [x] **3. Atomic Drawer Adjudication & DB Persistence**:
+  - Connect "Mark False Positive" and "Create Alert Case" in inspector drawer to `POST /api/v1/delta/adjudicate`.
+  - Require justification rationale and commit decision to `screening.delta_authorizations` and `core.audit_ledgers`.
+- [x] **4. 4-Eyes Maker-Checker Governance & Dual Review Controls**:
+  - Maker stage: Analyst recommends dismissal or escalation with regulatory reason code (`SECONDARY_ID_MISMATCH`, `ALIAS_CONFIRMED`, `DIVERGENT_DOB`).
+  - 1-Click AI Auto-Draft rationale generator for regulatory justification.
+  - Checker stage: MLRO reviews rationale and counter-signs with cryptographic WORM ledger attestation.
+- [x] **5. Side-by-Side "What Changed" Visual Token Diff Drawer**:
+  - Display side-by-side snapshot comparing previous watchlist state vs. updated watchlist entry.
+  - Visual token chips highlighting newly added aliases, modified dates/nationalities, and matching tokens.
+- [x] **6. Sub-Route / Tab Separation & Watchlist Feed Health Watermark**:
+  - Distinct views for **Active Authorization Queue** (`/delta/authorization`), **Delta Screening Log Report** (`/delta/log-report`, PDF p. 59), and **Watchlist Source Health** (`/delta/sources`).
+  - Real-time watermark banner tracking OFAC, EU, UN, and UAE list freshness and sync status.
+- [x] **7. Bulk Action Safety Confirmation Modal**:
+  - Safety dialog confirming selected hits, count, and requiring mandatory justification before executing batch dismissals or escalations.
+- [x] **8. Backend Gateway Scoped Authorization & User Claims Hardening**:
+  - Refactor `POST /api/v1/delta/authorize` in `BulkScreeningEndpoints.cs` to filter strictly by approved customer IDs instead of updating all batch items blindly.
+  - Extract genuine user identity from JWT claims/headers instead of hardcoding MLRO name.
+  - Added new endpoints: `/api/v1/delta/adjudicate`, `/api/v1/delta/escalate-case`, `/api/v1/delta/sources`, and `/api/v1/delta/log-report`.
+  - Added unit test suite `DeltaRescreeningTests.cs` verifying nationality weighting and threshold filtering (all 13 bulk tests passing).
 
 ---
 *Maintained by the EDITH Architecture & Compliance Engineering Team (v10.0).*

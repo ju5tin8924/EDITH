@@ -106,7 +106,8 @@ public sealed record CreateIamUserResponse(
     Services.IamUserDto User,
     string? GeneratedTemporaryPassword,
     string EmailStatus, // SENT, FAILED, SKIPPED
-    string? EmailError
+    string? EmailError,
+    string? InvitationToken = null
 );
 
 public sealed record ChangePasswordRequest(

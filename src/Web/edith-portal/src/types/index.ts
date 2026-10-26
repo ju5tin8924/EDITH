@@ -391,6 +391,7 @@ export interface CreateIamUserResponse {
   generatedTemporaryPassword?: string;
   emailStatus: 'SENT' | 'FAILED' | 'SKIPPED';
   emailError?: string;
+  invitationToken?: string;
 }
 
 export interface LoginResponse {
@@ -522,3 +523,66 @@ export interface AuditLogRecord {
   previousBlockHash: string;
   details: string;
 }
+
+// Notification & Webhook Admin Types
+export type NotificationChannelType = 'TEAMS' | 'EMAIL' | 'SMS' | 'WEBHOOK';
+export type NotificationSeverityTier = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+export type DeliveryLedgerStatus = 'DELIVERED' | 'DEAD_LETTER' | 'RETRYING' | 'PENDING';
+
+export interface NotificationRuleDto {
+  id: string;
+  name: string;
+  triggerEvent: string;
+  severity: NotificationSeverityTier;
+  channels: NotificationChannelType[];
+  shiftAware: boolean;
+  active: boolean;
+  targetEndpoint?: string;
+  fallbackRecipient?: string;
+  throttleMinutes?: number;
+  templateFormat?: 'ADAPTIVE_CARD' | 'HTML_EMAIL' | 'SMS_TEXT' | 'JSON_PAYLOAD';
+  lastDispatchedAt?: string;
+  dispatchCount?: number;
+}
+
+export interface DeliveryLedgerRecordDto {
+  id: string;
+  notificationRuleId?: string;
+  ruleName: string;
+  traceId: string;
+  channel: NotificationChannelType;
+  targetEndpoint: string;
+  deliveryStatus: DeliveryLedgerStatus;
+  attemptCount: number;
+  sentAt: string;
+  latencyMs: number;
+  httpStatus?: number;
+  errorMessage?: string;
+  payloadJson?: string;
+  signatureHex?: string;
+}
+
+export interface ShiftRosterScheduleDto {
+  id: string;
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  shiftName: 'APAC' | 'EMEA' | 'AMERICAS';
+  shiftStart: string; // e.g. "06:00"
+  shiftEnd: string;   // e.g. "14:00"
+  isOnDuty: boolean;
+  substituteUserId?: string;
+  substituteUserName?: string;
+}
+
+export interface InAppNotificationItemDto {
+  id: string;
+  timestamp: string;
+  title: string;
+  body: string;
+  caseRef?: string;
+  severity: NotificationSeverityTier;
+  read: boolean;
+  targetUrl: string;
+}
+

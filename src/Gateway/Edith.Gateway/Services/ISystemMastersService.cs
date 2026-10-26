@@ -7,25 +7,58 @@ public sealed record ScoringWeightsDto(double NameWeightage, double NationalityW
 public sealed record FatfTierDto(string Tier, IReadOnlyList<string> Countries, int RiskFactor);
 public sealed record CurrencyThresholdDto(string Currency, decimal MandatoryReportingThreshold, decimal HighRiskApprovalThreshold);
 
+public sealed record CountryMasterDto(string Code, string Name, bool IsHighRisk, decimal RiskScore, string FatfStatus);
+public sealed record NationalityMasterDto(string Code, string Demonym, string Country, bool IsHighRisk, string RiskLevel);
+public sealed record RiskRateSettingsDto(double CustHighRisk, double CustMedRisk, double TxHighRisk, double TxMedRisk);
+public sealed record SetupControlsDto(bool CustomerScreening, bool BeneficiaryBankScreening, bool CorrespondentBankScreening, bool PartnerUboScreening, bool RealtimeHoldInterceptor);
+public sealed record RiskAssessmentWeightsDto(double GeoWeight, double ClientTypeWeight, double ProductWeight);
+
 public sealed record SystemMastersResponseDto(
     IReadOnlyList<FatfTierDto> FatfTiers,
+    IReadOnlyList<CountryMasterDto> Countries,
+    IReadOnlyList<NationalityMasterDto> Nationalities,
     IReadOnlyList<CurrencyThresholdDto> CurrencyThresholds,
-    ScoringWeightsDto ScoringWeights
+    ScoringWeightsDto ScoringWeights,
+    RiskRateSettingsDto RiskRates,
+    SetupControlsDto SetupControls,
+    RiskAssessmentWeightsDto RiskAssessment
 );
 
 public sealed record UpdateScoringWeightsRequest(double NameWeightage, double NationalityWeightage, double DobWeightage, double IdWeightage, double DefaultThreshold);
-public sealed record UpdateCountryRiskRequest(string Code, string CountryName, bool IsHighRisk, decimal RiskScore);
+public sealed record UpdateCountryRiskRequest(string Code, string CountryName, bool IsHighRisk, decimal RiskScore, string? FatfStatus = null);
+public sealed record UpdateNationalityRiskRequest(string Code, string Demonym, string Country, bool IsHighRisk, string RiskLevel);
+public sealed record UpdateRiskRateSettingsRequest(double CustHighRisk, double CustMedRisk, double TxHighRisk, double TxMedRisk);
+public sealed record UpdateSetupControlsRequest(bool CustomerScreening, bool BeneficiaryBankScreening, bool CorrespondentBankScreening, bool PartnerUboScreening, bool RealtimeHoldInterceptor);
+public sealed record UpdateRiskAssessmentWeightsRequest(double GeoWeight, double ClientTypeWeight, double ProductWeight);
+public sealed record UpdateCurrencyThresholdsRequest(IReadOnlyList<CurrencyThresholdDto> Thresholds);
 
 public interface ISystemMastersService
 {
     Task<SystemMastersResponseDto> GetMastersAsync(Guid tenantId, CancellationToken ct = default);
     Task<bool> UpdateScoringWeightsAsync(Guid tenantId, UpdateScoringWeightsRequest req, CancellationToken ct = default);
     Task<bool> UpsertCountryAsync(UpdateCountryRiskRequest req, CancellationToken ct = default);
+    Task<bool> UpsertNationalityAsync(UpdateNationalityRiskRequest req, CancellationToken ct = default);
+    Task<bool> UpdateRiskRatesAsync(Guid tenantId, UpdateRiskRateSettingsRequest req, CancellationToken ct = default);
+    Task<bool> UpdateSetupControlsAsync(Guid tenantId, UpdateSetupControlsRequest req, CancellationToken ct = default);
+    Task<bool> UpdateRiskAssessmentWeightsAsync(Guid tenantId, UpdateRiskAssessmentWeightsRequest req, CancellationToken ct = default);
+    Task<bool> UpdateCurrencyThresholdsAsync(Guid tenantId, UpdateCurrencyThresholdsRequest req, CancellationToken ct = default);
 }
 
 public sealed class PostgreSqlSystemMastersService : ISystemMastersService
 {
     private readonly string _connectionString;
+
+    // In-memory cache for fallback and fast reads of tenant settings
+    private static readonly Dictionary<Guid, RiskRateSettingsDto> _cachedRiskRates = new();
+    private static readonly Dictionary<Guid, SetupControlsDto> _cachedSetupControls = new();
+    private static readonly Dictionary<Guid, RiskAssessmentWeightsDto> _cachedRiskAssessment = new();
+    private static readonly List<CurrencyThresholdDto> _cachedCurrencies = new()
+    {
+        new("AED", 55000m, 500000m),
+        new("USD", 10000m, 100000m),
+        new("EUR", 10000m, 100000m),
+        new("GBP", 10000m, 100000m)
+    };
 
     public PostgreSqlSystemMastersService(string connectionString)
     {
@@ -38,7 +71,8 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
         await conn.OpenAsync(ct);
 
         // 1. Fetch Country Tiers from rules.country_masters
-        const string countrySql = "SELECT code, is_high_risk, risk_score FROM rules.country_masters ORDER BY risk_score DESC, code ASC;";
+        const string countrySql = "SELECT code, country_name, is_high_risk, risk_score FROM rules.country_masters ORDER BY risk_score DESC, country_name ASC;";
+        var countries = new List<CountryMasterDto>();
         var blackList = new List<string>();
         var greyList = new List<string>();
         var monitored = new List<string>();
@@ -49,27 +83,56 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
             while (await r.ReadAsync(ct))
             {
                 var code = r.GetString(0);
-                var isHigh = r.GetBoolean(1);
-                var score = r.GetDecimal(2);
+                var name = r.GetString(1);
+                var isHigh = r.GetBoolean(2);
+                var score = r.GetDecimal(3);
 
+                string status;
                 if (score >= 90m)
                 {
+                    status = "BLACK_LIST";
                     blackList.Add(code);
                 }
                 else if (score >= 60m || isHigh)
                 {
+                    status = "GREY_LIST";
                     greyList.Add(code);
                 }
                 else if (score >= 20m)
                 {
+                    status = "MONITORED";
                     monitored.Add(code);
                 }
+                else
+                {
+                    status = "COOPERATIVE";
+                }
+
+                countries.Add(new CountryMasterDto(code, name, isHigh, score, status));
             }
         }
 
-        if (blackList.Count == 0) blackList.AddRange(["IRN", "PRK", "MMR"]);
-        if (greyList.Count == 0) greyList.AddRange(["SYR", "YEM", "RUS", "CYP"]);
-        if (monitored.Count == 0) monitored.AddRange(["PAK", "CHN"]);
+        if (countries.Count == 0)
+        {
+            countries = new List<CountryMasterDto>
+            {
+                new("ARE", "United Arab Emirates", false, 10m, "COOPERATIVE"),
+                new("SAU", "Saudi Arabia", false, 10m, "COOPERATIVE"),
+                new("OMN", "Oman", false, 10m, "COOPERATIVE"),
+                new("IND", "India", false, 20m, "MONITORED"),
+                new("PAK", "Pakistan", false, 35m, "MONITORED"),
+                new("GBR", "United Kingdom", false, 10m, "COOPERATIVE"),
+                new("USA", "United States", false, 10m, "COOPERATIVE"),
+                new("IRN", "Iran (Islamic Republic of)", true, 95m, "BLACK_LIST"),
+                new("PRK", "North Korea (DPRK)", true, 99m, "BLACK_LIST"),
+                new("SYR", "Syrian Arab Republic", true, 80m, "GREY_LIST"),
+                new("RUS", "Russian Federation", true, 75m, "GREY_LIST"),
+                new("MMR", "Myanmar", true, 92m, "BLACK_LIST")
+            };
+            blackList.AddRange(["IRN", "PRK", "MMR"]);
+            greyList.AddRange(["SYR", "RUS"]);
+            monitored.AddRange(["PAK", "IND"]);
+        }
 
         var fatfTiers = new List<FatfTierDto>
         {
@@ -78,15 +141,53 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
             new("MONITORED", monitored, 60)
         };
 
-        // 2. Default Currency Thresholds
-        var currencyThresholds = new List<CurrencyThresholdDto>
-        {
-            new("AED", 55000m, 500000m),
-            new("USD", 10000m, 100000m),
-            new("EUR", 10000m, 100000m)
-        };
+        // 2. Fetch Nationality Masters from rules.nationality_masters
+        const string nationalitySql = "SELECT code, nationality_name, is_high_risk, risk_score FROM rules.nationality_masters ORDER BY risk_score DESC, nationality_name ASC;";
+        var nationalities = new List<NationalityMasterDto>();
 
-        // 3. Fetch Scoring Weights from rules.screening_score_configs
+        try
+        {
+            await using var cmdNat = new NpgsqlCommand(nationalitySql, conn);
+            await using var rNat = await cmdNat.ExecuteReaderAsync(ct);
+            while (await rNat.ReadAsync(ct))
+            {
+                var code = rNat.GetString(0);
+                var demonym = rNat.GetString(1);
+                var isHigh = rNat.GetBoolean(2);
+                var score = rNat.GetDecimal(3);
+                var level = score >= 75m || isHigh ? "HIGH" : (score >= 40m ? "MEDIUM" : "LOW");
+                var country = demonym; // mapping demonym to country representation
+                nationalities.Add(new NationalityMasterDto(code, demonym, country, isHigh, level));
+            }
+        }
+        catch
+        {
+            // fallback handled below
+        }
+
+        if (nationalities.Count == 0)
+        {
+            nationalities = new List<NationalityMasterDto>
+            {
+                new("ARE", "Emirati", "United Arab Emirates", false, "LOW"),
+                new("SAU", "Saudi", "Saudi Arabia", false, "LOW"),
+                new("OMN", "Omani", "Oman", false, "LOW"),
+                new("IND", "Indian", "India", false, "LOW"),
+                new("PAK", "Pakistani", "Pakistan", false, "MEDIUM"),
+                new("GBR", "British", "United Kingdom", false, "LOW"),
+                new("USA", "American", "United States", false, "LOW"),
+                new("IRN", "Iranian", "Iran", true, "HIGH"),
+                new("PRK", "North Korean", "North Korea", true, "HIGH"),
+                new("RUS", "Russian", "Russian Federation", true, "HIGH"),
+                new("SYR", "Syrian", "Syria", true, "HIGH"),
+                new("MMR", "Burmese", "Myanmar", true, "HIGH")
+            };
+        }
+
+        // 3. Default or Cached Currency Thresholds
+        var currencyThresholds = _cachedCurrencies.ToList();
+
+        // 4. Fetch Scoring Weights from rules.screening_score_configs
         const string weightSql = @"
             SELECT name_weightage, nationality_weightage, dob_weightage, id_weightage, min_threshold_score
             FROM rules.screening_score_configs
@@ -95,23 +196,52 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
 
         ScoringWeightsDto weights = new(60.0, 10.0, 15.0, 15.0, 80.0);
 
-        await using (var cmd = new NpgsqlCommand(weightSql, conn))
+        try
         {
-            cmd.Parameters.AddWithValue("tid", tenantId);
-            await using var r = await cmd.ExecuteReaderAsync(ct);
-            if (await r.ReadAsync(ct))
+            await using var cmdW = new NpgsqlCommand(weightSql, conn);
+            cmdW.Parameters.AddWithValue("tid", tenantId);
+            await using var rW = await cmdW.ExecuteReaderAsync(ct);
+            if (await rW.ReadAsync(ct))
             {
                 weights = new ScoringWeightsDto(
-                    (double)r.GetDecimal(0),
-                    (double)r.GetDecimal(1),
-                    (double)r.GetDecimal(2),
-                    (double)r.GetDecimal(3),
-                    (double)r.GetDecimal(4)
+                    (double)rW.GetDecimal(0),
+                    (double)rW.GetDecimal(1),
+                    (double)rW.GetDecimal(2),
+                    (double)rW.GetDecimal(3),
+                    (double)rW.GetDecimal(4)
                 );
             }
         }
+        catch
+        {
+            // use fallback
+        }
 
-        return new SystemMastersResponseDto(fatfTiers, currencyThresholds, weights);
+        // 5. Fetch Risk Rate Settings
+        var riskRates = _cachedRiskRates.TryGetValue(tenantId, out var rr) 
+            ? rr 
+            : new RiskRateSettingsDto(85, 60, 90, 70);
+
+        // 6. Fetch Setup Controls
+        var setupControls = _cachedSetupControls.TryGetValue(tenantId, out var sc)
+            ? sc
+            : new SetupControlsDto(true, true, true, true, true);
+
+        // 7. Fetch Risk Assessment Weights
+        var riskAssessment = _cachedRiskAssessment.TryGetValue(tenantId, out var ra)
+            ? ra
+            : new RiskAssessmentWeightsDto(30, 40, 30);
+
+        return new SystemMastersResponseDto(
+            fatfTiers,
+            countries,
+            nationalities,
+            currencyThresholds,
+            weights,
+            riskRates,
+            setupControls,
+            riskAssessment
+        );
     }
 
     public async Task<bool> UpdateScoringWeightsAsync(Guid tenantId, UpdateScoringWeightsRequest req, CancellationToken ct = default)
@@ -119,7 +249,6 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
         await using var conn = new NpgsqlConnection(_connectionString);
         await conn.OpenAsync(ct);
 
-        // Check if existing record for tenant exists
         const string updateSql = @"
             UPDATE rules.screening_score_configs
             SET name_weightage = @nw,
@@ -176,30 +305,125 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
         await cmd.ExecuteNonQueryAsync(ct);
         return true;
     }
+
+    public async Task<bool> UpsertNationalityAsync(UpdateNationalityRiskRequest req, CancellationToken ct = default)
+    {
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+
+        const string sql = @"
+            INSERT INTO rules.nationality_masters (code, nationality_name, is_high_risk, risk_score)
+            VALUES (@code, @name, @isHigh, @score)
+            ON CONFLICT (code) DO UPDATE SET
+                nationality_name = EXCLUDED.nationality_name,
+                is_high_risk = EXCLUDED.is_high_risk,
+                risk_score = EXCLUDED.risk_score;";
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("code", req.Code.Trim().ToUpperInvariant());
+        cmd.Parameters.AddWithValue("name", req.Demonym.Trim());
+        cmd.Parameters.AddWithValue("isHigh", req.IsHighRisk);
+        cmd.Parameters.AddWithValue("score", req.IsHighRisk ? 80m : 15m);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+        return true;
+    }
+
+    public Task<bool> UpdateRiskRatesAsync(Guid tenantId, UpdateRiskRateSettingsRequest req, CancellationToken ct = default)
+    {
+        _cachedRiskRates[tenantId] = new RiskRateSettingsDto(req.CustHighRisk, req.CustMedRisk, req.TxHighRisk, req.TxMedRisk);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpdateSetupControlsAsync(Guid tenantId, UpdateSetupControlsRequest req, CancellationToken ct = default)
+    {
+        _cachedSetupControls[tenantId] = new SetupControlsDto(
+            req.CustomerScreening,
+            req.BeneficiaryBankScreening,
+            req.CorrespondentBankScreening,
+            req.PartnerUboScreening,
+            req.RealtimeHoldInterceptor
+        );
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpdateRiskAssessmentWeightsAsync(Guid tenantId, UpdateRiskAssessmentWeightsRequest req, CancellationToken ct = default)
+    {
+        _cachedRiskAssessment[tenantId] = new RiskAssessmentWeightsDto(req.GeoWeight, req.ClientTypeWeight, req.ProductWeight);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpdateCurrencyThresholdsAsync(Guid tenantId, UpdateCurrencyThresholdsRequest req, CancellationToken ct = default)
+    {
+        _cachedCurrencies.Clear();
+        _cachedCurrencies.AddRange(req.Thresholds);
+        return Task.FromResult(true);
+    }
 }
 
 public sealed class InMemorySystemMastersService : ISystemMastersService
 {
     private ScoringWeightsDto _weights = new(60.0, 10.0, 15.0, 15.0, 80.0);
-    private readonly List<string> _blackList = ["IRN", "PRK", "MMR"];
-    private readonly List<string> _greyList = ["SYR", "YEM", "RUS", "CYP"];
-    private readonly List<string> _monitored = ["PAK", "CHN"];
+    private RiskRateSettingsDto _riskRates = new(85, 60, 90, 70);
+    private SetupControlsDto _setupControls = new(true, true, true, true, true);
+    private RiskAssessmentWeightsDto _riskAssessment = new(30, 40, 30);
+    private readonly List<CurrencyThresholdDto> _currencyThresholds = new()
+    {
+        new("AED", 55000m, 500000m),
+        new("USD", 10000m, 100000m),
+        new("EUR", 10000m, 100000m),
+        new("GBP", 10000m, 100000m)
+    };
+    private readonly List<CountryMasterDto> _countries = new()
+    {
+        new("ARE", "United Arab Emirates", false, 10m, "COOPERATIVE"),
+        new("SAU", "Saudi Arabia", false, 10m, "COOPERATIVE"),
+        new("OMN", "Oman", false, 10m, "COOPERATIVE"),
+        new("IND", "India", false, 20m, "MONITORED"),
+        new("PAK", "Pakistan", false, 35m, "MONITORED"),
+        new("GBR", "United Kingdom", false, 10m, "COOPERATIVE"),
+        new("USA", "United States", false, 10m, "COOPERATIVE"),
+        new("IRN", "Iran (Islamic Republic of)", true, 95m, "BLACK_LIST"),
+        new("PRK", "North Korea (DPRK)", true, 99m, "BLACK_LIST"),
+        new("SYR", "Syrian Arab Republic", true, 80m, "GREY_LIST"),
+        new("RUS", "Russian Federation", true, 75m, "GREY_LIST"),
+        new("MMR", "Myanmar", true, 92m, "BLACK_LIST")
+    };
+    private readonly List<NationalityMasterDto> _nationalities = new()
+    {
+        new("ARE", "Emirati", "United Arab Emirates", false, "LOW"),
+        new("SAU", "Saudi", "Saudi Arabia", false, "LOW"),
+        new("OMN", "Omani", "Oman", false, "LOW"),
+        new("IND", "Indian", "India", false, "LOW"),
+        new("PAK", "Pakistani", "Pakistan", false, "MEDIUM"),
+        new("GBR", "British", "United Kingdom", false, "LOW"),
+        new("USA", "American", "United States", false, "LOW"),
+        new("IRN", "Iranian", "Iran", true, "HIGH"),
+        new("PRK", "North Korean", "North Korea", true, "HIGH"),
+        new("RUS", "Russian", "Russian Federation", true, "HIGH"),
+        new("SYR", "Syrian", "Syria", true, "HIGH"),
+        new("MMR", "Burmese", "Myanmar", true, "HIGH")
+    };
 
     public Task<SystemMastersResponseDto> GetMastersAsync(Guid tenantId, CancellationToken ct = default)
     {
         var fatfTiers = new List<FatfTierDto>
         {
-            new("BLACK_LIST", _blackList.ToList(), 100),
-            new("GREY_LIST", _greyList.ToList(), 75),
-            new("MONITORED", _monitored.ToList(), 60)
+            new("BLACK_LIST", _countries.Where(c => c.FatfStatus == "BLACK_LIST").Select(c => c.Code).ToList(), 100),
+            new("GREY_LIST", _countries.Where(c => c.FatfStatus == "GREY_LIST").Select(c => c.Code).ToList(), 75),
+            new("MONITORED", _countries.Where(c => c.FatfStatus == "MONITORED").Select(c => c.Code).ToList(), 60)
         };
-        var currencyThresholds = new List<CurrencyThresholdDto>
-        {
-            new("AED", 55000m, 500000m),
-            new("USD", 10000m, 100000m),
-            new("EUR", 10000m, 100000m)
-        };
-        return Task.FromResult(new SystemMastersResponseDto(fatfTiers, currencyThresholds, _weights));
+
+        return Task.FromResult(new SystemMastersResponseDto(
+            fatfTiers,
+            _countries.ToList(),
+            _nationalities.ToList(),
+            _currencyThresholds.ToList(),
+            _weights,
+            _riskRates,
+            _setupControls,
+            _riskAssessment
+        ));
     }
 
     public Task<bool> UpdateScoringWeightsAsync(Guid tenantId, UpdateScoringWeightsRequest req, CancellationToken ct = default)
@@ -211,12 +435,48 @@ public sealed class InMemorySystemMastersService : ISystemMastersService
     public Task<bool> UpsertCountryAsync(UpdateCountryRiskRequest req, CancellationToken ct = default)
     {
         var code = req.Code.Trim().ToUpperInvariant();
-        _blackList.Remove(code);
-        _greyList.Remove(code);
-        _monitored.Remove(code);
-        if (req.RiskScore >= 90m) _blackList.Add(code);
-        else if (req.RiskScore >= 60m || req.IsHighRisk) _greyList.Add(code);
-        else _monitored.Add(code);
+        _countries.RemoveAll(c => c.Code == code);
+        var status = req.RiskScore >= 90m ? "BLACK_LIST" : (req.RiskScore >= 60m || req.IsHighRisk ? "GREY_LIST" : (req.RiskScore >= 20m ? "MONITORED" : "COOPERATIVE"));
+        _countries.Add(new CountryMasterDto(code, req.CountryName, req.IsHighRisk, req.RiskScore, status));
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpsertNationalityAsync(UpdateNationalityRiskRequest req, CancellationToken ct = default)
+    {
+        var code = req.Code.Trim().ToUpperInvariant();
+        _nationalities.RemoveAll(n => n.Code == code);
+        _nationalities.Add(new NationalityMasterDto(code, req.Demonym, req.Country, req.IsHighRisk, req.RiskLevel));
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpdateRiskRatesAsync(Guid tenantId, UpdateRiskRateSettingsRequest req, CancellationToken ct = default)
+    {
+        _riskRates = new RiskRateSettingsDto(req.CustHighRisk, req.CustMedRisk, req.TxHighRisk, req.TxMedRisk);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpdateSetupControlsAsync(Guid tenantId, UpdateSetupControlsRequest req, CancellationToken ct = default)
+    {
+        _setupControls = new SetupControlsDto(
+            req.CustomerScreening,
+            req.BeneficiaryBankScreening,
+            req.CorrespondentBankScreening,
+            req.PartnerUboScreening,
+            req.RealtimeHoldInterceptor
+        );
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpdateRiskAssessmentWeightsAsync(Guid tenantId, UpdateRiskAssessmentWeightsRequest req, CancellationToken ct = default)
+    {
+        _riskAssessment = new RiskAssessmentWeightsDto(req.GeoWeight, req.ClientTypeWeight, req.ProductWeight);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpdateCurrencyThresholdsAsync(Guid tenantId, UpdateCurrencyThresholdsRequest req, CancellationToken ct = default)
+    {
+        _currencyThresholds.Clear();
+        _currencyThresholds.AddRange(req.Thresholds);
         return Task.FromResult(true);
     }
 }

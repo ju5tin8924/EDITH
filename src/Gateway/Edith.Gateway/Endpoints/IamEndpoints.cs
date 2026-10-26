@@ -451,7 +451,8 @@ public static class IamEndpoints
                 created,
                 rawPassword,
                 emailSent ? "SENT" : "FAILED",
-                emailError);
+                emailError,
+                token);
 
             return Results.Created($"/api/v1/iam/users/{created.Id}", response);
         }).AllowAnonymous();
@@ -486,7 +487,8 @@ public static class IamEndpoints
                 success = true,
                 emailStatus = emailSent ? "SENT" : "FAILED",
                 emailError,
-                temporaryPassword = tempPass
+                temporaryPassword = tempPass,
+                invitationToken = token
             });
         }).AllowAnonymous();
 
@@ -496,10 +498,18 @@ public static class IamEndpoints
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
+            [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
         {
             var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
             var updated = await iamService.UpdateUserAsync(tenantId, id, req, ct);
+            if (updated != null)
+            {
+                _ = auditService.RecordAuditEntryAsync(
+                    tenantId,
+                    new RecordAuditRequest("ADMIN", "IAM_USER_UPDATED", updated.Username, null, $"Role={updated.Role}, Active={updated.IsActive}, 2FA={updated.MfaEnabled}, Shift={updated.ShiftStatus}"),
+                    ct);
+            }
             return updated != null ? Results.Ok(updated) : Results.NotFound();
         }).AllowAnonymous();
 

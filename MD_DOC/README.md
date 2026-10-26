@@ -1,6 +1,11 @@
 ﻿# EDITH Platform — Master Documentation Catalog & Category Index
 
-**Project:** EDITH Next-Gen AML Intelligence Platform  
+> **ACTIVE PROMOTED RELEASE:** 👉 [**EDITH_Documentation_v10.1**](file:///F:/EDITH/MD_DOC/EDITH_Documentation_v10.1)  
+> **Release Pointer:** [EDITH_Documentation_CURRENT.txt](file:///F:/EDITH/MD_DOC/EDITH_Documentation_CURRENT.txt)  
+> **Release History:** [EDITH_Documentation_Release_History.md](file:///F:/EDITH/MD_DOC/EDITH_Documentation_Release_History.md)  
+> **Baseline Archive:** [EDITH_Documentation_v10.0](file:///F:/EDITH/MD_DOC/EDITH_Documentation_v10.0)  
+
+---**Project:** EDITH Next-Gen AML Intelligence Platform  
 **Target Environment:** .NET 10 LTS, React 19 Portal, PostgreSQL 17, OpenSearch 2.12 (Zero Redis)  
 **Applicable Regulations:** CBUAE AML/CFT Decree-Law No. (20) of 2018, Cabinet Decision No. (74) of 2020, FATF Recommendations 6, 7, 10 & 16, UNODC goAML v5.0  
 **Unified Documentation Version:** 10.0  

@@ -1,8 +1,23 @@
-import React, { useState } from 'react';
-import { Activity, Bell, RefreshCw, Terminal, Database, HardDrive } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { 
+  Activity, 
+  Bell, 
+  RefreshCw, 
+  Terminal, 
+  Database, 
+  HardDrive, 
+  X, 
+  CheckCheck, 
+  ShieldAlert, 
+  AlertTriangle, 
+  Info, 
+  BellRing,
+  ArrowRight
+} from 'lucide-react';
 import { EdithLogo } from './EdithLogo';
-import { getAuthHeaders } from '../services/api';
-import { UserRole } from '../types';
+import { getAuthHeaders, EdithApi } from '../services/api';
+import { UserRole, InAppNotificationItemDto } from '../types';
 
 interface HeaderProps {
   onOpenCommandPalette: () => void;
@@ -26,6 +41,39 @@ export const Header: React.FC<HeaderProps> = ({
   const [osLatency, setOsLatency] = useState(searchDbLatencyMs);
   const [dbOnline, setDbOnline] = useState(true);
   const [checking, setChecking] = useState(false);
+
+  const navigate = useNavigate();
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [inboxItems, setInboxItems] = useState<InAppNotificationItemDto[]>([]);
+  const [unreadCount, setUnreadCount] = useState(2);
+  const [filterTab, setFilterTab] = useState<'ALL' | 'UNREAD'>('ALL');
+
+  useEffect(() => {
+    EdithApi.fetchInAppNotifications()
+      .then(res => {
+        setInboxItems(res.items);
+        setUnreadCount(res.unreadCount);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleMarkAllRead = async () => {
+    await EdithApi.markAllNotificationsAsRead();
+    setInboxItems(prev => prev.map(item => ({ ...item, read: true })));
+    setUnreadCount(0);
+  };
+
+  const handleItemClick = async (item: InAppNotificationItemDto) => {
+    await EdithApi.markNotificationAsRead(item.id);
+    setInboxItems(prev => prev.map(i => (i.id === item.id ? { ...i, read: true } : i)));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+    setIsNotificationDrawerOpen(false);
+    navigate(item.targetUrl);
+  };
+
+  const filteredItems = filterTab === 'UNREAD' 
+    ? inboxItems.filter(i => !i.read) 
+    : inboxItems;
 
   const isAdmin = currentRole === 'SUPER_ADMIN' || currentRole === 'ADMIN';
   const isGovernance =
@@ -144,15 +192,192 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button 
             type="button"
-            title="Notifications"
-            className="relative w-7 h-7 flex items-center justify-center text-[#c5cae9] hover:text-white hover:bg-[#283593] rounded-lg transition-colors cursor-pointer"
+            onClick={() => setIsNotificationDrawerOpen(prev => !prev)}
+            title="Notifications & Live Alerts"
+            className={`relative w-7 h-7 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
+              isNotificationDrawerOpen ? 'bg-[#283593] text-white' : 'text-[#c5cae9] hover:text-white hover:bg-[#283593]'
+            }`}
           >
             <Bell className="w-3.5 h-3.5" />
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-critical animate-ping" />
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-critical" />
+            {unreadCount > 0 && (
+              <>
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-critical animate-ping" />
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-critical" />
+              </>
+            )}
           </button>
         </div>
       </div>
+
+      {/* Global In-App Notification Center Flyout Drawer */}
+      {isNotificationDrawerOpen && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/40 z-50 backdrop-blur-xs transition-opacity"
+            onClick={() => setIsNotificationDrawerOpen(false)}
+          />
+          <div className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-surface text-ink z-50 shadow-2xl border-l border-border flex flex-col font-sans animate-in slide-in-from-right duration-200">
+            {/* Drawer Header */}
+            <div className="p-4 bg-[#1a237e] text-white flex items-center justify-between border-b border-[#283593]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#121858] border border-[#7986cb]/40 flex items-center justify-center">
+                  <BellRing className="w-4 h-4 text-accent" />
+                </div>
+                <div>
+                  <div className="font-bold text-sm tracking-wide flex items-center gap-2">
+                    <span>Alert Center</span>
+                    {unreadCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-critical text-white">
+                        {unreadCount} Unread
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-[#9fa8da] font-mono">Live AML & Webhook Feeds</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleMarkAllRead}
+                    title="Mark all as read"
+                    className="p-1.5 rounded hover:bg-[#283593] text-[#c5cae9] hover:text-white transition cursor-pointer"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsNotificationDrawerOpen(false)}
+                  className="p-1.5 rounded hover:bg-[#283593] text-[#c5cae9] hover:text-white transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Subheader Filter Tabs & Quick Actions */}
+            <div className="p-3 bg-surface-muted border-b border-border flex items-center justify-between text-xs font-mono">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setFilterTab('ALL')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                    filterTab === 'ALL'
+                      ? 'bg-primary text-white'
+                      : 'text-muted hover:text-ink hover:bg-surface'
+                  }`}
+                >
+                  All ({inboxItems.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterTab('UNREAD')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                    filterTab === 'UNREAD'
+                      ? 'bg-primary text-white'
+                      : 'text-muted hover:text-ink hover:bg-surface'
+                  }`}
+                >
+                  Unread ({unreadCount})
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNotificationDrawerOpen(false);
+                  navigate('/notifications');
+                }}
+                className="text-primary hover:underline flex items-center gap-1 text-[11px] font-bold cursor-pointer"
+              >
+                <span>Admin Console</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Notification Stream List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+              {filteredItems.length === 0 ? (
+                <div className="text-center py-12 text-muted text-xs space-y-2">
+                  <CheckCheck className="w-8 h-8 mx-auto text-accent opacity-50" />
+                  <div>No notifications to display</div>
+                </div>
+              ) : (
+                filteredItems.map(item => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleItemClick(item)}
+                    className={`p-3.5 rounded-xl border text-xs transition cursor-pointer relative ${
+                      item.read
+                        ? 'bg-surface border-border hover:border-primary/50'
+                        : 'bg-primary/5 border-primary/40 shadow-xs hover:border-primary'
+                    }`}
+                  >
+                    {!item.read && (
+                      <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-primary" />
+                    )}
+
+                    <div className="flex items-start gap-2.5">
+                      <div className="mt-0.5 shrink-0">
+                        {item.severity === 'CRITICAL' ? (
+                          <div className="p-1 rounded bg-critical/10 text-critical border border-critical/30">
+                            <ShieldAlert className="w-4 h-4" />
+                          </div>
+                        ) : item.severity === 'HIGH' ? (
+                          <div className="p-1 rounded bg-warning/10 text-warning border border-warning/30">
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <div className="p-1 rounded bg-primary/10 text-primary border border-primary/30">
+                            <Info className="w-4 h-4" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1 flex-1 pr-4">
+                        <div className="font-bold text-ink flex items-center gap-1.5">
+                          <span>{item.title}</span>
+                        </div>
+                        <div className="text-muted text-[11px] leading-relaxed">
+                          {item.body}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 text-[10px] font-mono text-muted">
+                          {item.caseRef ? (
+                            <span className="font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20">
+                              {item.caseRef}
+                            </span>
+                          ) : (
+                            <span />
+                          )}
+                          <span>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-3 bg-surface border-t border-border flex items-center justify-between text-[11px] font-mono text-muted">
+              <span>Shift Routing: Active (On-Duty Roster)</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNotificationDrawerOpen(false);
+                  navigate('/notifications');
+                }}
+                className="text-primary hover:underline font-bold"
+              >
+                Manage Rules & DLQ &rarr;
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </header>
   );
 };

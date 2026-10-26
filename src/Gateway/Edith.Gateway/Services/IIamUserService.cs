@@ -34,6 +34,8 @@ public sealed record CreateIamUserRequest(
 );
 
 public sealed record UpdateIamUserRequest(
+    string? FullName = null,
+    string? Department = null,
     string? Role = null,
     Guid? GroupId = null,
     bool? IsActive = null,
@@ -441,6 +443,8 @@ public sealed class InMemoryIamUserService : IIamUserService
 
         var updated = existing with
         {
+            FullName = !string.IsNullOrWhiteSpace(req.FullName) ? req.FullName.Trim() : existing.FullName,
+            Department = !string.IsNullOrWhiteSpace(req.Department) ? req.Department.Trim() : existing.Department,
             Role = !string.IsNullOrWhiteSpace(req.Role) ? req.Role.Trim().ToUpperInvariant() : existing.Role,
             GroupId = req.GroupId ?? existing.GroupId,
             IsActive = req.IsActive ?? existing.IsActive,
@@ -448,6 +452,12 @@ public sealed class InMemoryIamUserService : IIamUserService
             MfaEnabled = req.MfaEnabled ?? existing.MfaEnabled,
             MustChangePassword = req.MustChangePassword ?? existing.MustChangePassword
         };
+
+        if (req.MfaEnabled == false)
+        {
+            _mfaSecrets.TryRemove(userId, out _);
+            _recoveryCodeHashes.TryRemove(userId, out _);
+        }
 
         _users[userId] = updated;
 
@@ -828,6 +838,21 @@ public sealed class PostgreSqlIamUserService : IIamUserService
         var sqlBuilder = new StringBuilder("UPDATE core.users SET ");
         var hasField = false;
 
+        if (!string.IsNullOrWhiteSpace(req.FullName))
+        {
+            sqlBuilder.Append("full_name = @fn, ");
+            hasField = true;
+        }
+        if (!string.IsNullOrWhiteSpace(req.Department))
+        {
+            sqlBuilder.Append("department = @dept, ");
+            hasField = true;
+        }
+        if (!string.IsNullOrWhiteSpace(req.ShiftStatus))
+        {
+            sqlBuilder.Append("shift_status = @shift, ");
+            hasField = true;
+        }
         if (req.Role != null)
         {
             sqlBuilder.Append("role = @role, ");
@@ -845,7 +870,14 @@ public sealed class PostgreSqlIamUserService : IIamUserService
         }
         if (req.MfaEnabled.HasValue)
         {
-            sqlBuilder.Append("mfa_enabled = @mfa, ");
+            if (req.MfaEnabled.Value == false)
+            {
+                sqlBuilder.Append("mfa_enabled = false, mfa_secret = NULL, mfa_enrolled_at = NULL, ");
+            }
+            else
+            {
+                sqlBuilder.Append("mfa_enabled = @mfa, ");
+            }
             hasField = true;
         }
         if (req.MustChangePassword.HasValue)
@@ -866,10 +898,13 @@ public sealed class PostgreSqlIamUserService : IIamUserService
             cmd.Parameters.AddWithValue("id", userId);
             cmd.Parameters.AddWithValue("tid", tenantId);
 
+            if (!string.IsNullOrWhiteSpace(req.FullName)) cmd.Parameters.AddWithValue("fn", req.FullName.Trim());
+            if (!string.IsNullOrWhiteSpace(req.Department)) cmd.Parameters.AddWithValue("dept", req.Department.Trim());
+            if (!string.IsNullOrWhiteSpace(req.ShiftStatus)) cmd.Parameters.AddWithValue("shift", req.ShiftStatus.Trim().ToUpperInvariant());
             if (req.Role != null) cmd.Parameters.AddWithValue("role", req.Role.Trim().ToUpperInvariant());
             if (req.GroupId != null) cmd.Parameters.AddWithValue("gid", req.GroupId.Value);
             if (req.IsActive.HasValue) cmd.Parameters.AddWithValue("active", req.IsActive.Value);
-            if (req.MfaEnabled.HasValue) cmd.Parameters.AddWithValue("mfa", req.MfaEnabled.Value);
+            if (req.MfaEnabled.HasValue && req.MfaEnabled.Value) cmd.Parameters.AddWithValue("mfa", true);
             if (req.MustChangePassword.HasValue) cmd.Parameters.AddWithValue("mustChange", req.MustChangePassword.Value);
             if (!string.IsNullOrWhiteSpace(req.Password)) cmd.Parameters.AddWithValue("phash", IamPasswordHasher.HashPassword(req.Password));
 

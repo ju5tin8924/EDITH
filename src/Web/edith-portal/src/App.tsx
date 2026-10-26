@@ -144,6 +144,7 @@ export const AppContent: React.FC<AppContentProps> = ({ onLogout, session, onRol
             <Route path="/settings/screening-score" element={<SystemMastersView initialTab="SCREENING_SCORE" />} />
             <Route path="/settings/setup-control" element={<SystemMastersView initialTab="SETUP_CONTROL" />} />
             <Route path="/settings/risk-assessment" element={<SystemMastersView initialTab="RISK_ASSESSMENT" />} />
+            <Route path="/settings/currencies" element={<SystemMastersView initialTab="CURRENCIES" />} />
             <Route path="/settings/change-password" element={<SystemMastersView initialTab="CHANGE_PASSWORD" />} />
             <Route path="/iam" element={<IamAccessView initialTab="USERS" />} />
 
@@ -151,6 +152,7 @@ export const AppContent: React.FC<AppContentProps> = ({ onLogout, session, onRol
             <Route path="/master" element={<SystemMastersView initialTab="COUNTRIES" />} />
             <Route path="/master/country" element={<SystemMastersView initialTab="COUNTRIES" />} />
             <Route path="/master/nationality" element={<SystemMastersView initialTab="NATIONALITIES" />} />
+            <Route path="/master/currencies" element={<SystemMastersView initialTab="CURRENCIES" />} />
             <Route path="/master/unblock-customer" element={<SystemMastersView initialTab="UNBLOCK_CUSTOMER" />} />
 
             {/* 10. Authorization */}

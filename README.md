@@ -5,7 +5,8 @@
 [![Database](https://img.shields.io/badge/PostgreSQL-17%20Enterprise-336791.svg?style=flat-square)](src/Database/Edith.Database.Migrator/)
 [![Search](https://img.shields.io/badge/OpenSearch-2.12%20Phonetic%20Index-005EB8.svg?style=flat-square)](src/Screening/Edith.Screening.Core/)
 [![Frontend](https://img.shields.io/badge/React-19%20%7C%20Vite%20%7C%20Tailwind-06B6D4.svg?style=flat-square)](src/Web/edith-portal/)
-[![Zero Redis](https://img.shields.io/badge/Architecture-Zero%20Redis%20Dependency-brightgreen.svg?style=flat-square)](MD_DOC/03_Technical_Architecture_and_Database/EDITH_Master_Specification_v10.0.md)
+[![Documentation](https://img.shields.io/badge/Documentation-v10.1%20Promoted-blue.svg?style=flat-square)](MD_DOC/EDITH_Documentation_v10.1/)
+[![Zero Redis](https://img.shields.io/badge/Architecture-Zero%20Redis%20Dependency-brightgreen.svg?style=flat-square)](MD_DOC/EDITH_Documentation_v10.1/03_Technical_Architecture_and_Database/EDITH_Master_Specification_v10.1.md)
 [![Screening Latency](https://img.shields.io/badge/Screening%20P99-8.4ms-06B6D4.svg?style=flat-square)](tests/Edith.Performance.Benchmark/)
 
 EDITH is a high-velocity, cloud-native Anti-Money Laundering (AML) and Counter-Terrorist Financing (CTF) intelligence platform engineered for Tier-1 financial institutions, digital banks, exchange houses, and international payment networks.

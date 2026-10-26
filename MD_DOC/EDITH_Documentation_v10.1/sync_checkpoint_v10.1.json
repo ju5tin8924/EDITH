@@ -1,0 +1,63 @@
+{
+  "release_version": "v10.1",
+  "baseline_release": "v10.0",
+  "synchronization_timestamp": "2026-10-26T09:58:00Z",
+  "change_register": "04_Operations_and_Deployment/TODO_v10.1.md",
+  "processed_todo_phases": [
+    "Phase 1: Wire Customer KYC 360 to PostgreSQL",
+    "Phase 2: Wire System Masters & Scoring Weights to PostgreSQL",
+    "Phase 3: Wire WORM Immutable Audit Ledger to PostgreSQL",
+    "Phase 4: Multipart Bulk Screening File Upload Pipeline",
+    "Phase 5: Live Delta Rescreening with Database Persistence",
+    "Phase 6: Single Entity & Transaction Screening Console Modernization",
+    "Phase 7: Single Entity Recommended Enhancements",
+    "Phase 8: Multi-tenant IAM User & Group Administration",
+    "Phase 9: CBS Outbound Webhooks & Reliability",
+    "Phase 10: Searches Module Advanced UX & Engine Modernization",
+    "Phase 11: Single Entity Enterprise Workflow Modernization",
+    "Phase 12: Case Workspace Investigation Canvas Workflow & UX Modernization",
+    "Phase 13: EDITH Eagle SVG Brand Identity, Animated Loader & Role-Gated Enterprise Dashboard",
+    "Phase 14: Customer KYC 360 & EDD Dossier Workflow, UX & Feature Modernization",
+    "Phase 15: AML Rule Builder & Sandbox Workflow, UX & Feature Modernization",
+    "Phase 16: AML Rule Backtesting Sandbox & Calibration Engine Modernization",
+    "Phase 17: Regulatory Reports, All 14 PDF Reports & WORM Audit Ledger Modernization",
+    "Phase 18: Notification Admin & Webhook Reliability Modernization",
+    "Phase 19: IAM Access System Workflow, UX/UI & Enterprise Security Modernization",
+    "Phase 20: System Masters & Calibration Hub Workflow, UX/UI & Feature Modernization",
+    "Phase 21: Delta Rescreening Workflow, UX/UI & System Modernization"
+  ],
+  "affected_documents": [
+    "README_v10.1.md",
+    "README.md",
+    "sync_to_gdrive_v10.1.ps1",
+    "sync_to_gdrive.ps1",
+    "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.1.md",
+    "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.1.html",
+    "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.1.pdf",
+    "02_Product_and_Requirements/EDITH_Master_PRD_v10.1.md",
+    "02_Product_and_Requirements/EDITH_Modules_Workflows_and_Pages_v10.1.md",
+    "02_Product_and_Requirements/EDITH_END_TO_END_WORKPLAN_v10.1.md",
+    "03_Technical_Architecture_and_Database/EDITH_Master_Specification_v10.1.md",
+    "03_Technical_Architecture_and_Database/database_v10.1.md",
+    "04_Operations_and_Deployment/CREDENTIALS_v10.1.md",
+    "04_Operations_and_Deployment/HOW_TO_RUN_v10.1.md",
+    "04_Operations_and_Deployment/TODO_v10.1.md"
+  ],
+  "verification_results": {
+    "total_test_projects": 10,
+    "total_test_cases_in_suite": 103,
+    "offline_unit_and_benchmark_tests_passed": 92,
+    "docker_dependent_integration_tests": 11,
+    "docker_service_status": "Daemon stopped after desktop restart; Gateway integration tests require PostgreSQL container on :5432",
+    "ddl_tables_count": 39,
+    "postgresql_schemas_count": 5,
+    "frontend_build_status": "tsc -b && vite build clean with 0 errors"
+  },
+  "outstanding_discrepancies": [],
+  "generated_artifacts": {
+    "html": "Generated and validated (01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.1.html)",
+    "pdf": "Compiled via Google Chrome headless=new (01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.1.pdf, 442 KB)",
+    "zip": "Staged for generation (EDITH_Documentation_Library_v10.1.zip)"
+  },
+  "validation_status": "VALIDATED"
+}
