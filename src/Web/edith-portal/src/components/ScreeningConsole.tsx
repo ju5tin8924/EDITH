@@ -233,6 +233,9 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
       };
       const res = await EdithApi.screenTransaction(payload);
       setResult(res);
+      setStatusMessage(null);
+    } catch (err: any) {
+      setStatusMessage(`Screening evaluation failed: ${err.message || 'Unknown network error'}`);
     } finally {
       setLoading(false);
     }

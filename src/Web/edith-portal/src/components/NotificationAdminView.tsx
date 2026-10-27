@@ -94,8 +94,8 @@ export const NotificationAdminView: React.FC = () => {
       }
       setLedgers(fetchedLedgers);
       setShifts(fetchedShifts);
-    } catch {
-      setStatusBanner('Loaded offline fallback notification configurations.');
+    } catch (err: any) {
+      setStatusBanner(`Failed to load notification configurations: ${err.message || 'Server error'}`);
     } finally {
       setLoading(false);
     }

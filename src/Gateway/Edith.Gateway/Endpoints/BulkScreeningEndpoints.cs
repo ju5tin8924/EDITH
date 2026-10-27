@@ -124,10 +124,21 @@ public static class BulkScreeningEndpoints
                 return Results.BadRequest(new { error = "NoFileUploaded", message = "Please select a valid CSV or JSON file to upload." });
             }
 
+            const long maxFileSize = 25 * 1024 * 1024; // 25 MB max limit to protect against OOM / DoS
+            if (file.Length > maxFileSize)
+            {
+                return Results.BadRequest(new { error = "FileTooLarge", message = "Uploaded file exceeds the maximum permitted size of 25MB." });
+            }
+
             var tenantId = ResolveTenant(tenantHeader);
             var jobId = Guid.NewGuid();
             var fileName = file.FileName;
             var format = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+
+            if (format != "csv" && format != "json")
+            {
+                return Results.BadRequest(new { error = "UnsupportedFormat", message = "Only CSV and JSON bulk screening file formats are supported." });
+            }
 
             var validRecords = new List<AmlEntityRecord>();
             var skippedRecords = new List<AmlEntityRecord>();

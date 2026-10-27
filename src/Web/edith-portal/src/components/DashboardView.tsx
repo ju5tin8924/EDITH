@@ -141,75 +141,13 @@ interface WireEvent {
   };
 }
 
-const LIVE_WIRE_EVENTS: WireEvent[] = [
-  {
-    id: 'EVT-901',
-    time: '14:22:01',
-    tx: 'TX-2026-9921448',
-    corridor: 'UAE (AE) -> Iran (IR)',
-    amount: 'USD 450,000',
-    party: 'Viktor Anatolyevich Bout',
-    score: 96.4,
-    action: 'HELD_FOR_CASE',
-    swiftType: 'MT103 / pacs.008',
-    originatorBic: 'ADCBAEAAXXX',
-    beneficiaryBic: 'BMJIIRTHXXX',
-    matchedList: 'OFAC SDN #7192 / UNSC 1988',
-    passScores: { exactHash: 100, phoneticArabic: 98.2, jaroToken: 96.4, compositeId: 95.0, whitelistSuppressed: false }
-  },
-  {
-    id: 'EVT-902',
-    time: '14:21:49',
-    tx: 'TX-2026-9921447',
-    corridor: 'UAE (AE) -> Russia (RU)',
-    amount: 'AED 850,000',
-    party: 'Caspian Petrochem Trading LLC',
-    score: 88.2,
-    action: 'HELD_FOR_CASE',
-    swiftType: 'MT202COV',
-    originatorBic: 'EBILAEADXXX',
-    beneficiaryBic: 'SABRRUMMXXX',
-    matchedList: 'EU Consolidated / OFAC SSI',
-    passScores: { exactHash: 0, phoneticArabic: 91.5, jaroToken: 89.4, compositeId: 88.2, whitelistSuppressed: false }
-  },
-  {
-    id: 'EVT-903',
-    time: '14:21:12',
-    tx: 'TX-2026-9921446',
-    corridor: 'UAE (AE) -> Syria (SY)',
-    amount: 'AED 610,000',
-    party: 'Al-Sham Logistics & Maritime',
-    score: 91.8,
-    action: 'HELD_FOR_CASE',
-    swiftType: 'MT103 / pacs.008',
-    originatorBic: 'FABAAEAAXXX',
-    beneficiaryBic: 'CBSYSYDAXXX',
-    matchedList: 'UAE Cabinet Decision No. 74 Local List',
-    passScores: { exactHash: 0, phoneticArabic: 94.8, jaroToken: 92.1, compositeId: 91.8, whitelistSuppressed: false }
-  },
-  {
-    id: 'EVT-904',
-    time: '14:20:54',
-    tx: 'TX-2026-9921445',
-    corridor: 'UAE (AE) -> Myanmar (MM)',
-    amount: 'AED 3,200',
-    party: 'Salem Mohammed Al-Mazrouei',
-    score: 12.0,
-    action: 'AUTO_CLEARED',
-    swiftType: 'MT103',
-    originatorBic: 'ADCBAEAAXXX',
-    beneficiaryBic: 'CBMMMYKYXXX',
-    matchedList: 'Cleared via Pass 5 Approved Whitelist #WL-409',
-    passScores: { exactHash: 0, phoneticArabic: 74.0, jaroToken: 68.5, compositeId: 12.0, whitelistSuppressed: true }
-  }
-];
-
 export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADMIN' }) => {
   const navigate = useNavigate();
-  const [openCasesCount, setOpenCasesCount] = useState(4);
-  const [criticalCasesCount, setCriticalCasesCount] = useState(2);
-  const [highCasesCount, setHighCasesCount] = useState(1);
-  const [screenedTotal, setScreenedTotal] = useState(68899);
+  const [openCasesCount, setOpenCasesCount] = useState(0);
+  const [criticalCasesCount, setCriticalCasesCount] = useState(0);
+  const [highCasesCount, setHighCasesCount] = useState(0);
+  const [screenedTotal, setScreenedTotal] = useState(0);
+  const [wireEvents, setWireEvents] = useState<WireEvent[]>([]);
   const [timeframe, setTimeframe] = useState<'1H' | '24H' | '7D'>('24H');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -255,19 +193,50 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
   }, []);
 
   const loadDashboardMetrics = () => {
-    EdithApi.fetchCases().then(cases => {
-      if (cases && cases.length > 0) {
-        setOpenCasesCount(cases.length);
-        setCriticalCasesCount(cases.filter(c => c.priority === 'CRITICAL').length);
-        setHighCasesCount(cases.filter(c => c.priority === 'HIGH').length);
-      }
-    });
-    EdithApi.fetchBulkJobs().then(jobs => {
-      if (jobs && jobs.length > 0) {
-        const total = jobs.reduce((acc, j) => acc + (j.totalRecords || 0), 0);
-        if (total > 0) setScreenedTotal(total);
-      }
-    });
+    EdithApi.fetchCases()
+      .then(cases => {
+        const list = cases || [];
+        setOpenCasesCount(list.length);
+        setCriticalCasesCount(list.filter(c => c.priority === 'CRITICAL').length);
+        setHighCasesCount(list.filter(c => c.priority === 'HIGH').length);
+        const mappedWires: WireEvent[] = list.map(c => ({
+          id: c.id,
+          time: new Date(c.createdAtUtc || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          tx: c.caseNumber,
+          corridor: 'AE -> INT',
+          amount: 'N/A',
+          party: c.primarySubjectName || 'Screened Entity',
+          score: c.riskScore || 0,
+          action: 'HELD_FOR_CASE',
+          swiftType: 'SWIFT MT103',
+          originatorBic: 'ADCBAEAAXXX',
+          beneficiaryBic: 'CORRESPXXX',
+          matchedList: 'Sanctions Watchlist',
+          passScores: {
+            exactHash: c.riskScore >= 95 ? 100 : 0,
+            phoneticArabic: c.riskScore || 0,
+            jaroToken: c.riskScore || 0,
+            compositeId: c.riskScore || 0,
+            whitelistSuppressed: false
+          }
+        }));
+        setWireEvents(mappedWires);
+      })
+      .catch(() => {
+        setOpenCasesCount(0);
+        setCriticalCasesCount(0);
+        setHighCasesCount(0);
+        setWireEvents([]);
+      });
+
+    EdithApi.fetchBulkJobs()
+      .then(jobs => {
+        const total = (jobs || []).reduce((acc, j) => acc + (j.totalRecords || 0), 0);
+        setScreenedTotal(total);
+      })
+      .catch(() => {
+        setScreenedTotal(0);
+      });
   };
 
   const handleRefresh = () => {
@@ -334,8 +303,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
   const enabledCount = Object.values(visiblePanels).filter(Boolean).length;
 
   const filteredWires = selectedCorridor
-    ? LIVE_WIRE_EVENTS.filter(w => w.corridor === selectedCorridor)
-    : LIVE_WIRE_EVENTS;
+    ? wireEvents.filter(w => w.corridor === selectedCorridor)
+    : wireEvents;
 
   const pageMeta = usePageMeta(
     'Home / Dashboard',
@@ -1188,7 +1157,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
           </h2>
 
           <div className="space-y-2 font-mono text-xs">
-            {filteredWires.map((evt) => (
+            {filteredWires.length === 0 ? (
+              <div className="p-8 text-center text-muted font-sans text-xs bg-slate-50/50 rounded-xl border border-dashed border-border">
+                No active wire intercept events recorded. All recent transactions are cleared or awaiting screening.
+              </div>
+            ) : (
+              filteredWires.map((evt) => (
               <div 
                 key={evt.id} 
                 onClick={() => setInspectedWire(evt)}
@@ -1218,7 +1192,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
                   </span>
                 </div>
               </div>
-            ))}
+            )))}
           </div>
         </div>
       )}

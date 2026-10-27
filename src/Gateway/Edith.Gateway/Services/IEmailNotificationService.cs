@@ -46,8 +46,8 @@ public sealed class SmtpEmailNotificationService : IEmailNotificationService
         var smtpHost = _config["Smtp:Host"] ?? "smtp.gmail.com";
         var smtpPort = int.TryParse(_config["Smtp:Port"], out var p) ? p : 587;
         var enableSsl = bool.TryParse(_config["Smtp:EnableSsl"], out var ssl) ? ssl : true;
-        var smtpUser = _config["Smtp:Username"] ?? "justinkuriakose119@gmail.com";
-        var smtpPass = _config["Smtp:Password"] ?? "vnmv yjxw hypz yrbl";
+        var smtpUser = _config["Smtp:Username"] ?? Environment.GetEnvironmentVariable("EDITH_SMTP_USER") ?? "notifications@edith.aml.cloud";
+        var smtpPass = _config["Smtp:Password"] ?? Environment.GetEnvironmentVariable("EDITH_SMTP_PASSWORD") ?? "";
         var fromEmail = _config["Smtp:FromEmail"] ?? smtpUser;
         var fromName = _config["Smtp:FromName"] ?? "EDITH AML Alert Engine";
         var timeoutMs = int.TryParse(_config["Smtp:TimeoutMs"], out var t) ? t : 15000;

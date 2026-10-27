@@ -59,10 +59,9 @@ export const isAuthenticated = (): boolean => {
 };
 
 export const setSession = (session: UserSession) => {
-  const roleChanged = session.role !== currentSession.role || session.tenantId !== currentSession.tenantId;
   currentSession = {
     ...session,
-    token: session.token || (roleChanged ? `mock-jwt-token-${session.role}` : currentSession.token)
+    token: session.token || currentSession.token
   };
   localStorage.setItem('edith_session', JSON.stringify(currentSession));
 };
@@ -206,85 +205,6 @@ const DEFAULT_MENU_ITEMS: MenuItemEntitlement[] = [
   }
 ];
 
-function computeDeterministicHex(input: string): string {
-  let h1 = 0xdeadbeef ^ input.length;
-  let h2 = 0x41c6ce57 ^ input.length;
-  for (let i = 0; i < input.length; i++) {
-    const ch = input.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  const parts: string[] = [];
-  for (let round = 0; round < 8; round++) {
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-    parts.push((h1 >>> 0).toString(16).padStart(8, '0'));
-  }
-  return parts.join('');
-}
-
-const FALLBACK_AUDIT_CHAIN: AuditLogRecord[] = (() => {
-  const seeds = [
-    {
-      id: '1',
-      timestampUtc: '2026-10-13T08:00:00.000Z',
-      actor: 'System Initializer',
-      action: 'GENESIS_BLOCK_CREATION',
-      targetEntity: 'Platform Root',
-      caseNumber: undefined,
-      details: 'Initialized immutable WORM cryptographic audit ledger chain.'
-    },
-    {
-      id: '2',
-      timestampUtc: '2026-10-13T18:22:15.000Z',
-      actor: 'Zaid Al-Husseini (Compliance Officer)',
-      action: 'WHITELIST_AUTHORIZATION',
-      targetEntity: 'DHL Express UAE LLC',
-      caseNumber: undefined,
-      details: 'Approved statutory exemption under Pass 5 bypass policy for trusted logistics partner.'
-    },
-    {
-      id: '3',
-      timestampUtc: '2026-10-14T04:30:00.000Z',
-      actor: 'System Worker (MOD-SCRN-DELTA)',
-      action: 'NIGHTLY_DELTA_WATCHLIST_SYNC',
-      targetEntity: 'BATCH-2026-10-14-0200',
-      caseNumber: undefined,
-      details: 'Evaluated 47,618 customer profiles against nightly OFAC, UN, EU & WC/PEP delta feed.'
-    },
-    {
-      id: '4',
-      timestampUtc: '2026-10-14T06:48:10.000Z',
-      actor: 'Tariq Mansoor (Compliance Analyst)',
-      action: 'FALSE_POSITIVE_OVERRIDE',
-      targetEntity: 'Mohamed Al-Attar',
-      caseNumber: 'EDITH-CAS-2026-0041',
-      details: 'Divergent date of birth and passport confirmed via secondary KYC documents.'
-    },
-    {
-      id: '5',
-      timestampUtc: '2026-10-14T07:15:22.000Z',
-      actor: 'Fatima Al-Nuaimi (MLRO)',
-      action: 'ASSET_FREEZE_ORDER',
-      targetEntity: 'Viktor Anatolyevich Bout',
-      caseNumber: 'EDITH-CAS-2026-0042',
-      details: 'Asset freeze mandated under CBUAE AML Directive Art. 14 / UNSC Res 1521.'
-    }
-  ];
-  const chain: AuditLogRecord[] = [];
-  let prev = '0000000000000000000000000000000000000000000000000000000000000000';
-  for (const s of seeds) {
-    const hash = computeDeterministicHex(`${s.timestampUtc}|${s.actor}|${s.action}|${s.targetEntity}|${prev}`);
-    chain.push({
-      ...s,
-      sha256Hash: hash,
-      previousBlockHash: prev
-    });
-    prev = hash;
-  }
-  return chain;
-})();
-
 async function ensureJwtToken(): Promise<void> {
   if (!currentSession.token || !currentSession.token.startsWith('mock-')) return;
   try {
@@ -391,111 +311,65 @@ export const EdithApi = {
       idWeightage: request.idWeightage
     };
 
-    try {
-      const res = await fetch(`${API_BASE}/screen/transaction`, {
-        method: 'POST',
-        headers: {
-          ...getAuthHeaders(),
-          'Idempotency-Key': idempotencyKey
-        },
-        body: JSON.stringify(backendPayload)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const partyRole = beneficiary?.role || 'BENEFICIARY';
-        const partyName = beneficiary?.fullName || 'Unknown Party';
-        const topScore = Number(data.overallScore || 0);
-        const rawStatus = (data.decision || data.status || 'CLEARED') as string;
-        const uiDecision = rawStatus === 'HELD' && topScore >= 95 && (data.triggeredList?.includes('OFAC') || data.triggeredList?.includes('UN'))
-          ? 'BLOCKED'
-          : (rawStatus as 'CLEARED' | 'HELD' | 'BLOCKED');
-        
-        const threshold = request.minThresholdScore ?? 80;
-        const effectiveMatches = (data.matches || []).filter((m: any) => 
-          rawStatus === 'HELD' || rawStatus === 'BLOCKED' || (Number(m.score || 0) >= threshold)
-        );
-        const matchCount = (rawStatus === 'CLEARED' && !data.isWhitelisted) ? 0 : effectiveMatches.length;
-
-        return {
-          decision: uiDecision,
-          riskScore: topScore,
-          primaryHitReason: data.holdReason,
-          caseId: data.caseId,
-          caseNumber: data.caseNumber,
-          evaluationLatencyMs: data.latencyMs || Math.round(performance.now() - startTime),
-          matchCount: matchCount,
-          passLogs: data.passLogs,
-          isCached: false,
-          replayedFromIdempotency: !!data.idempotencyReplayed,
-          partyEvaluations: [
-            {
-              role: partyRole,
-              queryName: partyName,
-              matchFound: matchCount > 0,
-              maxScore: topScore,
-              matchedCandidates: ((rawStatus === 'CLEARED' && !data.isWhitelisted) ? [] : effectiveMatches).map((m: any) => ({
-                candidateId: m.matchedEntityId || 'SDN-001',
-                canonicalName: m.matchedEntityName,
-                matchedName: m.matchedEntityName,
-                category: (m.category || 'SANCTIONS'),
-                confidenceScore: m.score,
-                stringSimilarity: m.nameSimilarity ? m.nameSimilarity / 100 : 0.9,
-                phoneticSimilarity: m.phoneticSimilarity ? m.phoneticSimilarity / 100 : 1.0,
-                sanctionsList: m.sourceList || 'OFAC / UN',
-                isSuppressedByWhitelist: !!data.isWhitelisted,
-                designationDetails: m.matchDetails,
-                tokenBreakdown: [
-                  { queryToken: partyName.split(' ')[0] || '', candidateToken: m.matchedEntityName.split(' ')[0] || '', tokenScore: Math.round(m.nameSimilarity || 95), matchType: (m.nameSimilarity >= 99 ? 'EXACT' : 'FUZZY') }
-                ]
-              }))
-            }
-          ]
-        };
-      }
-    } catch {
-      reportOfflineFallback('transaction-screening');
+    const res = await fetch(`${API_BASE}/screen/transaction`, {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(),
+        'Idempotency-Key': idempotencyKey
+      },
+      body: JSON.stringify(backendPayload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Transaction screening failed (${res.status})`);
     }
-
-    const elapsed = Math.round(performance.now() - startTime) || 12;
-    const party = request.parties[0];
-    const isVictor = party?.fullName?.toLowerCase().includes('bout') || party?.fullName?.toLowerCase().includes('viktor');
+    const data = await res.json();
+    const partyRole = beneficiary?.role || 'BENEFICIARY';
+    const partyName = beneficiary?.fullName || 'Unknown Party';
+    const topScore = Number(data.overallScore || 0);
+    const rawStatus = (data.decision || data.status || 'CLEARED') as string;
+    const uiDecision = rawStatus === 'HELD' && topScore >= 95 && (data.triggeredList?.includes('OFAC') || data.triggeredList?.includes('UN'))
+      ? 'BLOCKED'
+      : (rawStatus as 'CLEARED' | 'HELD' | 'BLOCKED');
     
+    const threshold = request.minThresholdScore ?? 80;
+    const effectiveMatches = (data.matches || []).filter((m: any) => 
+      rawStatus === 'HELD' || rawStatus === 'BLOCKED' || (Number(m.score || 0) >= threshold)
+    );
+    const matchCount = (rawStatus === 'CLEARED' && !data.isWhitelisted) ? 0 : effectiveMatches.length;
+
     return {
-      decision: isVictor ? 'BLOCKED' : (request.amount > 100000 ? 'HELD' : 'CLEARED'),
-      riskScore: isVictor ? 96.4 : (request.amount > 100000 ? 74.2 : 12.0),
-      primaryHitReason: isVictor ? 'UN Security Council Resolution 1521 (Liberia) & OFAC SDN' : undefined,
-      caseId: isVictor ? 'c1111111-2222-3333-4444-555555555555' : undefined,
-      caseNumber: isVictor ? 'EDITH-CAS-2026-0042' : undefined,
-      evaluationLatencyMs: elapsed,
-      matchCount: isVictor ? 1 : 0,
+      decision: uiDecision,
+      riskScore: topScore,
+      primaryHitReason: data.holdReason,
+      caseId: data.caseId,
+      caseNumber: data.caseNumber,
+      evaluationLatencyMs: data.latencyMs || Math.round(performance.now() - startTime),
+      matchCount: matchCount,
+      passLogs: data.passLogs,
       isCached: false,
-      replayedFromIdempotency: false,
+      replayedFromIdempotency: !!data.idempotencyReplayed,
       partyEvaluations: [
         {
-          role: party ? party.role : 'BENEFICIARY',
-          queryName: party ? party.fullName : 'Unknown Party',
-          matchFound: isVictor,
-          maxScore: isVictor ? 96.4 : 15.0,
-          matchedCandidates: isVictor ? [
-            {
-              candidateId: 'SDN-UN-1521-99',
-              canonicalName: 'BOUT, Viktor Anatolyevich',
-              matchedName: 'Victor Bout',
-              category: 'SANCTIONS',
-              confidenceScore: 96.4,
-              stringSimilarity: 0.94,
-              phoneticSimilarity: 1.00,
-              sanctionsList: 'UN / OFAC / UAE Local Terror List',
-              isSuppressedByWhitelist: false,
-              dateOfBirth: '1967-01-13',
-              nationality: 'RU',
-              designationDetails: 'Arms trafficking, UN Security Council Resolution 1521 & 1532 sanctions.',
-              tokenBreakdown: [
-                { queryToken: 'VICTOR', candidateToken: 'VIKTOR', tokenScore: 94.0, matchType: 'FUZZY' },
-                { queryToken: 'BOUT', candidateToken: 'BOUT', tokenScore: 100.0, matchType: 'EXACT' }
-              ]
-            }
-          ] : []
+          role: partyRole,
+          queryName: partyName,
+          matchFound: matchCount > 0,
+          maxScore: topScore,
+          matchedCandidates: ((rawStatus === 'CLEARED' && !data.isWhitelisted) ? [] : effectiveMatches).map((m: any) => ({
+            candidateId: m.matchedEntityId || 'SDN-001',
+            canonicalName: m.matchedEntityName,
+            matchedName: m.matchedEntityName,
+            category: (m.category || 'SANCTIONS'),
+            confidenceScore: m.score,
+            stringSimilarity: m.nameSimilarity ? m.nameSimilarity / 100 : 0.9,
+            phoneticSimilarity: m.phoneticSimilarity ? m.phoneticSimilarity / 100 : 1.0,
+            sanctionsList: m.sourceList || 'OFAC / UN',
+            isSuppressedByWhitelist: !!data.isWhitelisted,
+            designationDetails: m.matchDetails,
+            tokenBreakdown: [
+              { queryToken: partyName.split(' ')[0] || '', candidateToken: m.matchedEntityName.split(' ')[0] || '', tokenScore: Math.round(m.nameSimilarity || 95), matchType: (m.nameSimilarity >= 99 ? 'EXACT' : 'FUZZY') }
+            ]
+          }))
         }
       ]
     };
@@ -583,26 +457,15 @@ export const EdithApi = {
 
   // Bulk screening
   async submitBulkJob(fileName: string, totalRows: number): Promise<BulkJobSummary> {
-    try {
-      const res = await fetch(`${API_BASE}/bulk/jobs`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ fileName, totalRows })
-      });
-      if (res.ok) return await res.json();
-    } catch {
-      reportOfflineFallback('bulk-jobs');
+    const res = await fetch(`${API_BASE}/bulk/jobs`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ fileName, totalRows })
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to submit bulk screening job: ${res.statusText}`);
     }
-    return {
-      jobId: `job-${Date.now().toString(36)}`,
-      fileName,
-      status: 'PROCESSING',
-      totalRecords: totalRows,
-      processedRecords: 0,
-      hitCount: 0,
-      percentComplete: 0,
-      startedAtUtc: new Date().toISOString()
-    };
+    return await res.json();
   },
 
   async uploadBulkFile(file: File, keepSkipped: boolean, skippedFormat: string): Promise<{
@@ -795,56 +658,16 @@ export const EdithApi = {
       };
     };
 
-    try {
-      const res = await fetch(`${API_BASE}/rules/backtest`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ ruleCode, ...draftOverrides })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return enrichBacktestResponse(data);
-      }
-    } catch {
-      // Fallback
-    }
-    return enrichBacktestResponse({
-      ruleCode,
-      datasetCohort: cohort,
-      simulatedTransactions: 1000,
-      triggeredAlerts: 18,
-      triggerRatePercent: 1.8,
-      falsePositiveRateEstimate: 14.2,
-      averageEvaluationLatencyUs: 112,
-      estimatedDailyAlerts: 180,
-      sampleTriggeredRefNos: ['SIM-TX-000014', 'SIM-TX-000042'],
-      sampleHits: [
-        {
-          transactionRefNo: 'SIM-TX-000014',
-          senderName: 'Al-Baraka General Trading LLC',
-          beneficiaryName: 'Khorasan Exchange Corp',
-          amount: 425000,
-          currency: 'AED',
-          corridor: 'AE -> IR',
-          triggerReason: 'Matched candidate rule criteria during simulation',
-          deltaStatus: 'NEWLY_CAPTURED',
-          groundTruthLabel: 'STR_FILED',
-          overlappingRules: []
-        },
-        {
-          transactionRefNo: 'SIM-TX-000042',
-          senderName: 'Gulf Oasis Commodities',
-          beneficiaryName: 'Damascus Silk Road Freight',
-          amount: 92000,
-          currency: 'AED',
-          corridor: 'AE -> SY',
-          triggerReason: 'High-risk corridor threshold breach',
-          deltaStatus: 'RETAINED',
-          groundTruthLabel: 'CLEARED_FP',
-          overlappingRules: ['RULE-FATF-GREY-001']
-        }
-      ]
+    const res = await fetch(`${API_BASE}/rules/backtest`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ ruleCode, ...draftOverrides })
     });
+    if (!res.ok) {
+      throw new Error(`Failed to execute rule backtest: ${res.statusText}`);
+    }
+    const data = await res.json();
+    return enrichBacktestResponse(data);
   },
 
   async simulateSandboxPortfolio(payload: {
@@ -862,194 +685,41 @@ export const EdithApi = {
       defaultThreshold: number;
     };
   }): Promise<SandboxSimulationResult> {
-    const cohort: BacktestDatasetCohort = payload.datasetCohort || 'STANDARD_MIX';
-    try {
-      const res = await fetch(`${API_BASE}/rules/sandbox/simulate`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) return await res.json();
-    } catch {
-      // Deterministic client-side portfolio projection fallback
+    const res = await fetch(`${API_BASE}/rules/sandbox/simulate`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to simulate sandbox portfolio: ${res.statusText}`);
     }
-
-    const base = payload.baselineWeights || {
-      nameWeightage: 60,
-      nationalityWeightage: 10,
-      dobWeightage: 15,
-      idWeightage: 15,
-      defaultThreshold: 80
-    };
-
-    const cohortFactor =
-      cohort === 'HIGH_RISK_CORRIDOR_SURGE'
-        ? 1.28
-        : cohort === 'SMURFING_RING_ATTACK'
-        ? 1.18
-        : cohort === 'VELOCITY_BURST_STRESS'
-        ? 1.22
-        : 1.0;
-
-    // Multi-factor effective sensitivity across all 4 weights + threshold
-    const secondaryWeightBoost = (payload.nationalityWeightage * 0.9 + payload.dobWeightage * 1.1 + payload.idWeightage * 1.25) / 45;
-    const nameNoiseFactor = Math.pow(payload.nameWeightage / 60, 1.15);
-    const thresholdFactor = Math.pow(80 / Math.max(50, payload.minThreshold), 1.65);
-
-    const baselineAlerts = Math.round(820 * cohortFactor);
-    const projectedAlerts = Math.max(
-      45,
-      Math.round(520 * cohortFactor * thresholdFactor * (0.72 * nameNoiseFactor + 0.28 / Math.max(0.5, secondaryWeightBoost)))
-    );
-
-    const netAlertDelta = projectedAlerts - baselineAlerts;
-    const fpReductionPercent = Number((((baselineAlerts - projectedAlerts) / baselineAlerts) * 100).toFixed(1));
-    const newlySuppressedAlerts = Math.max(0, baselineAlerts - projectedAlerts + Math.round(projectedAlerts * 0.08));
-    const newlyCapturedAlerts = Math.max(0, projectedAlerts - baselineAlerts + Math.round(projectedAlerts * 0.08));
-
-    const totalHistoricalStrs = cohort === 'HIGH_RISK_CORRIDOR_SURGE' ? 24 : 18;
-    const truePositivesRetained =
-      payload.minThreshold > 90
-        ? Math.max(12, totalHistoricalStrs - 3)
-        : payload.minThreshold > 86
-        ? totalHistoricalStrs - 1
-        : totalHistoricalStrs;
-
-    const b90 = Math.max(18, Math.round(projectedAlerts * 0.22));
-    const b80 = Math.max(40, Math.round(projectedAlerts * 0.78));
-    const b70 = Math.max(120, Math.round(340 * cohortFactor * (payload.minThreshold / 80)));
-    const b50 = Math.max(600, Math.round(1820 * cohortFactor));
-    const maxBand = Math.max(b90, b80, b70, b50, 1);
-
-    const offsets = [-10, -5, 0, 5, 10];
-    const thresholdSensitivity = offsets.map((off) => {
-      const stepT = Math.min(95, Math.max(60, payload.minThreshold + off));
-      const stepFactor = Math.pow(payload.minThreshold / stepT, 1.65);
-      const stepAlerts = Math.max(25, Math.round(projectedAlerts * stepFactor));
-      const stepStrs = stepT > 90 ? Math.max(11, totalHistoricalStrs - 3) : stepT > 85 ? totalHistoricalStrs - 1 : totalHistoricalStrs;
-      return {
-        threshold: stepT,
-        projectedAlerts: stepAlerts,
-        strRecallCount: stepStrs,
-        totalStrCount: totalHistoricalStrs,
-        isSelected: off === 0
-      };
-    });
-
-    const calcScore = (n: number, nat: number, dob: number, id: number, w: typeof payload) =>
-      Number(((n * w.nameWeightage + nat * w.nationalityWeightage + dob * w.dobWeightage + id * w.idWeightage) / 100).toFixed(1));
-
-    const rawSamples = [
-      { ref: 'ARC-2026-01014', name: 'Viktor Anatolyevich Bout', corridor: 'RU -> AE', n: 95, nat: 92, dob: 90, id: 88, gt: 'STR_CONFIRMED' },
-      { ref: 'ARC-2026-01089', name: 'Al-Baraka General Trading LLC', corridor: 'AE -> IR', n: 91, nat: 88, dob: 82, id: 86, gt: 'STR_CONFIRMED' },
-      { ref: 'ARC-2026-01142', name: 'Tariq Al-Mansoor (Homonym)', corridor: 'AE -> GB', n: 89, nat: 30, dob: 20, id: 10, gt: 'CLEARED_FP' },
-      { ref: 'ARC-2026-01205', name: 'Khorasan Exchange Corp', corridor: 'AE -> SY', n: 84, nat: 94, dob: 86, id: 92, gt: 'STR_CONFIRMED' },
-      { ref: 'ARC-2026-01278', name: 'Zayed Commercial Holdings', corridor: 'SA -> AE', n: 87, nat: 40, dob: 25, id: 15, gt: 'CLEARED_FP' },
-      { ref: 'ARC-2026-01319', name: 'Pyongyang Kwangmyong Trading', corridor: 'KP -> CN', n: 93, nat: 96, dob: 88, id: 90, gt: 'STR_CONFIRMED' }
-    ];
-
-    const sampleImpactedEntities = rawSamples.map((s) => {
-      const baseScore = Number(
-        ((s.n * base.nameWeightage + s.nat * base.nationalityWeightage + s.dob * base.dobWeightage + s.id * base.idWeightage) / 100).toFixed(1)
-      );
-      const simScore = calcScore(s.n, s.nat, s.dob, s.id, payload);
-      const wasHit = baseScore >= base.defaultThreshold;
-      const isHit = simScore >= payload.minThreshold;
-      return {
-        referenceId: s.ref,
-        entityName: s.name,
-        corridor: s.corridor,
-        baselineScore: baseScore,
-        simulatedScore: simScore,
-        nameMatchScore: s.n,
-        secondaryIdScore: Math.round((s.nat + s.dob + s.id) / 3),
-        deltaStatus: isHit && !wasHit ? 'NEWLY_CAPTURED' : !isHit && wasHit ? 'NEWLY_SUPPRESSED' : 'RETAINED_HIT',
-        groundTruth: s.gt
-      };
-    });
-
-    return {
-      datasetCohort: cohort,
-      evaluatedRecords: 50000,
-      projectedAlerts,
-      baselineAlerts,
-      netAlertDelta,
-      newlyCapturedAlerts,
-      newlySuppressedAlerts,
-      fpReductionPercent,
-      estimatedP99LatencyMs: 8.2,
-      truePositivesRetained,
-      totalHistoricalStrs,
-      falsePositivesSuppressed: Math.max(0, baselineAlerts - projectedAlerts),
-      activePortfolioRulesEvaluated: 6,
-      scoreBands: [
-        { band: '90 - 100% (High Confidence Hits)', count: b90, pct: Math.max(8, Math.round((b90 / maxBand) * 100)), color: 'bg-critical' },
-        { band: '80 - 89% (Actionable Case Threshold)', count: b80, pct: Math.max(14, Math.round((b80 / maxBand) * 100)), color: 'bg-warning' },
-        { band: '70 - 79% (Suppressed Gray Zone)', count: b70, pct: Math.max(22, Math.round((b70 / maxBand) * 100)), color: 'bg-primary' },
-        { band: '50 - 69% (Auto-Cleared Noise)', count: b50, pct: 100, color: 'bg-slate-400' }
-      ],
-      thresholdSensitivity,
-      sampleImpactedEntities
-    };
+    return await res.json();
   },
 
   // Addons
   async generateGoAmlXml(caseId: string): Promise<string> {
-    try {
-      const res = await fetch(`${API_BASE}/addons/goaml/export`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ caseId })
-      });
-      if (res.ok) return await res.text();
-    } catch {
-      // Fallback
+    const res = await fetch(`${API_BASE}/addons/goaml/export`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ caseId })
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to generate goAML XML for case ${caseId}: ${res.statusText}`);
     }
-    return `<?xml version="1.0" encoding="utf-8"?>
-<report xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="goAML_v5.xsd">
-  <rentity_id>CB_UAE_ADCB_001</rentity_id>
-  <submission_code>A</submission_code>
-  <report_code>STR</report_code>
-  <entity_reference>${caseId}</entity_reference>
-  <submission_date>${new Date().toISOString()}</submission_date>
-  <currency_code_local>AED</currency_code_local>
-  <reporting_person>
-    <first_name>Fatima</first_name>
-    <last_name>Al-Nuaimi</last_name>
-    <title>Senior AML Compliance Specialist</title>
-  </reporting_person>
-  <reason>Match against UN/OFAC Sanctions List with high confidence phonetic score 94.5%</reason>
-</report>`;
+    return await res.text();
   },
 
   async generateAiNarrative(caseId: string): Promise<string> {
-    try {
-      const res = await fetch(`${API_BASE}/addons/ai/narrative`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ caseId })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.narrative;
-      }
-    } catch {
-      // Fallback
+    const res = await fetch(`${API_BASE}/addons/ai/narrative`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ caseId })
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to generate AI narrative for case ${caseId}: ${res.statusText}`);
     }
-    return `1. EXECUTIVE SUMMARY:
-On ${new Date().toISOString().split('T')[0]}, transaction reference TX-2026-9921448 for the amount of USD 450,000.00 originating from UAE Account AE820330000001234567890 was intercepted by the EDITH Real-Time Screening Core.
-
-2. SUBJECT IDENTIFICATION:
-The designated beneficiary was identified as "Victor Bout", which triggered high-confidence fuzzy and phonetic matching (94.5%) against UN Security Council Resolution 1521 / OFAC SDN designation: BOUT, Viktor Anatolyevich (DOB 1967-01-13).
-
-3. TYPOLOGY & PATTERN OF SUSPICION:
-The pattern exhibits rapid cross-border movement into an offshore correspondent account with high-risk corridor flags. The customer's historical profile does not explain the abrupt scale and destination corridor of this transaction.
-
-4. INVESTIGATIVE FINDINGS:
-Enhanced Due Diligence (EDD) confirmed no legitimate commercial contracts or trade documents to substantiate the wire. Whitelist screening confirmed the subject is NOT whitelisted.
-
-5. ACTION TAKEN & RECOMMENDATION:
-The transaction was placed on immediate statutory HOLD. The compliance team recommends filing this Suspicious Transaction Report (STR) to the UAE Financial Intelligence Unit (goAML) and maintaining the asset freeze pending regulatory directive.`;
+    const data = await res.json();
+    return data.narrative;
   },
 
   async searchNameAndId(request: NameSearchRequest): Promise<NameSearchResponse> {
@@ -1179,20 +849,13 @@ The transaction was placed on immediate statutory HOLD. The compliance team reco
     entityCount: number;
     status: 'HEALTHY' | 'SYNCING' | 'STALE';
   }>> {
-    try {
-      const res = await fetch(`${API_BASE}/delta/sources`, {
-        headers: getAuthHeaders()
-      });
-      if (res.ok) return await res.json();
-    } catch {
-      // ignore
+    const res = await fetch(`${API_BASE}/delta/sources`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch delta sources: ${res.statusText}`);
     }
-    return [
-      { id: 'ofac-sdn', name: 'OFAC SDN & Consolidated', lastSync: '2026-10-26 02:00 UTC', version: 'OFAC-SDN-2026-10-25-v3', entityCount: 18450, status: 'HEALTHY' },
-      { id: 'eu-fsf', name: 'EU Financial Sanctions Files', lastSync: '2026-10-26 02:15 UTC', version: 'EU-FSF-Delta-114', entityCount: 14210, status: 'HEALTHY' },
-      { id: 'un-sc', name: 'UN Security Council Consolidated', lastSync: '2026-10-25 22:30 UTC', version: 'UNSC-RES-2026-09', entityCount: 7890, status: 'HEALTHY' },
-      { id: 'uae-local', name: 'UAE Local Terrorist & Sanctions List', lastSync: '2026-10-26 01:00 UTC', version: 'UAE-IEC-2026-44', entityCount: 2180, status: 'HEALTHY' }
-    ];
+    return await res.json();
   },
 
   async fetchDeltaLogReport(params?: { customerCode?: string; startDate?: string; endDate?: string }): Promise<Array<{
@@ -1207,24 +870,17 @@ The transaction was placed on immediate statutory HOLD. The compliance team reco
     timestampUtc: string;
     wormHash: string;
   }>> {
-    try {
-      const query = new URLSearchParams();
-      if (params?.customerCode) query.append('customerCode', params.customerCode);
-      if (params?.startDate) query.append('startDate', params.startDate);
-      if (params?.endDate) query.append('endDate', params.endDate);
-      const res = await fetch(`${API_BASE}/delta/log-report?${query.toString()}`, {
-        headers: getAuthHeaders()
-      });
-      if (res.ok) return await res.json();
-    } catch {
-      // ignore
+    const query = new URLSearchParams();
+    if (params?.customerCode) query.append('customerCode', params.customerCode);
+    if (params?.startDate) query.append('startDate', params.startDate);
+    if (params?.endDate) query.append('endDate', params.endDate);
+    const res = await fetch(`${API_BASE}/delta/log-report?${query.toString()}`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch delta log report: ${res.statusText}`);
     }
-    return [
-      { id: 'LOG-001', batchId: 'BATCH-2026-10-25-0200', customerCode: 'CUST-AE-88902', customerName: 'Rashid Al-Maktoum Trading FZE', nationality: 'ARE', score: 94.2, status: 'ESCALATED', authorizedBy: 'Fatima Al-Nuaimi (MLRO)', timestampUtc: '2026-10-25T03:15:00Z', wormHash: '8f3b20c19a973289abef001' },
-      { id: 'LOG-002', batchId: 'BATCH-2026-10-25-0200', customerCode: 'CUST-CH-44109', customerName: 'Kovalev International Holdings', nationality: 'RUS', score: 88.5, status: 'DISMISSED', authorizedBy: 'Tariq Mansoor (Compliance Analyst)', timestampUtc: '2026-10-25T03:18:22Z', wormHash: '4e1a90c918374278ef19002' },
-      { id: 'LOG-003', batchId: 'BATCH-2026-10-24-0200', customerCode: 'CUST-GB-99214', customerName: 'Caspian Mineral Commodities Ltd', nationality: 'GBR', score: 78.0, status: 'DISMISSED', authorizedBy: 'Tariq Mansoor (Compliance Analyst)', timestampUtc: '2026-10-24T04:12:00Z', wormHash: '3d1b80c112234556bb12003' },
-      { id: 'LOG-004', batchId: 'BATCH-2026-10-23-0200', customerCode: 'CUST-SA-12004', customerName: 'Al-Farouq Petroleum Equipment', nationality: 'SAU', score: 71.5, status: 'DISMISSED', authorizedBy: 'Fatima Al-Nuaimi (MLRO)', timestampUtc: '2026-10-23T05:01:10Z', wormHash: '7a2b90c445566778cc34004' }
-    ];
+    return await res.json();
   },
 
   async fetchWhitelists(): Promise<Array<{
@@ -1295,22 +951,15 @@ The transaction was placed on immediate statutory HOLD. The compliance team reco
     triggeredList: string;
     holdReason: string;
   }): Promise<{ caseId: string; caseNumber: string; priority: string; status: string } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/screen/intercept-case`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) return await res.json();
-    } catch {
-      // Fallback
+    const res = await fetch(`${API_BASE}/screen/intercept-case`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to create intercept case: ${res.statusText}`);
     }
-    return {
-      caseId: 'c1111111-2222-3333-4444-555555555555',
-      caseNumber: `EDITH-CAS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-      priority: payload.riskScore >= 90 ? 'CRITICAL' : 'HIGH',
-      status: 'OPEN'
-    };
+    return await res.json();
   },
 
   async generateScreeningAuditCertificate(payload: {
@@ -1324,40 +973,15 @@ The transaction was placed on immediate statutory HOLD. The compliance team reco
     matchCount: number;
     passLogs?: Array<{ passNumber: number; score: number; matchType: string; details: string }>;
   }): Promise<ScreeningAuditCertificate> {
-    try {
-      const res = await fetch(`${API_BASE}/screen/audit-certificate`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) return await res.json();
-    } catch {
-      // Fallback
+    const res = await fetch(`${API_BASE}/screen/audit-certificate`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to generate screening audit certificate: ${res.statusText}`);
     }
-    const nowUtc = new Date().toISOString();
-    const certId = `EDITH-CERT-${nowUtc.slice(0, 10).replace(/-/g, '')}-${Math.random().toString(16).slice(2, 10).toUpperCase()}`;
-    return {
-      certificateId: certId,
-      issuedAtUtc: nowUtc,
-      tenantId: currentSession.tenantId,
-      subjectName: payload.subjectName,
-      subjectId: payload.subjectId,
-      screeningType: payload.screeningType,
-      decision: payload.decision,
-      overallScore: payload.overallScore,
-      latencyMs: payload.latencyMs,
-      caseNumber: payload.caseNumber,
-      matchCount: payload.matchCount,
-      passLogs: payload.passLogs || [
-        { passNumber: 1, score: payload.overallScore, matchType: 'NORMALIZATION', details: 'ICU / AnyAscii canonical normalization completed.' },
-        { passNumber: 2, score: payload.overallScore, matchType: 'CANDIDATE_RETRIEVAL', details: `Retrieved ${payload.matchCount} watchlist candidates.` },
-        { passNumber: 3, score: payload.overallScore, matchType: 'COMPOSITE_SCORING', details: `Evaluated Jaro-Winkler + Double Metaphone score: ${payload.overallScore.toFixed(1)}%.` },
-        { passNumber: 4, score: payload.overallScore, matchType: 'THRESHOLD_DECISION', details: `Decision evaluated as ${payload.decision}.` },
-        { passNumber: 5, score: 0, matchType: 'WHITELIST_BYPASS', details: 'Pass 5 statutory exemption check completed.' }
-      ],
-      wormBlockHashSha256: Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
-      regulatoryAttestation: 'Certified under CBUAE AML/CFT Decision No. 74 & FATF Recommendation 11 (5-Year WORM Immutable Retention).'
-    };
+    return await res.json();
   },
 
   // IAM Users & Groups CRUD
@@ -1641,17 +1265,13 @@ The transaction was placed on immediate statutory HOLD. The compliance team reco
   },
 
   async fetchAuditLogs(limit: number = 100): Promise<AuditLogRecord[]> {
-    try {
-      const res = await fetch(`${API_BASE}/reports/audit?limit=${limit}`, {
-        headers: getAuthHeaders()
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {
-      reportOfflineFallback('audit-ledger');
+    const res = await fetch(`${API_BASE}/reports/audit?limit=${limit}`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch audit logs: ${res.statusText}`);
     }
-    return FALLBACK_AUDIT_CHAIN.slice().reverse().slice(0, limit);
+    return await res.json();
   },
 
   async recordAuditEvent(payload: {
@@ -1662,43 +1282,21 @@ The transaction was placed on immediate statutory HOLD. The compliance team reco
     details: string;
   }): Promise<AuditLogRecord> {
     const actor = payload.actor || currentSession.username || 'Compliance Officer';
-    try {
-      const res = await fetch(`${API_BASE}/reports/audit`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          actor,
-          action: payload.action,
-          targetEntity: payload.targetEntity,
-          caseNumber: payload.caseNumber,
-          details: payload.details
-        })
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {
-      reportOfflineFallback('audit-record');
+    const res = await fetch(`${API_BASE}/reports/audit`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        actor,
+        action: payload.action,
+        targetEntity: payload.targetEntity,
+        caseNumber: payload.caseNumber,
+        details: payload.details
+      })
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to record audit event: ${res.statusText}`);
     }
-    const prevHash = FALLBACK_AUDIT_CHAIN.length > 0
-      ? FALLBACK_AUDIT_CHAIN[FALLBACK_AUDIT_CHAIN.length - 1].sha256Hash
-      : '0000000000000000000000000000000000000000000000000000000000000000';
-    const nextId = String(FALLBACK_AUDIT_CHAIN.length + 1);
-    const nowIso = new Date().toISOString();
-    const newHash = computeDeterministicHex(`${nowIso}|${actor}|${payload.action}|${payload.targetEntity}|${prevHash}`);
-    const entry: AuditLogRecord = {
-      id: nextId,
-      timestampUtc: nowIso,
-      actor,
-      action: payload.action,
-      targetEntity: payload.targetEntity,
-      caseNumber: payload.caseNumber,
-      sha256Hash: newHash,
-      previousBlockHash: prevHash,
-      details: payload.details
-    };
-    FALLBACK_AUDIT_CHAIN.push(entry);
-    return entry;
+    return await res.json();
   },
 
   // System Masters (Live PostgreSQL)
@@ -1846,422 +1444,155 @@ The transaction was placed on immediate statutory HOLD. The compliance team reco
 
   // 13. Notification & Webhook Admin Endpoints
   async fetchNotificationRules(): Promise<NotificationRuleDto[]> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/rules`, { headers: getAuthHeaders() });
-      if (res.ok) return await res.json();
-    } catch {
-      // fallback handled below
+    const res = await fetch(`${API_BASE}/notifications/rules`, { headers: getAuthHeaders() });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch notification rules: ${res.statusText}`);
     }
-    return [
-      {
-        id: '01931000-0000-7000-8000-000000000001',
-        name: 'Statutory Freeze Emergency Alert',
-        triggerEvent: 'Transaction Frozen (OFAC / UN Hit)',
-        severity: 'CRITICAL',
-        channels: ['TEAMS', 'SMS', 'WEBHOOK'],
-        shiftAware: true,
-        active: true,
-        targetEndpoint: 'https://cbs-relay.internal.adcb.ae/api/v1/aml-freeze-callback',
-        fallbackRecipient: 'MLRO Duty Officer',
-        throttleMinutes: 0,
-        templateFormat: 'ADAPTIVE_CARD',
-        lastDispatchedAt: new Date(Date.now() - 12 * 60000).toISOString(),
-        dispatchCount: 38
-      },
-      {
-        id: '01931000-0000-7000-8000-000000000002',
-        name: 'SLA Escalation (72h EDD Limit Near)',
-        triggerEvent: 'Case Inactivity > 48 Hours',
-        severity: 'HIGH',
-        channels: ['TEAMS', 'EMAIL'],
-        shiftAware: true,
-        active: true,
-        targetEndpoint: 'https://teams.microsoft.com/l/webhook/compliance-escalations',
-        fallbackRecipient: 'Senior EDD Supervisor',
-        throttleMinutes: 15,
-        templateFormat: 'ADAPTIVE_CARD',
-        lastDispatchedAt: new Date(Date.now() - 45 * 60000).toISOString(),
-        dispatchCount: 114
-      },
-      {
-        id: '01931000-0000-7000-8000-000000000003',
-        name: 'Nightly Delta Rescreening Digest',
-        triggerEvent: 'Delta Batch Processing Finished',
-        severity: 'MEDIUM',
-        channels: ['EMAIL', 'WEBHOOK'],
-        shiftAware: false,
-        active: true,
-        targetEndpoint: 'https://reports.internal.adcb.ae/webhooks/delta-digest',
-        fallbackRecipient: 'Compliance Operations Hub',
-        throttleMinutes: 60,
-        templateFormat: 'HTML_EMAIL',
-        lastDispatchedAt: new Date(Date.now() - 8 * 3600000).toISOString(),
-        dispatchCount: 29
-      },
-      {
-        id: '01931000-0000-7000-8000-000000000004',
-        name: 'High-Risk Sanctions Intercept (Tier 1)',
-        triggerEvent: 'Real-Time Intercept (Score >= 95.0%)',
-        severity: 'CRITICAL',
-        channels: ['TEAMS', 'WEBHOOK'],
-        shiftAware: true,
-        active: true,
-        targetEndpoint: 'https://cbs-relay.internal.adcb.ae/api/v1/intercept-notify',
-        fallbackRecipient: 'Tariq Mansoor (MLRO)',
-        throttleMinutes: 0,
-        templateFormat: 'ADAPTIVE_CARD',
-        lastDispatchedAt: new Date(Date.now() - 2 * 60000).toISOString(),
-        dispatchCount: 86
-      }
-    ];
+    return await res.json();
   },
 
   async createNotificationRule(payload: Partial<NotificationRuleDto>): Promise<NotificationRuleDto> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/rules`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return {
-      id: `rule-${Date.now()}`,
-      name: payload.name || 'New Dispatch Rule',
-      triggerEvent: payload.triggerEvent || 'Custom Transaction Intercept',
-      severity: payload.severity || 'HIGH',
-      channels: payload.channels || ['TEAMS'],
-      shiftAware: payload.shiftAware ?? true,
-      active: true,
-      targetEndpoint: payload.targetEndpoint,
-      fallbackRecipient: payload.fallbackRecipient || 'MLRO Duty Officer',
-      throttleMinutes: payload.throttleMinutes || 5,
-      templateFormat: payload.templateFormat || 'ADAPTIVE_CARD',
-      dispatchCount: 0
-    };
+    const res = await fetch(`${API_BASE}/notifications/rules`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to create notification rule: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async updateNotificationRule(id: string, payload: Partial<NotificationRuleDto>): Promise<NotificationRuleDto> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/rules/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return {
-      id,
-      name: payload.name || 'Updated Rule',
-      triggerEvent: payload.triggerEvent || 'Trigger Event',
-      severity: payload.severity || 'HIGH',
-      channels: payload.channels || ['TEAMS'],
-      shiftAware: payload.shiftAware ?? true,
-      active: payload.active ?? true,
-      targetEndpoint: payload.targetEndpoint,
-      fallbackRecipient: payload.fallbackRecipient,
-      throttleMinutes: payload.throttleMinutes,
-      templateFormat: payload.templateFormat || 'ADAPTIVE_CARD'
-    };
+    const res = await fetch(`${API_BASE}/notifications/rules/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update notification rule: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async toggleNotificationRule(id: string): Promise<{ id: string; active: boolean }> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/rules/${id}/toggle`, {
-        method: 'PATCH',
-        headers: getAuthHeaders()
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return { id, active: true };
+    const res = await fetch(`${API_BASE}/notifications/rules/${id}/toggle`, {
+      method: 'PATCH',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to toggle notification rule: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async deleteNotificationRule(id: string): Promise<boolean> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/rules/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-      return res.ok;
-    } catch {
-      return true;
-    }
+    const res = await fetch(`${API_BASE}/notifications/rules/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    return res.ok;
   },
 
   async fetchDeliveryLedgers(params?: { status?: string; search?: string }): Promise<DeliveryLedgerRecordDto[]> {
-    try {
-      const qs = new URLSearchParams();
-      if (params?.status) qs.append('status', params.status);
-      if (params?.search) qs.append('search', params.search);
-      const res = await fetch(`${API_BASE}/notifications/ledgers?${qs.toString()}`, {
-        headers: getAuthHeaders()
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return [
-      {
-        id: 'led-001',
-        ruleName: 'Statutory Freeze Emergency Alert',
-        traceId: 'TX-2026-9921448:FREEZE',
-        channel: 'WEBHOOK',
-        targetEndpoint: 'https://cbs-relay.internal.adcb.ae/api/v1/aml-freeze-callback',
-        deliveryStatus: 'DELIVERED',
-        attemptCount: 1,
-        sentAt: new Date(Date.now() - 12 * 60000).toISOString(),
-        latencyMs: 28.4,
-        httpStatus: 200,
-        payloadJson: JSON.stringify({
-          transactionRef: 'TX-2026-9921448',
-          decision: 'FREEZE',
-          subject: 'Viktor Anatolyevich Bout',
-          amount: 450000.0,
-          currency: 'USD'
-        }),
-        signatureHex: 'sha256=a7f29b4c09d81e3a1f8792019b88f349d79ac2201948baef701239aaef'
-      },
-      {
-        id: 'led-002',
-        ruleName: 'High-Risk Sanctions Intercept (Tier 1)',
-        traceId: 'TX-2026-4418902:INTERCEPT',
-        channel: 'WEBHOOK',
-        targetEndpoint: 'https://cbs-gateway.core-banking.bank.internal/api/v1/hold-callback',
-        deliveryStatus: 'DEAD_LETTER',
-        attemptCount: 3,
-        sentAt: new Date(Date.now() - 24 * 60000).toISOString(),
-        latencyMs: 4500.0,
-        httpStatus: 504,
-        errorMessage: 'Gateway Timeout: Upstream CBS gateway failed to respond within 4000ms after 3 Polly retries',
-        payloadJson: JSON.stringify({
-          transactionRef: 'TX-2026-4418902',
-          decision: 'INTERCEPT_HOLD',
-          subject: 'Al-Baraka General Trading LLC',
-          amount: 1250000.0,
-          currency: 'AED'
-        }),
-        signatureHex: 'sha256=bb10283e7492cfa712908fa1948bcde82901928471203984afc7192841'
-      },
-      {
-        id: 'led-003',
-        ruleName: 'Statutory Freeze Emergency Alert',
-        traceId: 'TX-2026-3829104:FREEZE',
-        channel: 'WEBHOOK',
-        targetEndpoint: 'https://cbs-relay.internal.adcb.ae/api/v1/aml-freeze-callback',
-        deliveryStatus: 'DEAD_LETTER',
-        attemptCount: 3,
-        sentAt: new Date(Date.now() - 65 * 60000).toISOString(),
-        latencyMs: 620.0,
-        httpStatus: 500,
-        errorMessage: 'Internal Server Error: CBS Core Ledger Lock acquisition timeout',
-        payloadJson: JSON.stringify({
-          transactionRef: 'TX-2026-3829104',
-          decision: 'FREEZE',
-          subject: 'Quds Force Logistics Co',
-          amount: 890000.0,
-          currency: 'EUR'
-        }),
-        signatureHex: 'sha256=ef91823908471928374910283749102837491028374910283749102837'
-      },
-      {
-        id: 'led-004',
-        ruleName: 'SLA Escalation (72h EDD Limit Near)',
-        traceId: 'CAS-2026-0042:SLA_48H',
-        channel: 'TEAMS',
-        targetEndpoint: 'https://teams.microsoft.com/l/webhook/compliance-escalations',
-        deliveryStatus: 'DELIVERED',
-        attemptCount: 1,
-        sentAt: new Date(Date.now() - 45 * 60000).toISOString(),
-        latencyMs: 142.1,
-        httpStatus: 200,
-        payloadJson: JSON.stringify({
-          title: 'SLA Escalation',
-          caseRef: 'EDITH-CAS-2026-0042',
-          assignee: 'Fatima Al-Nuaimi'
-        }),
-        signatureHex: 'sha256=1102938481928374829103847291038472910384729103847291038472'
-      }
-    ];
+    const qs = new URLSearchParams();
+    if (params?.status) qs.append('status', params.status);
+    if (params?.search) qs.append('search', params.search);
+    const res = await fetch(`${API_BASE}/notifications/ledgers?${qs.toString()}`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch delivery ledgers: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async replayDeliveryLedger(id: string): Promise<any> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/ledgers/${id}/replay`, {
-        method: 'POST',
-        headers: getAuthHeaders()
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return { success: true, message: `Replay executed for ledger ${id}`, status: 'DELIVERED' };
+    const res = await fetch(`${API_BASE}/notifications/ledgers/${id}/replay`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to replay delivery ledger: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async bulkReplayDeadLetters(): Promise<{ replayedCount: number; message: string }> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/ledgers/bulk-replay`, {
-        method: 'POST',
-        headers: getAuthHeaders()
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return { replayedCount: 2, message: 'Replayed 2 dead-letter callbacks with 100% resolution' };
+    const res = await fetch(`${API_BASE}/notifications/ledgers/bulk-replay`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to bulk replay dead letters: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async fetchShiftRosters(): Promise<ShiftRosterScheduleDto[]> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/shifts`, { headers: getAuthHeaders() });
-      if (res.ok) return await res.json();
-    } catch {}
-    return [
-      {
-        id: 's-1',
-        userId: 'u-1',
-        userName: 'Fatima Al-Nuaimi',
-        userRole: 'AML_OFFICER',
-        shiftName: 'EMEA',
-        shiftStart: '08:00',
-        shiftEnd: '16:00',
-        isOnDuty: true,
-        substituteUserId: 'u-2',
-        substituteUserName: 'Tariq Mansoor (MLRO)'
-      },
-      {
-        id: 's-2',
-        userId: 'u-2',
-        userName: 'Tariq Mansoor',
-        userRole: 'MLRO',
-        shiftName: 'EMEA',
-        shiftStart: '09:00',
-        shiftEnd: '17:00',
-        isOnDuty: true,
-        substituteUserName: 'On-Duty Executive Roster'
-      },
-      {
-        id: 's-3',
-        userId: 'u-3',
-        userName: 'Arjun Mehta',
-        userRole: 'EDD_ANALYST',
-        shiftName: 'APAC',
-        shiftStart: '04:00',
-        shiftEnd: '12:00',
-        isOnDuty: false,
-        substituteUserId: 'u-1',
-        substituteUserName: 'Fatima Al-Nuaimi'
-      },
-      {
-        id: 's-4',
-        userId: 'u-4',
-        userName: 'Elena Rostova',
-        userRole: 'ANALYST',
-        shiftName: 'AMERICAS',
-        shiftStart: '16:00',
-        shiftEnd: '00:00',
-        isOnDuty: false,
-        substituteUserId: 'u-1',
-        substituteUserName: 'Fatima Al-Nuaimi'
-      }
-    ];
+    const res = await fetch(`${API_BASE}/notifications/shifts`, { headers: getAuthHeaders() });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch shift rosters: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async updateShiftRoster(id: string, payload: Partial<ShiftRosterScheduleDto>): Promise<ShiftRosterScheduleDto> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/shifts/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return {
-      id,
-      userId: payload.userId || 'u-1',
-      userName: payload.userName || 'Officer',
-      userRole: payload.userRole || 'ANALYST',
-      shiftName: payload.shiftName || 'EMEA',
-      shiftStart: payload.shiftStart || '08:00',
-      shiftEnd: payload.shiftEnd || '16:00',
-      isOnDuty: payload.isOnDuty ?? true,
-      substituteUserId: payload.substituteUserId,
-      substituteUserName: payload.substituteUserName
-    };
+    const res = await fetch(`${API_BASE}/notifications/shifts/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update shift roster: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async testFireNotification(payload: { ruleId?: string; channel: string; customEndpoint?: string }): Promise<any> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/test-fire`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return {
-      success: true,
-      message: `Test dispatch delivered via ${payload.channel} in 18.6ms`,
-      traceId: `TEST-${Date.now()}-${payload.channel}`,
-      latencyMs: 18.6,
-      httpStatus: 200
-    };
+    const res = await fetch(`${API_BASE}/notifications/test-fire`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to test-fire notification: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async fetchInAppNotifications(): Promise<{ unreadCount: number; items: InAppNotificationItemDto[] }> {
     try {
       const res = await fetch(`${API_BASE}/notifications/inbox`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
-    } catch {}
+    } catch {
+      // offline/empty fallback
+    }
     return {
-      unreadCount: 2,
-      items: [
-        {
-          id: 'notif-1',
-          timestamp: new Date(Date.now() - 5 * 60000).toISOString(),
-          title: 'Statutory Freeze Executed: $450,000.00 USD',
-          body: 'Inbound SWIFT MT103 from Dubai (ARE) to Zurich (CHE) matched UN Res 1521.',
-          caseRef: 'EDITH-CAS-2026-0042',
-          severity: 'CRITICAL',
-          read: false,
-          targetUrl: '/cases'
-        },
-        {
-          id: 'notif-2',
-          timestamp: new Date(Date.now() - 22 * 60000).toISOString(),
-          title: 'CBS Webhook Delivery Dropped (3 Retries)',
-          body: 'Callback for TX-2026-4418902 entered Dead-Letter Queue (HTTP 504 Timeout).',
-          caseRef: 'TX-2026-4418902',
-          severity: 'HIGH',
-          read: false,
-          targetUrl: '/notifications'
-        },
-        {
-          id: 'notif-3',
-          timestamp: new Date(Date.now() - 50 * 60000).toISOString(),
-          title: 'Case EDITH-CAS-2026-0038 SLA Warning',
-          body: '48h inactivity limit reached. Case has been escalated to Duty Supervisor.',
-          caseRef: 'EDITH-CAS-2026-0038',
-          severity: 'MEDIUM',
-          read: true,
-          targetUrl: '/cases'
-        }
-      ]
+      unreadCount: 0,
+      items: []
     };
   },
 
   async markNotificationAsRead(id: string): Promise<any> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/inbox/${id}/read`, {
-        method: 'PATCH',
-        headers: getAuthHeaders()
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return { success: true, id };
+    const res = await fetch(`${API_BASE}/notifications/inbox/${id}/read`, {
+      method: 'PATCH',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to mark notification as read: ${res.statusText}`);
+    }
+    return await res.json();
   },
 
   async markAllNotificationsAsRead(): Promise<any> {
-    try {
-      const res = await fetch(`${API_BASE}/notifications/inbox/mark-all-read`, {
-        method: 'POST',
-        headers: getAuthHeaders()
-      });
-      if (res.ok) return await res.json();
-    } catch {}
-    return { success: true, unreadCount: 0 };
+    const res = await fetch(`${API_BASE}/notifications/inbox/mark-all-read`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to mark all notifications as read: ${res.statusText}`);
+    }
+    return await res.json();
   }
 };

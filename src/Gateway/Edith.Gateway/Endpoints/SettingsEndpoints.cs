@@ -257,6 +257,28 @@ public static class SettingsEndpoints
             }));
         }).AllowAnonymous();
 
+        // 10. WORM Immutable Audit Trail: Record new entry with cryptographic hash chaining
+        reportsGroup.MapPost("/audit", async (
+            [FromBody] RecordAuditRequest req,
+            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromServices] IAuditLedgerService auditService,
+            CancellationToken ct) =>
+        {
+            var tenantId = ResolveTenant(tenantHeader);
+            var entry = await auditService.RecordAuditEntryAsync(tenantId, req, ct);
+            return Results.Ok(new
+            {
+                id = entry.Id,
+                timestampUtc = entry.TimestampUtc,
+                actor = entry.Actor,
+                action = entry.Action,
+                targetEntity = entry.TargetEntity,
+                caseNumber = entry.CaseNumber,
+                sha256Hash = entry.Sha256Hash,
+                details = entry.Details
+            });
+        }).AllowAnonymous();
+
         return app;
     }
 

@@ -15,7 +15,7 @@ import { BulkJobSummary } from '../types';
 import { EdithApi, getAuthHeaders } from '../services/api';
 import { GridPattern, ShimmerButton, BorderBeam } from './magicui';
 import { EdithLoader } from './EdithLogo';
-import { reportError, reportOfflineFallback } from '../services/errorEngine';
+import { reportError } from '../services/errorEngine';
 import { usePageMeta } from '../config/pageMeta';
 
 interface ExtendedBulkJob extends BulkJobSummary {
@@ -111,12 +111,9 @@ export const BulkScreeningView: React.FC = () => {
       setJobs(prev => [newJob, ...prev]);
       pollJobStatus(accepted.jobId, skippedFormat);
     } catch (err) {
-      reportOfflineFallback('bulk-upload');
       reportError(err, {
-        category: 'NETWORK',
-        onRetry: () => handleSimulateUpload()
+        category: 'NETWORK'
       });
-      handleSimulateUpload();
     } finally {
       setIsSubmitting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

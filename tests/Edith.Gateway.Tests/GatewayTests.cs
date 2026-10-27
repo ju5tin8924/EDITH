@@ -27,6 +27,28 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("Edith.Gateway", content);
         Assert.Contains("Healthy", content);
+
+        // Security headers verification
+        Assert.True(response.Headers.Contains("X-Content-Type-Options"));
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").First());
+        Assert.True(response.Headers.Contains("X-Frame-Options"));
+        Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").First());
+    }
+
+    [Fact]
+    public async Task CaseResolution_With_Ssrf_Url_Is_Rejected()
+    {
+        var caseId = Guid.NewGuid();
+        var resolveReq = new
+        {
+            resolution = "ClearedFalsePositive",
+            rationale = "Testing SSRF guard",
+            cbsWebhookUrl = "http://169.254.169.254/latest/meta-data/"
+        };
+        var res = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/resolve", resolveReq);
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var body = await res.Content.ReadAsStringAsync();
+        Assert.Contains("InvalidWebhookUrl", body);
     }
 
     [Fact]
@@ -462,5 +484,153 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         // 4. Delete rule
         var delRes = await _client.DeleteAsync($"/api/v1/rules/{ruleId}");
         Assert.Equal(HttpStatusCode.OK, delRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task Notification_Admin_Rules_Ledgers_And_TestFire_Workflow_Succeeds()
+    {
+        // 1. Fetch notification dispatch rules
+        var rulesRes = await _client.GetAsync("/api/v1/notifications/rules");
+        var rulesJson = await rulesRes.Content.ReadAsStringAsync();
+        Assert.True(rulesRes.IsSuccessStatusCode, $"Status: {rulesRes.StatusCode}, Body: {rulesJson}");
+        using var rulesDoc = JsonDocument.Parse(rulesJson);
+        Assert.True(rulesDoc.RootElement.GetArrayLength() > 0);
+
+        // 2. Create custom notification rule
+        var createReq = new
+        {
+            name = "Test Webhook Relay",
+            triggerEvent = "Transaction Frozen (OFAC / UN Hit)",
+            severity = "CRITICAL",
+            channels = new[] { "TEAMS", "WEBHOOK" },
+            targetEndpoint = "https://cbs-relay.test.adcb.ae/api/v1/aml-callback",
+            fallbackRecipient = "MLRO Duty Officer",
+            throttleMinutes = 0
+        };
+        var createRes = await _client.PostAsJsonAsync("/api/v1/notifications/rules", createReq);
+        Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+        var createdRule = await createRes.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        var ruleId = createdRule.GetProperty("id").GetString()!;
+
+        // 3. Toggle rule active state
+        var toggleRes = await _client.PatchAsync($"/api/v1/notifications/rules/{ruleId}/toggle", null);
+        Assert.Equal(HttpStatusCode.OK, toggleRes.StatusCode);
+
+        // 4. Test-fire simulated notification dispatch
+        var fireRes = await _client.PostAsJsonAsync("/api/v1/notifications/test-fire", new
+        {
+            ruleId,
+            channel = "TEAMS",
+            customEndpoint = "https://cbs-relay.test.adcb.ae/api/v1/aml-callback"
+        });
+        Assert.Equal(HttpStatusCode.OK, fireRes.StatusCode);
+        var fireJson = await fireRes.Content.ReadAsStringAsync();
+        Assert.Contains("Test dispatch delivered", fireJson);
+
+        // 5. Query delivery ledgers and shift roster
+        var ledgersRes = await _client.GetAsync("/api/v1/notifications/ledgers");
+        Assert.Equal(HttpStatusCode.OK, ledgersRes.StatusCode);
+
+        var shiftsRes = await _client.GetAsync("/api/v1/notifications/shifts");
+        Assert.Equal(HttpStatusCode.OK, shiftsRes.StatusCode);
+
+        // 6. Query inbox notifications
+        var inboxRes = await _client.GetAsync("/api/v1/notifications/inbox");
+        Assert.Equal(HttpStatusCode.OK, inboxRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delta_Sync_Adjudication_And_AuditReport_Workflow_Succeeds()
+    {
+        // 1. Fetch Delta Sources
+        var sourcesRes = await _client.GetAsync("/api/v1/delta/sources");
+        Assert.Equal(HttpStatusCode.OK, sourcesRes.StatusCode);
+        var sourcesJson = await sourcesRes.Content.ReadAsStringAsync();
+        using var sourcesDoc = JsonDocument.Parse(sourcesJson);
+        Assert.True(sourcesDoc.RootElement.GetArrayLength() >= 3);
+
+        // 2. Trigger Delta Rescreening Sync Batch
+        var syncRes = await _client.PostAsync("/api/v1/delta/sync", null);
+        Assert.Equal(HttpStatusCode.OK, syncRes.StatusCode);
+        var syncJson = await syncRes.Content.ReadAsStringAsync();
+        using var syncDoc = JsonDocument.Parse(syncJson);
+        var batchId = syncDoc.RootElement.GetProperty("syncBatchId").GetString()!;
+        Assert.False(string.IsNullOrWhiteSpace(batchId));
+
+        // 3. Adjudicate a Delta Hit (Dismiss false positive)
+        var adjRes = await _client.PostAsJsonAsync("/api/v1/delta/adjudicate", new
+        {
+            hitId = "hit-test-001",
+            customerCode = "CUST-AE-88902",
+            decision = "DISMISS",
+            rationale = "Customer secondary identification cleared",
+            batchId
+        });
+        Assert.Equal(HttpStatusCode.OK, adjRes.StatusCode);
+
+        // 4. Query Delta Log Report
+        var logRes = await _client.GetAsync("/api/v1/delta/log-report");
+        Assert.Equal(HttpStatusCode.OK, logRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task Audit_Ledger_WORM_Record_And_Query_Integrity_Succeeds()
+    {
+        // 1. Record an immutable audit log entry
+        var entryReq = new
+        {
+            actor = "Integration Tester",
+            action = "SECURITY_VALIDATION_EVENT",
+            targetEntity = "Core Gateway Router",
+            caseNumber = "EDITH-CAS-TEST-01",
+            details = "Verified cryptographic WORM append operation."
+        };
+        var recordRes = await _client.PostAsJsonAsync("/api/v1/reports/audit", entryReq);
+        Assert.Equal(HttpStatusCode.OK, recordRes.StatusCode);
+        var recordJson = await recordRes.Content.ReadAsStringAsync();
+        using var recordDoc = JsonDocument.Parse(recordJson);
+        var hash = recordDoc.RootElement.GetProperty("sha256Hash").GetString();
+        Assert.NotNull(hash);
+        Assert.Equal(64, hash.Length);
+
+        // 2. Query audit logs and verify the recorded event exists
+        var queryRes = await _client.GetAsync("/api/v1/reports/audit?limit=10");
+        Assert.Equal(HttpStatusCode.OK, queryRes.StatusCode);
+        var queryJson = await queryRes.Content.ReadAsStringAsync();
+        Assert.Contains("SECURITY_VALIDATION_EVENT", queryJson);
+        Assert.Contains("Integration Tester", queryJson);
+    }
+
+    [Fact]
+    public async Task Settings_Masters_Scoring_Weights_And_Country_Risk_Succeeds()
+    {
+        // 1. Fetch System Masters
+        var mastersRes = await _client.GetAsync("/api/v1/settings/masters");
+        Assert.Equal(HttpStatusCode.OK, mastersRes.StatusCode);
+        var mastersJson = await mastersRes.Content.ReadAsStringAsync();
+        using var mastersDoc = JsonDocument.Parse(mastersJson);
+        Assert.True(mastersDoc.RootElement.TryGetProperty("scoringWeights", out var weights));
+        Assert.True(weights.GetProperty("nameWeightage").GetDecimal() > 0);
+
+        // 2. Update Scoring Weights
+        var updateWeightsRes = await _client.PutAsJsonAsync("/api/v1/settings/scoring-weights", new
+        {
+            nameWeightage = 65m,
+            nationalityWeightage = 15m,
+            dobWeightage = 10m,
+            idWeightage = 10m,
+            defaultThreshold = 82m
+        });
+        Assert.Equal(HttpStatusCode.OK, updateWeightsRes.StatusCode);
+
+        // 3. Upsert Country Risk Master
+        var countryRes = await _client.PostAsJsonAsync("/api/v1/settings/countries", new
+        {
+            code = "TST",
+            countryName = "Testlandia",
+            isHighRisk = true,
+            riskScore = 88.5m
+        });
+        Assert.Equal(HttpStatusCode.OK, countryRes.StatusCode);
     }
 }

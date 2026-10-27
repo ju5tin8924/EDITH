@@ -29,25 +29,10 @@ public static class AddonEndpoints
             var tenantId = ResolveTenant(tenantHeader);
             var parsedCaseId = Guid.TryParse(req.CaseId, out var g) ? g : Guid.Empty;
             var caseDetail = await caseService.GetCaseByIdAsync(tenantId, parsedCaseId, ct);
-
-            caseDetail ??= new CaseDetail
+            if (caseDetail == null)
             {
-                Id = parsedCaseId != Guid.Empty ? parsedCaseId : Guid.NewGuid(),
-                TenantId = tenantId,
-                CaseNumber = "EDITH-CAS-2026-0042",
-                TransactionId = Guid.NewGuid(),
-                TransactionRefNo = "TX-2026-9921448",
-                Amount = 450000.00m,
-                Currency = "AED",
-                SenderName = "Acme Global Trading LLC",
-                BeneficiaryName = "Viktor Anatolyevich Bout",
-                RiskScore = 96.4m,
-                Priority = CasePriority.Critical,
-                Status = CaseStatus.UnderReview,
-                TriggeredList = "UN Security Council Res 1521 & OFAC SDN",
-                HoldReason = "Arms trafficking designation under UN Resolution 1521",
-                SlaDueDate = DateTimeOffset.UtcNow.AddDays(2)
-            };
+                return Results.NotFound(new { error = $"Case '{req.CaseId}' not found." });
+            }
 
             var reportReq = new GoAmlReportRequest
             {
@@ -75,25 +60,10 @@ public static class AddonEndpoints
             var tenantId = ResolveTenant(tenantHeader);
             var parsedCaseId = Guid.TryParse(req.CaseId, out var g) ? g : Guid.Empty;
             var caseDetail = await caseService.GetCaseByIdAsync(tenantId, parsedCaseId, ct);
-
-            caseDetail ??= new CaseDetail
+            if (caseDetail == null)
             {
-                Id = parsedCaseId != Guid.Empty ? parsedCaseId : Guid.NewGuid(),
-                TenantId = tenantId,
-                CaseNumber = "EDITH-CAS-2026-0042",
-                TransactionId = Guid.NewGuid(),
-                TransactionRefNo = "TX-2026-9921448",
-                Amount = 450000.00m,
-                Currency = "AED",
-                SenderName = "Acme Global Trading LLC",
-                BeneficiaryName = "Viktor Anatolyevich Bout",
-                RiskScore = 96.4m,
-                Priority = CasePriority.Critical,
-                Status = CaseStatus.UnderReview,
-                TriggeredList = "UN Security Council Res 1521 & OFAC SDN",
-                HoldReason = "Arms trafficking designation under UN Resolution 1521",
-                SlaDueDate = DateTimeOffset.UtcNow.AddDays(2)
-            };
+                return Results.NotFound(new { error = $"Case '{req.CaseId}' not found." });
+            }
 
             var narrativeResult = copilot.DraftRegulatoryNarrative(caseDetail);
 
@@ -145,35 +115,6 @@ public static class AddonEndpoints
 
             var graph = visualizer.BuildCaseEntityGraph(caseDetail, uboName: "Anatoly Bout Holdings Ltd", sharedPhone: "+971-50-992-1448");
             return Results.Ok(graph);
-        }).AllowAnonymous();
-
-        // 4. Dynamic Notifications Rules
-        var notifGroup = app.MapGroup("/api/v1/notifications");
-        notifGroup.MapGet("/rules", () =>
-        {
-            return Results.Ok(new[]
-            {
-                new
-                {
-                    id = "notif-1",
-                    channel = "MS_TEAMS_WEBHOOK",
-                    name = "Critical Watchlist Hit Channel",
-                    target = "https://adcb.webhook.office.com/webhookb2/aml-critical-alerts",
-                    severityThreshold = "CRITICAL",
-                    isEnabled = true,
-                    samplePayload = "AdaptiveCard: Critical OFAC Hit Triggered for Immediate CCO Review"
-                },
-                new
-                {
-                    id = "notif-2",
-                    channel = "SECURE_EMAIL_SMTP",
-                    name = "MLRO Escalation Dispatcher",
-                    target = "mlro.office@adcb.ae",
-                    severityThreshold = "HIGH",
-                    isEnabled = true,
-                    samplePayload = "Automated Escalation: 24h SLA Impending on Case EDITH-CAS-2026-0042"
-                }
-            });
         }).AllowAnonymous();
 
         return app;

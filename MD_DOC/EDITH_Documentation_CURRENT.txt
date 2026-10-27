@@ -1,7 +1,7 @@
-CurrentRelease=EDITH_Documentation_v10.1
-Version=10.1
+﻿CurrentRelease=EDITH_Documentation_v10.2
+Version=10.2
 Status=Validated
-PromotedTimestamp=2026-10-26T09:58:22Z
-BaselineRelease=EDITH_Documentation_v10.0
-RelativePath=EDITH_Documentation_v10.1
-ZipPackage=EDITH_Documentation_v10.1/EDITH_Documentation_Library_v10.1.zip
+PromotedTimestamp=2026-10-27T09:35:00Z
+BaselineRelease=EDITH_Documentation_v10.1
+RelativePath=EDITH_Documentation_v10.2
+ZipPackage=EDITH_Documentation_v10.2/EDITH_Documentation_Library_v10.2.zip

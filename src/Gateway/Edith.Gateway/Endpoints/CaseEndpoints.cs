@@ -209,6 +209,11 @@ public static class CaseEndpoints
             [FromServices] ICbsWebhookDispatcher? webhookDispatcher,
             CancellationToken ct) =>
         {
+            if (webhookDispatcher != null && !string.IsNullOrWhiteSpace(req.CbsWebhookUrl) && !IsValidWebhookEndpoint(req.CbsWebhookUrl))
+            {
+                return Results.BadRequest(new { error = "InvalidWebhookUrl", message = "Target webhook URL is rejected: must be a valid HTTP/HTTPS endpoint and must not reference loopback or cloud metadata services." });
+            }
+
             var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
             var (userId, userName) = ExtractUser(principal);
 
@@ -377,6 +382,17 @@ public static class CaseEndpoints
             "TRUEPOSITIVEREMEDIATED" or "TRUE_POSITIVE_REMEDIATED" or "STR_RELEASE" => CaseResolution.ReportedStrRelease,
             _ => null
         };
+    }
+
+    private static bool IsValidWebhookEndpoint(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp) return false;
+        var host = uri.DnsSafeHost.Trim().ToLowerInvariant();
+        if (host == "169.254.169.254" || host.StartsWith("169.254.", StringComparison.Ordinal)) return false;
+        if (host == "[::1]" || host == "::1" || host.StartsWith("fe80:", StringComparison.OrdinalIgnoreCase)) return false;
+        if (host == "localhost" || host == "127.0.0.1") return false;
+        return true;
     }
 }
 

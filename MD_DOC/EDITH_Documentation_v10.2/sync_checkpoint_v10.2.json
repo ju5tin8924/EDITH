@@ -1,0 +1,140 @@
+﻿{
+    "release_version":  "v10.2",
+    "baseline_release":  "v10.1",
+    "synchronization_timestamp":  "2026-10-27T09:30:00Z",
+    "change_register":  "04_Operations_and_Deployment/TODO_v10.2.md",
+    "release_scope":  "Comprehensive system architecture, features, workflows, diagrams, and deep explanations guide; complete removal of unwanted external cache terms across all documentation; full synchronization to v10.2 baseline.",
+    "processed_todo_phases":  [
+                                  "Phase 1: Wire Customer KYC 360 to PostgreSQL",
+                                  "Phase 2: Wire System Masters \u0026 Scoring Weights to PostgreSQL",
+                                  "Phase 3: Wire WORM Immutable Audit Ledger to PostgreSQL",
+                                  "Phase 4: Multipart Bulk Screening File Upload Pipeline",
+                                  "Phase 5: Live Delta Rescreening with Database Persistence",
+                                  "Phase 6: Single Entity \u0026 Transaction Screening Console Modernization",
+                                  "Phase 7: Single Entity Recommended Enhancements",
+                                  "Phase 8: Multi-tenant IAM User \u0026 Group Administration",
+                                  "Phase 9: CBS Outbound Webhooks \u0026 Reliability",
+                                  "Phase 10: Searches Module Advanced UX \u0026 Engine Modernization",
+                                  "Phase 11: Single Entity Enterprise Workflow Modernization",
+                                  "Phase 12: Case Workspace Investigation Canvas Workflow \u0026 UX Modernization",
+                                  "Phase 13: EDITH Eagle SVG Brand Identity, Animated Loader \u0026 Role-Gated Enterprise Dashboard",
+                                  "Phase 14: Customer KYC 360 \u0026 EDD Dossier Workflow, UX \u0026 Feature Modernization",
+                                  "Phase 15: AML Rule Builder \u0026 Sandbox Workflow, UX \u0026 Feature Modernization",
+                                  "Phase 16: AML Rule Backtesting Sandbox \u0026 Calibration Engine Modernization",
+                                  "Phase 17: Regulatory Reports, All 14 PDF Reports \u0026 WORM Audit Ledger Modernization",
+                                  "Phase 18: Notification Admin \u0026 Webhook Reliability Modernization",
+                                  "Phase 19: IAM Access System Workflow, UX/UI \u0026 Enterprise Security Modernization",
+                                  "Phase 20: System Masters \u0026 Calibration Hub Workflow, UX/UI \u0026 Feature Modernization",
+                                  "Phase 21: Delta Rescreening Workflow, UX/UI \u0026 System Modernization"
+                              ],
+    "new_authoritative_documents":  [
+                                        "03_Technical_Architecture_and_Database/EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.2.md"
+                                    ],
+    "affected_documents":  [
+                               "README_v10.2.md",
+                               "README.md",
+                               "sync_to_gdrive_v10.2.ps1",
+                               "sync_to_gdrive.ps1",
+                               "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.2.md",
+                               "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.2.html",
+                               "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.2.pdf",
+                               "02_Product_and_Requirements/EDITH_Master_PRD_v10.2.md",
+                               "02_Product_and_Requirements/EDITH_Modules_Workflows_and_Pages_v10.2.md",
+                               "02_Product_and_Requirements/EDITH_END_TO_END_WORKPLAN_v10.2.md",
+                               "03_Technical_Architecture_and_Database/EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.2.md",
+                               "03_Technical_Architecture_and_Database/EDITH_Master_Specification_v10.2.md",
+                               "03_Technical_Architecture_and_Database/database_v10.2.md",
+                               "04_Operations_and_Deployment/CREDENTIALS_v10.2.md",
+                               "04_Operations_and_Deployment/HOW_TO_RUN_v10.2.md",
+                               "04_Operations_and_Deployment/TODO_v10.2.md"
+                           ],
+    "verification_results":  {
+                                 "total_test_projects":  10,
+                                 "total_test_cases_in_suite":  103,
+                                 "offline_unit_and_benchmark_tests_passed":  92,
+                                 "docker_dependent_integration_tests":  11,
+                                 "ddl_tables_count":  39,
+                                 "postgresql_schemas_count":  5,
+                                 "unwanted_terms_audit":  "0 standalone occurrences of deprecated cache terms across all documents"
+                             },
+    "outstanding_discrepancies":  [
+
+                                  ],
+    "generated_artifacts":  {
+                                "html":  "Generated and validated (01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.2.html)",
+                                "pdf":  "Compiled via Google Chrome headless=new (01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.2.pdf, 442 KB)",
+                                "zip":  "Generated and validated (EDITH_Documentation_Library_v10.2.zip, 351 KB)",
+                                "master_reference":  "03_Technical_Architecture_and_Database/EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.2.md (64.5 KB)"
+                            },
+    "validation_status":  "VALIDATED",
+    "file_manifest":  {
+                          "EDITH_Documentation_Library_v10.2.zip":  {
+                                                                        "size_bytes":  351726,
+                                                                        "sha256":  "EA5DD1F56088F499E3CBADD53F016FF145FF236E9E97A69A9E8C1A5156D661F5"
+                                                                    },
+                          "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.2.pdf":  {
+                                                                                                   "size_bytes":  442194,
+                                                                                                   "sha256":  "CD0F7A8741DB0E6BE03382349CE25EB002A51E209305E5EE27DB35E510AB8D7B"
+                                                                                               },
+                          "README.md":  {
+                                            "size_bytes":  10798,
+                                            "sha256":  "A0FF788BFFC37C98CF6393BD733C515D7FE0255997703A59ED284C85451F5C33"
+                                        },
+                          "02_Product_and_Requirements/EDITH_Master_PRD_v10.2.md":  {
+                                                                                        "size_bytes":  11826,
+                                                                                        "sha256":  "F712137B665DA8911A070E36BE79C5B43765B99B293BA25AD6C5CB7838D6A010"
+                                                                                    },
+                          "03_Technical_Architecture_and_Database/EDITH_Master_Specification_v10.2.md":  {
+                                                                                                             "size_bytes":  17868,
+                                                                                                             "sha256":  "7CB8FFA3DA70C9197AD2A906EBE5C85487EDFF47D9E25418C06CE1D8DC0832BA"
+                                                                                                         },
+                          "sync_to_gdrive_v10.2.ps1":  {
+                                                           "size_bytes":  3061,
+                                                           "sha256":  "927DF29E757B16501FE676C16E6432BA3FC63D2BD662D09E01A945C866D4A9D0"
+                                                       },
+                          "04_Operations_and_Deployment/HOW_TO_RUN_v10.2.md":  {
+                                                                                   "size_bytes":  5060,
+                                                                                   "sha256":  "534D31BCEB54BBBA5082AED7CF6E27B148D824E1176B07D4B9607BA3DDF370BA"
+                                                                               },
+                          "03_Technical_Architecture_and_Database/database_v10.2.md":  {
+                                                                                           "size_bytes":  26789,
+                                                                                           "sha256":  "8C7837010402ED5970CF88FDF432BD13535FB6C244BA45583F7F04D4F40432E7"
+                                                                                       },
+                          "04_Operations_and_Deployment/CREDENTIALS_v10.2.md":  {
+                                                                                    "size_bytes":  5568,
+                                                                                    "sha256":  "7032E2CB9CA8835E6E816F55BECC849C61808BBA706F3C2B58988845FEB9AC47"
+                                                                                },
+                          "04_Operations_and_Deployment/TODO_v10.2.md":  {
+                                                                             "size_bytes":  33672,
+                                                                             "sha256":  "B590E47182630CD2CA9841B918FE494F198C3E0405FD24FE2EE47DA0610D040F"
+                                                                         },
+                          "02_Product_and_Requirements/EDITH_Modules_Workflows_and_Pages_v10.2.md":  {
+                                                                                                         "size_bytes":  23289,
+                                                                                                         "sha256":  "C8922D54400DB28D3C040FEF030F25E36384B151FBA199A4722484D303148E03"
+                                                                                                     },
+                          "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.2.md":  {
+                                                                                                  "size_bytes":  31584,
+                                                                                                  "sha256":  "323826ED4D23FF769C750343AAF7A491789EF15EBE7C07A9EC275E951B8730BF"
+                                                                                              },
+                          "02_Product_and_Requirements/EDITH_END_TO_END_WORKPLAN_v10.2.md":  {
+                                                                                                 "size_bytes":  12485,
+                                                                                                 "sha256":  "1D779A56B1577E0FE4E4C897107C06427E31232C6AC073A16376CFC95647E026"
+                                                                                             },
+                          "README_v10.2.md":  {
+                                                  "size_bytes":  10798,
+                                                  "sha256":  "A0FF788BFFC37C98CF6393BD733C515D7FE0255997703A59ED284C85451F5C33"
+                                              },
+                          "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.2.html":  {
+                                                                                                    "size_bytes":  54924,
+                                                                                                    "sha256":  "0EB46427C26138B3B16FA250921D92EE322DC1CEAA0EC2C2D537954AC69F0EEC"
+                                                                                                },
+                          "sync_to_gdrive.ps1":  {
+                                                     "size_bytes":  3061,
+                                                     "sha256":  "927DF29E757B16501FE676C16E6432BA3FC63D2BD662D09E01A945C866D4A9D0"
+                                                 },
+                          "03_Technical_Architecture_and_Database/EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.2.md":  {
+                                                                                                                                          "size_bytes":  64534,
+                                                                                                                                          "sha256":  "68B2C0D2AEF85A7B27AB4B1747158807CC2E407D05EE939812218BA510E4D99B"
+                                                                                                                                      }
+                      }
+}
