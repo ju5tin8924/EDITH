@@ -34,6 +34,7 @@ ALTER TABLE core.menus
     ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 
 -- 4. Outbound Email Dispatches Log
+CREATE SCHEMA IF NOT EXISTS notifications;
 CREATE TABLE IF NOT EXISTS notifications.email_dispatches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NULL REFERENCES core.tenants(id) ON DELETE SET NULL,
