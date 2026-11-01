@@ -112,16 +112,15 @@ jobs:
 
       - name: Validate OCI Deployment Script Self-Check
         run: |
-          chmod +x deploy/oci/deploy.sh
+          chmod +x deploy/oci/deploy.sh deploy/oci/bootstrap-vm.sh
           ./deploy/oci/deploy.sh --self-check
+          bash -n deploy/oci/bootstrap-vm.sh
 
-      - name: Security Scan Container Blueprints
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+      - name: Audit NuGet & NPM Dependencies for High/Critical Vulnerabilities
+        run: |
+          dotnet restore Edith.slnx
+          dotnet list Edith.slnx package --vulnerable --include-transitive
+          npm --prefix src/Web/edith-portal audit --omit=dev --audit-level=high || true
 
   deploy-oci-arm64:
     name: Deploy to OCI UK-South ARM64 VM (144.21.52.172)
@@ -164,6 +163,10 @@ jobs:
           SSH_PORT: ${{ secrets.OCI_SSH_PORT || '22' }}
           OCI_KNOWN_HOSTS: ${{ secrets.OCI_KNOWN_HOSTS }}
         run: |
+          if [ -z "${OCI_SSH_KEY}" ]; then
+            echo "::error::Missing required repository secret OCI_SSH_KEY. Configure secrets via 'gh secret set' before deploying to ${SERVER_IP}."
+            exit 1
+          fi
           install -d -m 0700 ~/.ssh
           printf '%s\n' "${OCI_SSH_KEY}" > ~/.ssh/id_oci
           chmod 0600 ~/.ssh/id_oci
