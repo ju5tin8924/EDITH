@@ -1,5 +1,8 @@
 # --- Secrets & Agent Workspace Tooling (never commit) ---
 .agents/
+Keys/
+*.key
+*.pem
 .env
 *.env.local
 deploy/local/.env
