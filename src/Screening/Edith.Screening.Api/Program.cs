@@ -101,8 +101,8 @@ builder.Services.AddSingleton<IBulkProgressNotifier, CallbackProgressNotifier>()
 builder.Services.AddScoped<IBulkIngestionPipeline, BulkIngestionPipeline>();
 builder.Services.AddHostedService<BulkScreeningBackgroundWorker>();
 
-// Background seed primes the search engine with baseline sanctions (development only)
-if (builder.Environment.IsDevelopment())
+// Background seed primes the search engine with baseline sanctions (development or explicit seed flag)
+if (builder.Environment.IsDevelopment() || string.Equals(Environment.GetEnvironmentVariable("EDITH_ENABLE_BASELINE_SEED"), "true", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddHostedService<WatchlistSeedService>();
 }

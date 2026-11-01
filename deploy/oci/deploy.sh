@@ -95,7 +95,8 @@ Jwt__Audience=${JWT_AUDIENCE:-https://edith.aml.cloud}
 OpenSearch__BaseUrl=${OPENSEARCH_URL:-https://127.0.0.1:9200}
 OpenSearch__Username=${OPENSEARCH_USER:-admin}
 OpenSearch__Password=${OPENSEARCH_PASSWORD:-}
-OpenSearch__SkipSslValidation=${OPENSEARCH_SKIP_SSL_VALIDATION:-false}
+OpenSearch__SkipSslValidation=${OPENSEARCH_SKIP_SSL_VALIDATION:-true}
+EDITH_ENABLE_BASELINE_SEED=${EDITH_ENABLE_BASELINE_SEED:-true}
 EDITH_SMTP_USER=${EDITH_SMTP_USER:-notifications@edith.aml.cloud}
 EDITH_SMTP_PASSWORD=${EDITH_SMTP_PASSWORD:-}
 EOF
@@ -109,8 +110,8 @@ sudo rsync -a --delete "${STAGING_DIR}/migrator/" "${APP_ROOT}/migrator/"
 sudo rsync -a --delete "${STAGING_DIR}/portal/" "${WEB_ROOT}/"
 sudo chmod +x "${APP_ROOT}/gateway/Edith.Gateway" "${APP_ROOT}/screening-api/Edith.Screening.Api" "${APP_ROOT}/migrator/Edith.Database.Migrator" 2>/dev/null || true
 
-echo "==> Applying PostgreSQL 17 database migrations"
-"${APP_ROOT}/migrator/Edith.Database.Migrator" --connection "${EDITH_PG_CONNECTION}"
+echo "==> Applying PostgreSQL 17 database migrations & baseline reference seed"
+"${APP_ROOT}/migrator/Edith.Database.Migrator" --connection "${EDITH_PG_CONNECTION}" --seed
 
 echo "==> Installing systemd unit files and restarting services"
 sudo cp "${STAGING_DIR}/deploy/edith-screening.service" /etc/systemd/system/edith-screening.service

@@ -72,7 +72,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVitePortal", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
+        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8080", "http://144.21.52.172", "https://144.21.52.172")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -208,8 +208,8 @@ builder.Services.AddSingleton<IGoAmlExporter, GoAmlExporter>();
 builder.Services.AddSingleton<IStrNarrativeCopilot, StrNarrativeCopilot>();
 builder.Services.AddSingleton<IEntityGraphVisualizer, EntityGraphVisualizer>();
 
-// 11. Background Seed Service - strictly gated to Development environment
-if (builder.Environment.IsDevelopment())
+// 11. Background Seed Service - gated to Development or explicit baseline seed flag
+if (builder.Environment.IsDevelopment() || string.Equals(Environment.GetEnvironmentVariable("EDITH_ENABLE_BASELINE_SEED"), "true", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddHostedService<DevelopmentSeedService>();
 }
