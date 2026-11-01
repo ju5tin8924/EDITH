@@ -98,6 +98,67 @@ VALUES (
     'pbkdf2_sha256$100000$4598031a2002d5359f8256cea3a86c01$168d55dcde04ae1ee53144db52949e176b2372f3cec6643dd0b1ec6c2f135f06'
 ) ON CONFLICT (tenant_id, username) DO UPDATE SET role = 'ISTR_MLRO', mfa_secret = 'JBSWY3DPEHPK3PXP';
 
+-- Primary Single-Inbox Testing Accounts (Gmail +alias sub-addressing -> all route to justinkuriakose16@gmail.com)
+INSERT INTO core.users (id, tenant_id, group_id, username, full_name, role, department, is_active, mfa_enabled, mfa_secret, must_change_password, password_hash)
+VALUES
+(
+    '01932000-0000-7000-8000-000000000010',
+    '11111111-1111-1111-1111-111111111111',
+    '01932000-0000-7000-8000-000000000A01',
+    'justinkuriakose16@gmail.com',
+    'Justin Kuriakose (Super Admin)',
+    'SUPER_ADMIN',
+    'Global Security & Architecture',
+    true,
+    true,
+    'JBSWY3DPEHPK3PXP',
+    false,
+    'pbkdf2_sha256$100000$4598031a2002d5359f8256cea3a86c01$168d55dcde04ae1ee53144db52949e176b2372f3cec6643dd0b1ec6c2f135f06'
+),
+(
+    '01932000-0000-7000-8000-000000000011',
+    '11111111-1111-1111-1111-111111111111',
+    '01932000-0000-7000-8000-000000000A04',
+    'justinkuriakose16+mlro@gmail.com',
+    'Justin Kuriakose (MLRO)',
+    'ISTR_MLRO',
+    'Financial Crime Compliance (MLRO)',
+    true,
+    true,
+    'JBSWY3DPEHPK3PXP',
+    false,
+    'pbkdf2_sha256$100000$4598031a2002d5359f8256cea3a86c01$168d55dcde04ae1ee53144db52949e176b2372f3cec6643dd0b1ec6c2f135f06'
+),
+(
+    '01932000-0000-7000-8000-000000000012',
+    '11111111-1111-1111-1111-111111111111',
+    '01932000-0000-7000-8000-000000000A02',
+    'justinkuriakose16+aml@gmail.com',
+    'Justin Kuriakose (AML Officer)',
+    'AML_OFFICER',
+    'Financial Crime Compliance - L1 Desk',
+    true,
+    true,
+    'JBSWY3DPEHPK3PXP',
+    false,
+    'pbkdf2_sha256$100000$4598031a2002d5359f8256cea3a86c01$168d55dcde04ae1ee53144db52949e176b2372f3cec6643dd0b1ec6c2f135f06'
+),
+(
+    '01932000-0000-7000-8000-000000000013',
+    '11111111-1111-1111-1111-111111111111',
+    '01932000-0000-7000-8000-000000000A03',
+    'justinkuriakose16+edd@gmail.com',
+    'Justin Kuriakose (EDD Analyst)',
+    'EDD_ANALYST',
+    'Enhanced Due Diligence & Investigations',
+    true,
+    true,
+    'JBSWY3DPEHPK3PXP',
+    false,
+    'pbkdf2_sha256$100000$4598031a2002d5359f8256cea3a86c01$168d55dcde04ae1ee53144db52949e176b2372f3cec6643dd0b1ec6c2f135f06'
+)
+ON CONFLICT (tenant_id, username) DO UPDATE SET role = EXCLUDED.role, mfa_secret = 'JBSWY3DPEHPK3PXP', is_active = true;
+
 -- 3. Seed Group Menu Permissions from Spec
 DELETE FROM core.group_menu_permissions WHERE group_id IN (
     '01932000-0000-7000-8000-000000000A01',
