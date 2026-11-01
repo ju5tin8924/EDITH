@@ -31,14 +31,17 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Pre-startup Production Secret & Credentials Validation
+SecretsConfigurationManager.ValidateProductionConfiguration(builder.Configuration, builder.Environment);
+
 // 1. JWT Bearer Authentication
-var secretKey = builder.Configuration["Jwt:Secret"] ?? JwtTokenService.DefaultSecret;
+var secretKey = SecretsConfigurationManager.ResolveJwtSecret(builder.Configuration, builder.Environment);
 var keyBytes = Encoding.UTF8.GetBytes(secretKey);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false; // Dev / Local container friendly
+        options.RequireHttpsMetadata = builder.Environment.IsProduction();
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -53,42 +56,47 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// 2. Authorization Policies
+// 2. Strict Role-Based Authorization Policies
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy("AuthenticatedTenant", policy =>
-    {
-        policy.RequireAuthenticatedUser();
-    });
+    .AddPolicy("AuthenticatedTenant", policy => policy.RequireAuthenticatedUser())
+    .AddPolicy("AdminOnly", policy => policy.RequireRole(EdithRoles.Admin, EdithRoles.SuperAdmin))
+    .AddPolicy("SuperAdminOnly", policy => policy.RequireRole(EdithRoles.SuperAdmin))
+    .AddPolicy("MlroOnly", policy => policy.RequireRole(EdithRoles.Mlro, EdithRoles.IstrMlro, EdithRoles.ComplianceOfficer, EdithRoles.SuperAdmin, EdithRoles.Admin))
+    .AddPolicy("ComplianceDesk", policy => policy.RequireRole(
+        EdithRoles.Analyst, EdithRoles.AmlOfficer, EdithRoles.EddAnalyst,
+        EdithRoles.Mlro, EdithRoles.IstrMlro, EdithRoles.ComplianceOfficer,
+        EdithRoles.Admin, EdithRoles.SuperAdmin, EdithRoles.Auditor));
 
 // 3. CORS Policy for React Vite Frontend & SignalR
 builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowVitePortal", policy =>
     {
-        options.AddPolicy("AllowVitePortal", policy =>
-        {
-            policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
-                  .AllowAnyHeader()
-                  .AllowAnyMethod()
-                  .AllowCredentials();
-        });
+        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
+});
 
 // 4. SignalR WebSockets
 builder.Services.AddSignalR();
 
-var pgConn = builder.Configuration.GetConnectionString("EdithPostgres")
-    ?? Environment.GetEnvironmentVariable("EDITH_PG_CONNECTION")
-    ?? "Host=localhost;Port=5432;Database=edith_aml;Username=edith_admin;Password=EdithSecurePassword2026!";
+var pgConn = SecretsConfigurationManager.ResolvePostgreSqlConnectionString(builder.Configuration, builder.Environment);
 
 bool usePostgres = false;
-try
+if (!string.IsNullOrWhiteSpace(pgConn))
 {
-    using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=1");
-    probeConn.Open();
-    usePostgres = true;
-}
-catch
-{
-    usePostgres = false;
+    try
+    {
+        using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=1");
+        probeConn.Open();
+        usePostgres = true;
+    }
+    catch
+    {
+        usePostgres = false;
+    }
 }
 
 // 5. IAM & Tenant Resolution Services
@@ -111,7 +119,7 @@ var osOpts = new OpenSearchOptions
     Password = openSearchConfig.GetValue<string>("Password") ?? "Tr@ns@ct10n$2026!#",
     WatchlistIndex = openSearchConfig.GetValue<string>("WatchlistIndex") ?? "edith_watchlist_v1",
     CustomersIndex = openSearchConfig.GetValue<string>("CustomersIndex") ?? "edith_customers_v1",
-    SkipSslValidation = openSearchConfig.GetValue<bool>("SkipSslValidation", true)
+    SkipSslValidation = openSearchConfig.GetValue<bool>("SkipSslValidation", !builder.Environment.IsProduction() && openSearchConfig.GetValue<bool>("SkipSslValidation", false))
 };
 builder.Services.AddSingleton(osOpts);
 builder.Services.AddHttpClient<IWatchlistSearchEngine, OpenSearchWatchlistSearchEngine>(client =>
@@ -130,7 +138,7 @@ builder.Services.AddHttpClient<IWatchlistSearchEngine, OpenSearchWatchlistSearch
 builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
 
 // 7. State, Cache, IAM & Persistence Services (Live PostgreSQL with Resilient In-Memory Mode)
-if (usePostgres)
+if (usePostgres && !string.IsNullOrWhiteSpace(pgConn))
 {
     builder.Services.AddSingleton<ITenantRegistry>(new PostgreSqlTenantRegistry(pgConn));
     builder.Services.AddSingleton<IIamUserService>(new PostgreSqlIamUserService(pgConn));
@@ -200,8 +208,11 @@ builder.Services.AddSingleton<IGoAmlExporter, GoAmlExporter>();
 builder.Services.AddSingleton<IStrNarrativeCopilot, StrNarrativeCopilot>();
 builder.Services.AddSingleton<IEntityGraphVisualizer, EntityGraphVisualizer>();
 
-// 11. Background Seed Service for Development
-builder.Services.AddHostedService<DevelopmentSeedService>();
+// 11. Background Seed Service - strictly gated to Development environment
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHostedService<DevelopmentSeedService>();
+}
 
 // 12. YARP Reverse Proxy (used in containerized production mode)
 builder.Services.AddReverseProxy()
@@ -238,8 +249,8 @@ app.MapSettingsEndpoints();
 app.MapNotificationEndpoints();
 
 // 15. Map Real-Time SignalR WebSockets Hubs
-app.MapHub<CaseHub>("/hubs/cases");
-app.MapHub<JobHub>("/hubs/jobs");
+app.MapHub<CaseHub>("/hubs/cases").RequireAuthorization("ComplianceDesk");
+app.MapHub<JobHub>("/hubs/jobs").RequireAuthorization("ComplianceDesk");
 
 app.MapGet("/health", () => Results.Ok(new
 {

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Edith.Gateway.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -8,8 +9,6 @@ namespace Edith.Gateway.Endpoints;
 
 public static class SettingsEndpoints
 {
-    private static readonly Guid DefaultTenantId = Guid.Parse("01931000-0000-7000-8000-000000000000");
-
     public static IEndpointRouteBuilder MapSettingsEndpoints(this IEndpointRouteBuilder app)
     {
         var settingsGroup = app.MapGroup("/api/v1/settings");
@@ -78,12 +77,13 @@ public static class SettingsEndpoints
                     productWeight = masters.RiskAssessment.ProductWeight
                 }
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 2. System Masters: Update Scoring Weights
         settingsGroup.MapPut("/scoring-weights", async (
             [FromBody] UpdateScoringWeightsRequest req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ISystemMastersService mastersService,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
@@ -91,9 +91,14 @@ public static class SettingsEndpoints
             var tenantId = ResolveTenant(tenantHeader);
             var success = await mastersService.UpdateScoringWeightsAsync(tenantId, req, ct);
 
+            var actorName = principal.FindFirst(ClaimTypes.Name)?.Value
+                         ?? principal.FindFirst("unique_name")?.Value
+                         ?? principal.Identity?.Name
+                         ?? "Compliance Officer";
+
             // Audit the change in WORM ledger
             await auditService.RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
-                "Compliance Officer",
+                actorName,
                 "SCORING_WEIGHTS_UPDATE",
                 "System Masters Configuration",
                 null,
@@ -101,12 +106,13 @@ public static class SettingsEndpoints
             ), ct);
 
             return Results.Ok(new { success, message = "Screening score weights updated successfully." });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 3. System Masters: Upsert Country Risk
         settingsGroup.MapPost("/countries", async (
             [FromBody] UpdateCountryRiskRequest req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ISystemMastersService mastersService,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
@@ -114,8 +120,13 @@ public static class SettingsEndpoints
             var tenantId = ResolveTenant(tenantHeader);
             var success = await mastersService.UpsertCountryAsync(req, ct);
 
+            var actorName = principal.FindFirst(ClaimTypes.Name)?.Value
+                         ?? principal.FindFirst("unique_name")?.Value
+                         ?? principal.Identity?.Name
+                         ?? "Compliance Officer";
+
             await auditService.RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
-                "Compliance Officer",
+                actorName,
                 "COUNTRY_RISK_MASTER_UPDATE",
                 $"{req.Code} - {req.CountryName}",
                 null,
@@ -123,12 +134,13 @@ public static class SettingsEndpoints
             ), ct);
 
             return Results.Ok(new { success, message = $"Country '{req.Code}' master updated successfully." });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 4. System Masters: Upsert Nationality Risk
         settingsGroup.MapPost("/nationalities", async (
             [FromBody] UpdateNationalityRiskRequest req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ISystemMastersService mastersService,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
@@ -136,8 +148,13 @@ public static class SettingsEndpoints
             var tenantId = ResolveTenant(tenantHeader);
             var success = await mastersService.UpsertNationalityAsync(req, ct);
 
+            var actorName = principal.FindFirst(ClaimTypes.Name)?.Value
+                         ?? principal.FindFirst("unique_name")?.Value
+                         ?? principal.Identity?.Name
+                         ?? "Compliance Officer";
+
             await auditService.RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
-                "Compliance Officer",
+                actorName,
                 "NATIONALITY_MASTER_UPDATE",
                 $"{req.Code} - {req.Demonym}",
                 null,
@@ -145,7 +162,7 @@ public static class SettingsEndpoints
             ), ct);
 
             return Results.Ok(new { success, message = $"Nationality '{req.Code}' master updated successfully." });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 5. System Masters: Update Risk Rates Benchmarks
         settingsGroup.MapPut("/risk-rates", async (
@@ -167,7 +184,7 @@ public static class SettingsEndpoints
             ), ct);
 
             return Results.Ok(new { success, message = "Risk rate benchmarks updated successfully." });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 6. System Masters: Update SysControl Scenarios
         settingsGroup.MapPut("/setup-controls", async (
@@ -189,7 +206,7 @@ public static class SettingsEndpoints
             ), ct);
 
             return Results.Ok(new { success, message = "Automated SysControl scenarios updated successfully." });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 7. System Masters: Update Risk Assessment EWRA Weights
         settingsGroup.MapPut("/risk-assessment", async (
@@ -211,7 +228,7 @@ public static class SettingsEndpoints
             ), ct);
 
             return Results.Ok(new { success, message = "Enterprise risk assessment weights updated successfully." });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 8. System Masters: Update Currency Reporting Thresholds
         settingsGroup.MapPut("/currency-thresholds", async (
@@ -233,7 +250,7 @@ public static class SettingsEndpoints
             ), ct);
 
             return Results.Ok(new { success, message = "Currency reporting thresholds updated successfully." });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 9. WORM Immutable Audit Trail: Query from PostgreSQL
         reportsGroup.MapGet("/audit", async (
@@ -255,17 +272,25 @@ public static class SettingsEndpoints
                 sha256Hash = l.Sha256Hash,
                 details = l.Details
             }));
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 10. WORM Immutable Audit Trail: Record new entry with cryptographic hash chaining
         reportsGroup.MapPost("/audit", async (
             [FromBody] RecordAuditRequest req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
         {
             var tenantId = ResolveTenant(tenantHeader);
-            var entry = await auditService.RecordAuditEntryAsync(tenantId, req, ct);
+            var actorName = !string.IsNullOrWhiteSpace(req.Actor)
+                         ? req.Actor
+                         : (principal.FindFirst(ClaimTypes.Name)?.Value
+                            ?? principal.FindFirst("unique_name")?.Value
+                            ?? principal.Identity?.Name
+                            ?? "Compliance Officer");
+            var safeReq = req with { Actor = actorName };
+            var entry = await auditService.RecordAuditEntryAsync(tenantId, safeReq, ct);
             return Results.Ok(new
             {
                 id = entry.Id,
@@ -277,14 +302,14 @@ public static class SettingsEndpoints
                 sha256Hash = entry.Sha256Hash,
                 details = entry.Details
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         return app;
     }
 
     private static Guid ResolveTenant(string? header)
     {
-        if (string.IsNullOrWhiteSpace(header)) return DefaultTenantId;
-        return Guid.TryParse(header, out var parsed) ? parsed : DefaultTenantId;
+        if (Guid.TryParse(header, out var parsed)) return parsed;
+        throw new UnauthorizedAccessException("Valid tenant context is required.");
     }
 }

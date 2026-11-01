@@ -22,7 +22,7 @@ public static class KycEndpoints
         {
             var customers = await kycService.ListCustomersAsync(search, blockedOnly ?? false, ct);
             return Results.Ok(customers);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         group.MapGet("/{customerId}", async (
             string customerId,
@@ -40,7 +40,7 @@ public static class KycEndpoints
             }
 
             return Results.Ok(dossier);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         group.MapPut("/{customerId}/edd", async (
             string customerId,
@@ -80,7 +80,7 @@ public static class KycEndpoints
             }
 
             return Results.Ok(updated);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         return app;
     }

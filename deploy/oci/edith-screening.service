@@ -1,0 +1,18 @@
+[Unit]
+Description=EDITH Screening & Bulk API (.NET 10 ARM64)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/edith/screening-api
+ExecStart=/opt/edith/screening-api/Edith.Screening.Api --urls http://127.0.0.1:5101
+EnvironmentFile=/etc/edith/edith.env
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+SyslogIdentifier=edith-screening
+
+[Install]
+WantedBy=multi-user.target

@@ -47,7 +47,7 @@ public static class AddonEndpoints
 
             var xml = goAmlExporter.GenerateGoAmlXml(reportReq);
             return Results.Content(xml, "application/xml");
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 2. AI STR Narrative Copilot
         group.MapPost("/ai/narrative", async (
@@ -80,7 +80,7 @@ public static class AddonEndpoints
                     conclusion = narrativeResult.ConclusionSection
                 }
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 3. Entity Graph Visualizer
         group.MapGet("/graph/{caseId}", async (
@@ -115,7 +115,7 @@ public static class AddonEndpoints
 
             var graph = visualizer.BuildCaseEntityGraph(caseDetail, uboName: "Anatoly Bout Holdings Ltd", sharedPhone: "+971-50-992-1448");
             return Results.Ok(graph);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         return app;
     }

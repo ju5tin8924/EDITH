@@ -3,6 +3,7 @@ using Edith.Cases.Models;
 using Edith.Cases.Services;
 using Edith.Events.Contracts;
 using Edith.Events.Webhooks;
+using Edith.Gateway.Models;
 using Edith.Gateway.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -13,32 +14,36 @@ namespace Edith.Gateway.Endpoints;
 
 public static class CaseEndpoints
 {
-    private static readonly Guid DefaultTenantId = Guid.Parse("01931000-0000-7000-8000-000000000000");
-
     public static IEndpointRouteBuilder MapCaseEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/cases");
 
-        // 1. List Cases
+        // 1. List Cases (Strictly scoped to authenticated tenant)
         group.MapGet("/", async (
-            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             [FromQuery] string? status,
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = GetAuthenticatedTenantId(tenantAccessor, principal);
+            if (!tenantId.HasValue)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Tenant Context Required",
+                    detail: "Active authenticated tenant context could not be resolved.");
+            }
+
             CaseStatus? filter = null;
             if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<CaseStatus>(status, true, out var parsedStatus))
             {
                 filter = parsedStatus;
             }
 
-            var cases = (await caseService.ListCasesAsync(tenantId, filter, ct)).ToList();
-            if (string.IsNullOrWhiteSpace(tenantHeader))
-            {
-                var altCases = await caseService.ListCasesAsync(Edith.Gateway.Services.InMemoryTenantRegistry.DemoTenantId, filter, ct);
-                cases = cases.Concat(altCases).DistinctBy(c => c.Id).OrderByDescending(c => c.CreatedAt).ToList();
-            }
+            var cases = (await caseService.ListCasesAsync(tenantId.Value, filter, ct))
+                .OrderByDescending(c => c.CreatedAt)
+                .ToList();
 
             var dtos = cases.Select(c => new
             {
@@ -58,24 +63,33 @@ public static class CaseEndpoints
             });
 
             return Results.Ok(dtos);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
-        // 2. Get Case Detail
+        // 2. Get Case Detail (Enforces tenant boundary)
         group.MapGet("/{caseId:guid}", async (
             Guid caseId,
-            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
-            var c = await caseService.GetCaseByIdAsync(tenantId, caseId, ct);
-            if (c == null)
+            var tenantId = GetAuthenticatedTenantId(tenantAccessor, principal);
+            if (!tenantId.HasValue)
             {
-                return Results.NotFound(new { error = $"Case '{caseId}' not found." });
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Tenant Context Required",
+                    detail: "Active authenticated tenant context could not be resolved.");
             }
 
-            var auditTrail = await caseService.GetAuditTrailAsync(tenantId, caseId, ct);
-            var storedNotes = await caseService.GetNotesAsync(tenantId, caseId, ct);
+            var c = await caseService.GetCaseByIdAsync(tenantId.Value, caseId, ct);
+            if (c == null)
+            {
+                return Results.NotFound(new { error = $"Case '{caseId}' not found in tenant repository." });
+            }
+
+            var auditTrail = await caseService.GetAuditTrailAsync(tenantId.Value, caseId, ct);
+            var storedNotes = await caseService.GetNotesAsync(tenantId.Value, caseId, ct);
 
             var comments = new List<object>
             {
@@ -158,82 +172,115 @@ public static class CaseEndpoints
             };
 
             return Results.Ok(detail);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
-        // 3. Acquire Lock
+        // 3. Acquire Pessimistic Review Lock
         group.MapPost("/{caseId:guid}/acquire-lock", async (
             Guid caseId,
-            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             [FromQuery] int? durationMinutes,
             ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
-            var (userId, userName) = ExtractUser(principal);
+            var user = TryExtractAuthenticatedUser(principal);
+            if (user == null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var tenantId = GetAuthenticatedTenantId(tenantAccessor, principal);
+            if (!tenantId.HasValue)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Tenant Context Required");
+            }
+
             var duration = durationMinutes.HasValue && durationMinutes.Value > 0
                 ? TimeSpan.FromMinutes(durationMinutes.Value)
                 : TimeSpan.FromMinutes(15);
 
-            var result = await caseService.AcquireLockAsync(tenantId, caseId, userId, userName, duration, ct);
+            var result = await caseService.AcquireLockAsync(tenantId.Value, caseId, user.Value.UserId, user.Value.UserName, duration, ct);
             if (!result.IsLocked)
             {
                 return Results.Conflict(new { error = result.ErrorMessage, lockedBy = result.LockedByName });
             }
 
             return Results.Ok(result);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 4. Release Lock
         group.MapPost("/{caseId:guid}/release-lock", async (
             Guid caseId,
-            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
-            var (userId, _) = ExtractUser(principal);
+            var user = TryExtractAuthenticatedUser(principal);
+            if (user == null)
+            {
+                return Results.Unauthorized();
+            }
 
-            var released = await caseService.ReleaseLockAsync(tenantId, caseId, userId, force: true, ct);
+            var tenantId = GetAuthenticatedTenantId(tenantAccessor, principal);
+            if (!tenantId.HasValue)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Tenant Context Required");
+            }
+
+            var released = await caseService.ReleaseLockAsync(tenantId.Value, caseId, user.Value.UserId, force: true, ct);
             return Results.Ok(new { released });
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
-        // 5. Resolve / Transition Case
+        // 5. Resolve / Transition Case (Restricted to MLRO / Compliance Officers)
         group.MapPost("/{caseId:guid}/resolve", async (
             Guid caseId,
             [FromBody] ResolveCaseDto req,
-            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] ICaseService caseService,
             [FromServices] ICbsWebhookDispatcher? webhookDispatcher,
             CancellationToken ct) =>
         {
+            var user = TryExtractAuthenticatedUser(principal);
+            if (user == null)
+            {
+                return Results.Unauthorized();
+            }
+
             if (webhookDispatcher != null && !string.IsNullOrWhiteSpace(req.CbsWebhookUrl) && !IsValidWebhookEndpoint(req.CbsWebhookUrl))
             {
                 return Results.BadRequest(new { error = "InvalidWebhookUrl", message = "Target webhook URL is rejected: must be a valid HTTP/HTTPS endpoint and must not reference loopback or cloud metadata services." });
             }
 
-            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
-            var (userId, userName) = ExtractUser(principal);
+            var tenantId = GetAuthenticatedTenantId(tenantAccessor, principal);
+            if (!tenantId.HasValue)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Tenant Context Required");
+            }
 
             CaseResolution? resolution = ParseResolution(req.Resolution) ?? CaseResolution.ClearedFalsePositive;
 
-            var existing = await caseService.GetCaseByIdAsync(tenantId, caseId, ct);
-            if (existing?.Status == CaseStatus.Open)
+            var existing = await caseService.GetCaseByIdAsync(tenantId.Value, caseId, ct);
+            if (existing == null)
             {
-                await caseService.TransitionStatusAsync(tenantId, caseId, CaseStatus.UnderReview, userId, userName, "MLRO", null, "Auto-moved to UnderReview for direct MLRO resolution", ct);
+                return Results.NotFound(new { error = $"Case '{caseId}' not found." });
+            }
+
+            if (existing.Status == CaseStatus.Open)
+            {
+                await caseService.TransitionStatusAsync(tenantId.Value, caseId, CaseStatus.UnderReview, user.Value.UserId, user.Value.UserName, user.Value.Role, null, "Auto-moved to UnderReview for direct MLRO resolution", ct);
             }
 
             var updated = await caseService.TransitionStatusAsync(
-                tenantId,
+                tenantId.Value,
                 caseId,
                 CaseStatus.Resolved,
-                userId,
-                userName,
-                "MLRO",
+                user.Value.UserId,
+                user.Value.UserName,
+                user.Value.Role,
                 resolution,
-                req.Rationale ?? "Case resolved by officer",
+                req.Rationale ?? "Case resolved by authorized compliance officer",
                 ct);
 
             if (webhookDispatcher != null && !string.IsNullOrWhiteSpace(req.CbsWebhookUrl))
@@ -241,12 +288,12 @@ public static class CaseEndpoints
                 var decision = resolution == CaseResolution.ReportedStrFreeze ? "FREEZE" : "RELEASE";
                 var payload = new AmlDecisionWebhookPayload
                 {
-                    TenantId = tenantId,
+                    TenantId = tenantId.Value,
                     TransactionRefNo = updated.TransactionRefNo,
                     Decision = decision,
                     Reason = req.Rationale ?? $"Case resolved as {resolution}",
                     CaseNumber = updated.CaseNumber,
-                    DecidedBy = userName,
+                    DecidedBy = user.Value.UserName,
                     Timestamp = DateTimeOffset.UtcNow
                 };
 
@@ -264,19 +311,28 @@ public static class CaseEndpoints
             }
 
             return Results.Ok(updated);
-        }).AllowAnonymous();
+        }).RequireAuthorization("MlroOnly");
 
         // 6. Transition Status
         group.MapPost("/{caseId:guid}/transition", async (
             Guid caseId,
             [FromBody] TransitionCaseDto req,
-            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
-            var (userId, userName) = ExtractUser(principal);
+            var user = TryExtractAuthenticatedUser(principal);
+            if (user == null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var tenantId = GetAuthenticatedTenantId(tenantAccessor, principal);
+            if (!tenantId.HasValue)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Tenant Context Required");
+            }
 
             if (!Enum.TryParse<CaseStatus>(req.NewStatus, true, out var newStatus))
             {
@@ -285,90 +341,113 @@ public static class CaseEndpoints
 
             CaseResolution? resolution = ParseResolution(req.Resolution);
 
-            var existing = await caseService.GetCaseByIdAsync(tenantId, caseId, ct);
-            if (existing?.Status == CaseStatus.Open && newStatus == CaseStatus.PendingApproval)
+            var existing = await caseService.GetCaseByIdAsync(tenantId.Value, caseId, ct);
+            if (existing == null)
             {
-                await caseService.TransitionStatusAsync(tenantId, caseId, CaseStatus.UnderReview, userId, userName, req.UserRole ?? "ANALYST", null, "Started review prior to escalation", ct);
+                return Results.NotFound(new { error = $"Case '{caseId}' not found." });
+            }
+
+            if (existing.Status == CaseStatus.Open && newStatus == CaseStatus.PendingApproval)
+            {
+                await caseService.TransitionStatusAsync(tenantId.Value, caseId, CaseStatus.UnderReview, user.Value.UserId, user.Value.UserName, user.Value.Role, null, "Started review prior to escalation", ct);
             }
 
             var updated = await caseService.TransitionStatusAsync(
-                tenantId,
+                tenantId.Value,
                 caseId,
                 newStatus,
-                userId,
-                userName,
-                req.UserRole ?? "ANALYST",
+                user.Value.UserId,
+                user.Value.UserName,
+                user.Value.Role,
                 resolution,
                 req.Reason,
                 ct);
 
             return Results.Ok(updated);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
-        // 7. Add Comment / Note
+        // 7. Add Comment / Case Note
         group.MapPost("/{caseId:guid}/comments", async (
             Guid caseId,
             [FromBody] AddCommentDto req,
-            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] ICaseService caseService,
             CancellationToken ct) =>
         {
-            var tenantId = await ResolveCaseTenantAsync(caseService, caseId, tenantHeader, ct);
-            var (userId, userName) = ExtractUser(principal);
+            var user = TryExtractAuthenticatedUser(principal);
+            if (user == null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var tenantId = GetAuthenticatedTenantId(tenantAccessor, principal);
+            if (!tenantId.HasValue)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Tenant Context Required");
+            }
 
             var note = await caseService.AddNoteAsync(
-                tenantId,
+                tenantId.Value,
                 caseId,
-                userId,
-                userName,
+                user.Value.UserId,
+                user.Value.UserName,
                 req.Content,
                 req.NoteType ?? "INVESTIGATION",
                 ct);
 
             return Results.Ok(note);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         return app;
     }
 
-    private static Guid ResolveTenant(string? tenantHeader)
+    private static Guid? GetAuthenticatedTenantId(ITenantContextAccessor tenantAccessor, ClaimsPrincipal principal)
     {
-        if (!string.IsNullOrWhiteSpace(tenantHeader) && Guid.TryParse(tenantHeader, out var parsed))
+        if (tenantAccessor.CurrentTenant != null)
         {
-            return parsed;
+            return tenantAccessor.CurrentTenant.TenantId;
         }
-        return DefaultTenantId;
-    }
 
-    private static async Task<Guid> ResolveCaseTenantAsync(ICaseService caseService, Guid caseId, string? tenantHeader, CancellationToken ct)
-    {
-        if (!string.IsNullOrWhiteSpace(tenantHeader) && Guid.TryParse(tenantHeader, out var parsed))
+        var claim = principal.FindFirst("tenant_id")?.Value ?? principal.FindFirst("tid")?.Value;
+        if (!string.IsNullOrWhiteSpace(claim) && Guid.TryParse(claim, out var parsed))
         {
             return parsed;
         }
 
-        var defaultCase = await caseService.GetCaseByIdAsync(DefaultTenantId, caseId, ct);
-        if (defaultCase != null)
-        {
-            return DefaultTenantId;
-        }
-
-        var demoCase = await caseService.GetCaseByIdAsync(InMemoryTenantRegistry.DemoTenantId, caseId, ct);
-        if (demoCase != null)
-        {
-            return InMemoryTenantRegistry.DemoTenantId;
-        }
-
-        return DefaultTenantId;
+        return null;
     }
 
-    private static (Guid UserId, string UserName) ExtractUser(ClaimsPrincipal principal)
+    private static (Guid UserId, string UserName, string Role)? TryExtractAuthenticatedUser(ClaimsPrincipal principal)
     {
-        var idStr = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal.FindFirst("sub")?.Value;
-        var userId = Guid.TryParse(idStr, out var g) ? g : Guid.Parse("01931000-0000-7000-8000-000000000010");
-        var userName = principal.FindFirst(ClaimTypes.Name)?.Value ?? "Fatima Al-Nuaimi";
-        return (userId, userName);
+        if (principal.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
+        var idStr = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                 ?? principal.FindFirst("sub")?.Value;
+
+        if (!Guid.TryParse(idStr, out var userId) || userId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var userName = principal.FindFirst(ClaimTypes.Name)?.Value
+                    ?? principal.FindFirst("name")?.Value
+                    ?? principal.FindFirst(ClaimTypes.Email)?.Value
+                    ?? principal.Identity.Name;
+
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return null;
+        }
+
+        var role = principal.FindFirst(ClaimTypes.Role)?.Value
+                ?? principal.FindFirst("role")?.Value
+                ?? EdithRoles.Analyst;
+
+        return (userId, userName, role);
     }
 
     private static CaseResolution? ParseResolution(string? resolution)

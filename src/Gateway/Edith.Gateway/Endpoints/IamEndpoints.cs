@@ -19,7 +19,7 @@ public static class IamEndpoints
     {
         var group = app.MapGroup("/api/v1/iam");
 
-        // 1. Issue Dev / S2S JWT Token
+        // 1. Issue Dev / S2S JWT Token (Public endpoint with strict tenant registry validation)
         group.MapPost("/token", (
             [FromBody] TokenRequest req,
             [FromServices] ITokenService tokenService,
@@ -28,12 +28,12 @@ public static class IamEndpoints
             var targetTenantId = req.TenantId ?? InMemoryTenantRegistry.DefaultTenantId;
             var tenant = tenantRegistry.FindTenant(targetTenantId);
 
-            if (tenant == null)
+            if (tenant == null || !tenant.IsActive)
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
                     title: "Unknown Tenant",
-                    detail: $"Tenant '{targetTenantId}' is not registered.");
+                    detail: $"Tenant '{targetTenantId}' is not registered or is deactivated.");
             }
 
             var role = !string.IsNullOrWhiteSpace(req.Role)
@@ -69,11 +69,12 @@ public static class IamEndpoints
 
             var tenantId = req.TenantId 
                 ?? (await iamService.FindTenantIdByUsernameAsync(req.Username.Trim(), ct))
-                ?? ResolveTenant(tenantHeader, tenantAccessor);
+                ?? ResolveTenantForLogin(tenantHeader, tenantAccessor);
+
             var tenant = tenantRegistry.FindTenant(tenantId);
-            if (tenant == null)
+            if (tenant == null || !tenant.IsActive)
             {
-                return Results.BadRequest(new { error = "UnknownTenant", message = $"Tenant '{tenantId}' is not registered." });
+                return Results.BadRequest(new { error = "UnknownTenant", message = $"Tenant '{tenantId}' is not registered or is deactivated." });
             }
 
             var isValid = await iamService.VerifyPasswordAsync(tenantId, req.Username.Trim(), req.Password, ct);
@@ -355,7 +356,6 @@ public static class IamEndpoints
         group.MapPost("/change-password", async (
             [FromBody] ChangePasswordRequest req,
             ClaimsPrincipal principal,
-            [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             CancellationToken ct) =>
@@ -379,7 +379,7 @@ public static class IamEndpoints
                 return Results.Unauthorized();
             }
 
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(null, tenantAccessor, principal);
             var isCurrentValid = await iamService.VerifyPasswordAsync(tenantId, username, req.CurrentPassword, ct);
             if (!isCurrentValid)
             {
@@ -401,23 +401,25 @@ public static class IamEndpoints
             [FromServices] ITenantRegistry tenantRegistry) =>
         {
             return Results.Ok(tenantRegistry.GetAllTenants());
-        }).RequireAuthorization();
+        }).RequireAuthorization("AdminOnly");
 
-        // 9. Multi-Tenant IAM User CRUD (/api/v1/iam/users)
+        // 9. Multi-Tenant IAM User CRUD (/api/v1/iam/users) - Role: AdminOnly
         group.MapGet("/users", async (
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var users = await iamService.GetUsersAsync(tenantId, ct);
             return Results.Ok(users);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         group.MapPost("/users", async (
             [FromBody] CreateIamUserRequest req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             [FromServices] IEmailNotificationService emailService,
@@ -429,7 +431,7 @@ public static class IamEndpoints
                 return Results.BadRequest(new { error = "InvalidUsername", message = "Username/Email is required." });
             }
 
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var (created, rawPassword, token) = await iamService.CreateUserWithTokenAsync(tenantId, req, ct);
 
             // Send Live Gmail SMTP Onboarding Email
@@ -442,9 +444,10 @@ public static class IamEndpoints
                 tenantId,
                 ct);
 
+            var actorName = principal.FindFirst(ClaimTypes.Name)?.Value ?? "ADMIN";
             _ = auditService.RecordAuditEntryAsync(
                 tenantId,
-                new RecordAuditRequest("ADMIN", "IAM_USER_PROVISIONED", created.Username, null, $"Role={created.Role}, EmailStatus={emailSent}"),
+                new RecordAuditRequest(actorName, "IAM_USER_PROVISIONED", created.Username, null, $"Role={created.Role}, EmailStatus={emailSent}"),
                 ct);
 
             var response = new CreateIamUserResponse(
@@ -455,17 +458,18 @@ public static class IamEndpoints
                 token);
 
             return Results.Created($"/api/v1/iam/users/{created.Id}", response);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         group.MapPost("/users/{id:guid}/resend-invite", async (
             Guid id,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             [FromServices] IEmailNotificationService emailService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var user = await iamService.GetUserByIdAsync(tenantId, id, ct);
             if (user == null) return Results.NotFound();
 
@@ -490,56 +494,62 @@ public static class IamEndpoints
                 temporaryPassword = tempPass,
                 invitationToken = token
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         group.MapPut("/users/{id:guid}", async (
             Guid id,
             [FromBody] UpdateIamUserRequest req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var updated = await iamService.UpdateUserAsync(tenantId, id, req, ct);
             if (updated != null)
             {
+                var actorName = principal.FindFirst(ClaimTypes.Name)?.Value ?? "ADMIN";
                 _ = auditService.RecordAuditEntryAsync(
                     tenantId,
-                    new RecordAuditRequest("ADMIN", "IAM_USER_UPDATED", updated.Username, null, $"Role={updated.Role}, Active={updated.IsActive}, 2FA={updated.MfaEnabled}, Shift={updated.ShiftStatus}"),
+                    new RecordAuditRequest(actorName, "IAM_USER_UPDATED", updated.Username, null, $"Role={updated.Role}, Active={updated.IsActive}, 2FA={updated.MfaEnabled}, Shift={updated.ShiftStatus}"),
                     ct);
             }
             return updated != null ? Results.Ok(updated) : Results.NotFound();
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
+        // Delete user requires elevated SuperAdmin privileges
         group.MapDelete("/users/{id:guid}", async (
             Guid id,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var deleted = await iamService.DeleteUserAsync(tenantId, id, ct);
             return deleted ? Results.NoContent() : Results.NotFound();
-        }).AllowAnonymous();
+        }).RequireAuthorization("SuperAdminOnly");
 
         // 10. Multi-Tenant IAM User Groups & Menu Permissions CRUD (/api/v1/iam/groups)
         group.MapGet("/groups", async (
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var groups = await iamService.GetGroupsAsync(tenantId, ct);
             return Results.Ok(groups);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         group.MapPost("/groups", async (
             [FromBody] CreateIamGroupRequest req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             CancellationToken ct) =>
@@ -549,23 +559,24 @@ public static class IamEndpoints
                 return Results.BadRequest(new { error = "InvalidGroupName", message = "Group name is required." });
             }
 
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var created = await iamService.CreateGroupAsync(tenantId, req, ct);
             return Results.Created($"/api/v1/iam/groups/{created.Id}", created);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         group.MapPut("/groups/{id:guid}/permissions", async (
             Guid id,
             [FromBody] UpdateGroupPermissionsRequest req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var updated = await iamService.UpdateGroupPermissionsAsync(tenantId, id, req, ct);
             return updated != null ? Results.Ok(updated) : Results.NotFound();
-        }).AllowAnonymous();
+        }).RequireAuthorization("SuperAdminOnly");
 
         // 11. Menu Master & Menu Mappings Endpoints
         group.MapGet("/menus", async (
@@ -574,24 +585,49 @@ public static class IamEndpoints
         {
             var menus = await iamService.GetMenusAsync(ct);
             return Results.Ok(menus);
-        }).AllowAnonymous();
+        }).RequireAuthorization();
 
         group.MapGet("/groups/{id:guid}/mappings", async (
             Guid id,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
             [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IIamUserService iamService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader, tenantAccessor);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var mappings = await iamService.GetMenuMappingsAsync(tenantId, id, ct);
             return Results.Ok(mappings);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         return app;
     }
 
-    private static Guid ResolveTenant(string? tenantHeader, ITenantContextAccessor tenantAccessor)
+    private static Guid ResolveTenant(string? tenantHeader, ITenantContextAccessor tenantAccessor, ClaimsPrincipal? principal = null)
+    {
+        if (tenantAccessor.CurrentTenant != null)
+        {
+            return tenantAccessor.CurrentTenant.TenantId;
+        }
+
+        if (principal != null)
+        {
+            var claim = principal.FindFirst("tenant_id")?.Value ?? principal.FindFirst("tid")?.Value;
+            if (!string.IsNullOrWhiteSpace(claim) && Guid.TryParse(claim, out var parsedClaim))
+            {
+                return parsedClaim;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(tenantHeader) && Guid.TryParse(tenantHeader, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new UnauthorizedAccessException("Active tenant context could not be resolved from token claims or session.");
+    }
+
+    private static Guid ResolveTenantForLogin(string? tenantHeader, ITenantContextAccessor tenantAccessor)
     {
         if (tenantAccessor.CurrentTenant != null)
         {

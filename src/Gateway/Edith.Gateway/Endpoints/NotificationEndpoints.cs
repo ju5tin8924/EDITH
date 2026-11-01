@@ -385,7 +385,7 @@ public static class NotificationEndpoints
                 .ToList();
 
             return Results.Ok(rules);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 2. Create Rule
         group.MapPost("/rules", (
@@ -401,7 +401,7 @@ public static class NotificationEndpoints
             };
             RulesStore[rule.Id] = rule;
             return Results.Created($"/api/v1/notifications/rules/{rule.Id}", rule);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 3. Update Rule
         group.MapPut("/rules/{id:guid}", (
@@ -426,7 +426,7 @@ public static class NotificationEndpoints
             existing.TemplateFormat = updated.TemplateFormat;
 
             return Results.Ok(existing);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 4. Toggle Rule Active
         group.MapPatch("/rules/{id:guid}/toggle", (Guid id) =>
@@ -437,14 +437,14 @@ public static class NotificationEndpoints
             }
             existing.Active = !existing.Active;
             return Results.Ok(new { id = existing.Id, active = existing.Active });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 5. Delete Rule
         group.MapDelete("/rules/{id:guid}", (Guid id) =>
         {
             var removed = RulesStore.TryRemove(id, out _);
             return removed ? Results.NoContent() : Results.NotFound();
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 6. Delivery Ledgers & DLQ List
         group.MapGet("/ledgers", (
@@ -476,7 +476,7 @@ public static class NotificationEndpoints
 
             var results = query.OrderByDescending(l => l.SentAt).ToList();
             return Results.Ok(results);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 7. Replay Single Dead Letter
         group.MapPost("/ledgers/{id:guid}/replay", (Guid id) =>
@@ -499,7 +499,7 @@ public static class NotificationEndpoints
                 message = $"Successfully replayed delivery for trace {record.TraceId}",
                 record
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 8. Bulk Replay All Dead Letters
         group.MapPost("/ledgers/bulk-replay", () =>
@@ -523,13 +523,13 @@ public static class NotificationEndpoints
                 replayedCount = deadLetters.Count,
                 message = $"Replayed {deadLetters.Count} dead-letter deliveries with 100% callback resolution"
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 9. Shifts List
         group.MapGet("/shifts", () =>
         {
             return Results.Ok(ShiftsStore.Values.OrderBy(s => s.ShiftStart).ToList());
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 10. Update Shift / Substitution
         group.MapPut("/shifts/{id:guid}", (Guid id, [FromBody] ShiftRosterRecord updated) =>
@@ -546,7 +546,7 @@ public static class NotificationEndpoints
             existing.SubstituteUserName = updated.SubstituteUserName;
 
             return Results.Ok(existing);
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 11. Test Fire Rule
         group.MapPost("/test-fire", ([FromBody] TestFireRequest req) =>
@@ -594,7 +594,7 @@ public static class NotificationEndpoints
                 httpStatus = 200,
                 ledgerId = newRecord.Id
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 12. In-App Notification Center
         group.MapGet("/inbox", () =>
@@ -606,7 +606,7 @@ public static class NotificationEndpoints
                 unreadCount,
                 items = list
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 13. Mark Notification Read
         group.MapPatch("/inbox/{id:guid}/read", (Guid id) =>
@@ -617,7 +617,7 @@ public static class NotificationEndpoints
                 return Results.Ok(item);
             }
             return Results.NotFound();
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 14. Mark All Notifications Read
         group.MapPost("/inbox/mark-all-read", () =>
@@ -627,7 +627,7 @@ public static class NotificationEndpoints
                 item.Read = true;
             }
             return Results.Ok(new { message = "All notifications marked as read", unreadCount = 0 });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         return app;
     }
@@ -638,7 +638,7 @@ public static class NotificationEndpoints
         {
             return parsed;
         }
-        return DefaultTenantId;
+        throw new UnauthorizedAccessException("Valid tenant context is required.");
     }
 }
 

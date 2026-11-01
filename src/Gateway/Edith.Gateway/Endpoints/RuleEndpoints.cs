@@ -1,7 +1,8 @@
 using System.Diagnostics;
+using System.Security.Claims;
 using System.Text.Json;
+using Edith.Gateway.Models;
 using Edith.Gateway.Services;
-using Edith.Rules.Engine;
 using Edith.Rules.Models;
 using Edith.Rules.Repository;
 using Edith.Rules.Sandbox;
@@ -15,8 +16,6 @@ namespace Edith.Gateway.Endpoints;
 
 public static class RuleEndpoints
 {
-    private static readonly Guid DefaultTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-
     public static IEndpointRouteBuilder MapRuleEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/rules");
@@ -25,20 +24,24 @@ public static class RuleEndpoints
         group.MapGet("/", async (
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
             [FromQuery] bool? activeOnly,
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IRuleRepository ruleRepo,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var rules = await ruleRepo.ListRulesAsync(tenantId, activeOnly ?? false, ct);
 
             var dtos = rules.Select(MapRuleToDto);
             return Results.Ok(dtos);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 2. Create Rule
         group.MapPost("/", async (
             [FromBody] CreateRuleDto dto,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IRuleRepository ruleRepo,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
@@ -48,7 +51,7 @@ public static class RuleEndpoints
                 return Results.BadRequest(new { error = "RuleCode and RuleName are required." });
             }
 
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var category = ParseCategory(dto.RuleType);
             var riskLevel = Enum.TryParse<RiskLevel>(dto.Severity, true, out var rk) ? rk : RiskLevel.High;
 
@@ -74,8 +77,9 @@ public static class RuleEndpoints
 
             var created = await ruleRepo.CreateRuleAsync(rule, ct);
 
+            var actorName = principal.FindFirst(ClaimTypes.Name)?.Value ?? "Compliance Officer";
             await auditService.RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
-                "Compliance Officer",
+                actorName,
                 "AML_RULE_CREATED",
                 $"{created.RuleCode} ({created.RuleName})",
                 null,
@@ -83,18 +87,20 @@ public static class RuleEndpoints
             ), ct);
 
             return Results.Created($"/api/v1/rules/{created.Id}", MapRuleToDto(created));
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 3. Update Rule
         group.MapPut("/{ruleId:guid}", async (
             Guid ruleId,
             [FromBody] CreateRuleDto dto,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IRuleRepository ruleRepo,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var category = ParseCategory(dto.RuleType);
             var riskLevel = Enum.TryParse<RiskLevel>(dto.Severity, true, out var rk) ? rk : RiskLevel.High;
 
@@ -120,8 +126,9 @@ public static class RuleEndpoints
 
             var updated = await ruleRepo.UpdateRuleAsync(rule, ct);
 
+            var actorName = principal.FindFirst(ClaimTypes.Name)?.Value ?? "Compliance Officer";
             await auditService.RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
-                "Compliance Officer",
+                actorName,
                 "AML_RULE_UPDATED",
                 $"{updated.RuleCode} ({updated.RuleName})",
                 null,
@@ -129,25 +136,28 @@ public static class RuleEndpoints
             ), ct);
 
             return Results.Ok(MapRuleToDto(updated));
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 4. Delete Rule
         group.MapDelete("/{ruleId:guid}", async (
             Guid ruleId,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IRuleRepository ruleRepo,
             [FromServices] IAuditLedgerService auditService,
             CancellationToken ct) =>
         {
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var deleted = await ruleRepo.DeleteRuleAsync(tenantId, ruleId, ct);
             if (!deleted)
             {
                 return Results.NotFound(new { error = $"Rule '{ruleId}' not found." });
             }
 
+            var actorName = principal.FindFirst(ClaimTypes.Name)?.Value ?? "Compliance Officer";
             await auditService.RecordAuditEntryAsync(tenantId, new RecordAuditRequest(
-                "Compliance Officer",
+                actorName,
                 "AML_RULE_DELETED",
                 $"Rule ID {ruleId}",
                 null,
@@ -155,18 +165,20 @@ public static class RuleEndpoints
             ), ct);
 
             return Results.Ok(new { deleted = true, id = ruleId });
-        }).AllowAnonymous();
+        }).RequireAuthorization("AdminOnly");
 
         // 5. Backtest Rule (Supports Saved Rule or Unsaved Draft Overrides + Baseline Delta & Sensitivity Curve)
         group.MapPost("/backtest", async (
             [FromBody] BacktestRequestDto req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] IRuleRepository ruleRepo,
             [FromServices] IRuleBacktester backtester,
             CancellationToken ct) =>
         {
             var sw = Stopwatch.StartNew();
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var allRules = await ruleRepo.ListRulesAsync(tenantId, false, ct);
             var existing = !string.IsNullOrWhiteSpace(req.RuleCode)
                 ? allRules.FirstOrDefault(r => string.Equals(r.RuleCode, req.RuleCode, StringComparison.OrdinalIgnoreCase))
@@ -253,18 +265,20 @@ public static class RuleEndpoints
             };
 
             return Results.Ok(response);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 6. Composite Scoring & Portfolio Sandbox Simulation (50k Archive Projection)
         group.MapPost("/sandbox/simulate", async (
             [FromBody] SandboxSimulationRequestDto req,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
             [FromServices] ISystemMastersService mastersService,
             [FromServices] IRuleRepository ruleRepo,
             CancellationToken ct) =>
         {
             var sw = Stopwatch.StartNew();
-            var tenantId = ResolveTenant(tenantHeader);
+            var tenantId = ResolveTenant(tenantHeader, tenantAccessor, principal);
             var masters = await mastersService.GetMastersAsync(tenantId, ct);
             var activeRules = await ruleRepo.ListRulesAsync(tenantId, true, ct);
             var baseWeights = masters.ScoringWeights;
@@ -286,7 +300,7 @@ public static class RuleEndpoints
                 sw);
 
             return Results.Ok(simResult);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         return app;
     }
@@ -362,13 +376,28 @@ public static class RuleEndpoints
         _ => $"{r.Category} rule with weightage {r.ScoreWeightage}%."
     };
 
-    private static Guid ResolveTenant(string? tenantHeader)
+    private static Guid ResolveTenant(string? tenantHeader, ITenantContextAccessor? tenantAccessor = null, ClaimsPrincipal? principal = null)
     {
+        if (tenantAccessor?.CurrentTenant != null)
+        {
+            return tenantAccessor.CurrentTenant.TenantId;
+        }
+
+        if (principal != null)
+        {
+            var claim = principal.FindFirst("tenant_id")?.Value ?? principal.FindFirst("tid")?.Value;
+            if (!string.IsNullOrWhiteSpace(claim) && Guid.TryParse(claim, out var parsedClaim))
+            {
+                return parsedClaim;
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(tenantHeader) && Guid.TryParse(tenantHeader, out var parsed))
         {
             return parsed;
         }
-        return DefaultTenantId;
+
+        throw new UnauthorizedAccessException("Valid tenant context is required.");
     }
 
     private static readonly string[] Corridors = ["AE", "SA", "US", "GB", "CH", "IR", "RU", "KP", "SG", "SY", "MM"];
@@ -399,7 +428,7 @@ public static class RuleEndpoints
         {
             var amount = cohort switch
             {
-                "SMURFING_RING_ATTACK" when i % 3 == 0 => (decimal)(random.NextDouble() * 8500 + 46200), // 46.2k - 54.7k AED band
+                "SMURFING_RING_ATTACK" when i % 3 == 0 => (decimal)(random.NextDouble() * 8500 + 46200),
                 "VELOCITY_BURST_STRESS" when i % 4 == 0 => (decimal)(random.NextDouble() * 190000 + 95000),
                 _ => (decimal)(random.NextDouble() * 550000 + 1000)
             };
@@ -453,7 +482,7 @@ public static class RuleEndpoints
         Stopwatch sw)
     {
         const int sampleSize = 500;
-        const int scaleFactor = 100; // 500 * 100 = 50,000 archive projection
+        const int scaleFactor = 100;
 
         int seed = cohort switch
         {
@@ -598,7 +627,6 @@ public static class RuleEndpoints
             }
         }
 
-        // Build 5-point threshold sensitivity curve around candThreshold
         int[] offsets = [-10, -5, 0, 5, 10];
         var thresholdCurve = offsets.Select(offset =>
         {

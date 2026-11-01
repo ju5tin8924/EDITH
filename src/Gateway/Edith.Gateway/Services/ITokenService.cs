@@ -8,33 +8,36 @@ namespace Edith.Gateway.Services;
 
 public interface ITokenService
 {
-    TokenResponse GenerateToken(string username, string role, Guid tenantId);
+    TokenResponse GenerateToken(string username, string role, Guid tenantId, TimeSpan? lifetime = null);
 }
 
 public sealed class JwtTokenService : ITokenService
 {
-    public const string DefaultSecret = "EDITH_SUPER_SECURE_ENTERPRISE_AML_JWT_SECRET_KEY_2026_GCC_VALIDATION_STRING";
     public const string Issuer = "https://edith.aml.cloud";
     public const string Audience = "https://edith.aml.cloud";
 
     private readonly byte[] _keyBytes;
 
-    public JwtTokenService(IConfiguration configuration)
+    public JwtTokenService(IConfiguration configuration, IWebHostEnvironment? environment = null)
     {
-        var secret = configuration["Jwt:Secret"] ?? DefaultSecret;
+        var secret = SecretsConfigurationManager.ResolveJwtSecret(configuration, environment ?? new DefaultDevHostEnvironment());
         _keyBytes = Encoding.UTF8.GetBytes(secret);
     }
 
-    public TokenResponse GenerateToken(string username, string role, Guid tenantId)
+    public TokenResponse GenerateToken(string username, string role, Guid tenantId, TimeSpan? lifetime = null)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
-        var expires = DateTime.UtcNow.AddHours(4);
+        var now = DateTime.UtcNow;
+        var expires = now.Add(lifetime ?? TimeSpan.FromHours(4));
+        var notBefore = expires < now ? expires.AddMinutes(-5) : now.AddMinutes(-1);
 
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, Guid.NewGuid().ToString()),
             new(JwtRegisteredClaimNames.UniqueName, username),
             new(JwtRegisteredClaimNames.Name, username),
+            new(ClaimTypes.Name, username),
+            new(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
             new(JwtRegisteredClaimNames.Email, $"{username.ToLowerInvariant()}@compliance.edith.internal"),
             new(ClaimTypes.Role, role),
             new("role", role),
@@ -46,6 +49,7 @@ public sealed class JwtTokenService : ITokenService
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
+            NotBefore = notBefore,
             Expires = expires,
             Issuer = Issuer,
             Audience = Audience,
@@ -65,5 +69,15 @@ public sealed class JwtTokenService : ITokenService
             TenantId = tenantId,
             Role = role
         };
+    }
+
+    private sealed class DefaultDevHostEnvironment : IWebHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = "Edith.Gateway";
+        public string WebRootPath { get; set; } = string.Empty;
+        public Microsoft.Extensions.FileProviders.IFileProvider WebRootFileProvider { get; set; } = null!;
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = null!;
     }
 }

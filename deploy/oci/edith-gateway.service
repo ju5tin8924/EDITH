@@ -1,0 +1,18 @@
+[Unit]
+Description=EDITH Unified API Gateway & IAM Host (.NET 10 ARM64)
+After=network-online.target edith-screening.service
+Requires=edith-screening.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/edith/gateway
+ExecStart=/opt/edith/gateway/Edith.Gateway --urls http://0.0.0.0:5000
+EnvironmentFile=/etc/edith/edith.env
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+SyslogIdentifier=edith-gateway
+
+[Install]
+WantedBy=multi-user.target

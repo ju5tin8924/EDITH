@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Edith.Gateway.Hubs;
@@ -8,6 +9,7 @@ public interface IJobClient
     Task JobCompleted(string jobId, int totalHits);
 }
 
+[Authorize]
 public sealed class JobHub : Hub<IJobClient>
 {
     public async Task JoinJobGroup(string jobId)

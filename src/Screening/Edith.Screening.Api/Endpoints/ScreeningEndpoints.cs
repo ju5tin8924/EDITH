@@ -369,7 +369,7 @@ public static class ScreeningEndpoints
                 LatencyMs = Math.Round(sw.Elapsed.TotalMilliseconds, 2),
                 Matches = ordered
             });
-        }).AllowAnonymous();
+        });
 
         // Direct 1-Click Intercept & Persistent Case Creation
         group.MapPost("/screen/intercept-case", async (
@@ -424,7 +424,7 @@ public static class ScreeningEndpoints
                 Status = "OPEN",
                 SlaDueDate = slaDue
             });
-        }).AllowAnonymous();
+        });
 
         // Export Regulatory Screening Audit Certificate (PDF / JSON WORM Proof)
         group.MapPost("/screen/audit-certificate", (
@@ -463,7 +463,7 @@ public static class ScreeningEndpoints
                 WormBlockHashSha256 = wormHash,
                 RegulatoryAttestation = "Certified under CBUAE AML/CFT Decision No. 74 & FATF Recommendation 11 (5-Year WORM Immutable Retention)."
             });
-        }).AllowAnonymous();
+        });
 
         group.MapGet("/whitelists", async (
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
@@ -478,7 +478,7 @@ public static class ScreeningEndpoints
 
             var list = await whitelistService.GetActiveWhitelistsAsync(tenantId, ct);
             return Results.Ok(list);
-        }).AllowAnonymous();
+        });
 
         group.MapPost("/whitelists", async (
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
@@ -510,7 +510,7 @@ public static class ScreeningEndpoints
 
             var created = await whitelistService.AddWhitelistAsync(entry, ct);
             return Results.Created($"/api/v1/whitelists/{created.Id}", created);
-        }).AllowAnonymous();
+        });
 
         group.MapDelete("/whitelists/{id:guid}", async (
             Guid id,
@@ -526,7 +526,7 @@ public static class ScreeningEndpoints
 
             var removed = await whitelistService.RemoveWhitelistAsync(tenantId, id, ct);
             return removed ? Results.NoContent() : Results.NotFound(new { error = $"Whitelist entry '{id}' not found." });
-        }).AllowAnonymous();
+        });
 
         group.MapPost("/watchlist/sync", async (
             [FromBody] WatchlistSyncRequest req,
@@ -690,7 +690,7 @@ public static class ScreeningEndpoints
             };
 
             return Results.Accepted($"/api/v1/bulk/jobs/{jobId}", response);
-        }).AllowAnonymous();
+        });
 
         group.MapGet("/bulk/jobs", async (
             [FromServices] IBulkJobRepository jobRepo,
@@ -708,7 +708,7 @@ public static class ScreeningEndpoints
                 SkippedDownloadUrl = job.SkippedRecords > 0 ? $"/api/v1/bulk/jobs/{job.Id}/skipped" : null
             }).ToList();
             return Results.Ok(list);
-        }).AllowAnonymous();
+        });
 
         group.MapGet("/bulk/jobs/{id:guid}", async (
             Guid id,
@@ -731,7 +731,7 @@ public static class ScreeningEndpoints
                 SkippedRecords = job.SkippedRecords,
                 SkippedDownloadUrl = job.SkippedRecords > 0 ? $"/api/v1/bulk/jobs/{id}/skipped" : null
             });
-        }).AllowAnonymous();
+        });
 
         group.MapGet("/bulk/jobs/{id:guid}/skipped", async (
             Guid id,
@@ -755,7 +755,7 @@ public static class ScreeningEndpoints
             var (bytes, contentType, extension) = AmlFormatExporter.Export(skipped, exportFormat);
 
             return Results.File(bytes, contentType, fileDownloadName: $"skipped_{id}.{extension}");
-        }).AllowAnonymous();
+        });
 
         if (includeHealth)
         {

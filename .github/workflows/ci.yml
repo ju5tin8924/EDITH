@@ -1,4 +1,4 @@
-name: EDITH Enterprise CI/CD Pipeline
+name: EDITH Enterprise CI/CD Pipeline (OCI ARM64)
 
 on:
   push:
@@ -6,9 +6,13 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  DOTNET_VERSION: '10.0.x'
+  TARGET_RID: 'linux-arm64'
+
 jobs:
   backend-build-test:
-    name: .NET 10 Build & Test (Zero Warnings)
+    name: .NET 10 Build, Test & ARM64 Publish
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -17,7 +21,7 @@ jobs:
       - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.100'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore Dependencies
         run: dotnet restore Edith.slnx
@@ -27,6 +31,28 @@ jobs:
 
       - name: Run Automated Test Suites
         run: dotnet test Edith.slnx --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+
+      - name: Publish ARM64 Artifacts (linux-arm64)
+        run: |
+          dotnet publish src/Gateway/Edith.Gateway/Edith.Gateway.csproj \
+            -c Release -r ${{ env.TARGET_RID }} --self-contained false \
+            -p:UseAppHost=true -p:ErrorOnDuplicatePublishOutputFiles=false \
+            -o publish/gateway
+          dotnet publish src/Screening/Edith.Screening.Api/Edith.Screening.Api.csproj \
+            -c Release -r ${{ env.TARGET_RID }} --self-contained false \
+            -p:UseAppHost=true \
+            -o publish/screening-api
+          dotnet publish src/Database/Edith.Database.Migrator/Edith.Database.Migrator.csproj \
+            -c Release -r ${{ env.TARGET_RID }} --self-contained false \
+            -p:UseAppHost=true \
+            -o publish/migrator
+
+      - name: Upload ARM64 Backend Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: edith-backend-linux-arm64
+          path: publish/
+          retention-days: 7
 
   database-migration-drift-check:
     name: PostgreSQL 17 Migration Checksum & Drift Audit
@@ -38,17 +64,20 @@ jobs:
       - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.100'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Verify Migration Checksums
         run: dotnet test tests/Edith.Database.Migrator.Tests --configuration Release
 
   frontend-build:
-    name: React 19 + Vite Production Build
+    name: React 19 + Vite Production Build (ARM64 Target)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: src/Web/edith-portal
+    env:
+      npm_config_arch: arm64
+      npm_config_target_arch: arm64
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -66,13 +95,25 @@ jobs:
       - name: Typecheck & Production Vite Build
         run: npm run build
 
+      - name: Upload Frontend Portal Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: edith-portal-dist
+          path: src/Web/edith-portal/dist/
+          retention-days: 7
+
   container-security-scan:
-    name: Container Security & Vulnerability Audit
+    name: Security Audit & Deploy Script Self-Check
     needs: [backend-build-test, frontend-build]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Validate OCI Deployment Script Self-Check
+        run: |
+          chmod +x deploy/oci/deploy.sh
+          ./deploy/oci/deploy.sh --self-check
 
       - name: Security Scan Container Blueprints
         uses: aquasecurity/trivy-action@0.28.0
@@ -81,3 +122,94 @@ jobs:
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
+
+  deploy-oci-arm64:
+    name: Deploy to OCI UK-South ARM64 VM (144.21.52.172)
+    needs:
+      - backend-build-test
+      - database-migration-drift-check
+      - frontend-build
+      - container-security-scan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: oci-production-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Checkout Deployment Scripts
+        uses: actions/checkout@v4
+
+      - name: Download ARM64 Backend Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: edith-backend-linux-arm64
+          path: staging/
+
+      - name: Download Frontend Portal Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: edith-portal-dist
+          path: staging/portal/
+
+      - name: Stage Server-Side Execution Scripts
+        run: |
+          mkdir -p staging/deploy
+          cp deploy/oci/deploy.sh deploy/oci/bootstrap-vm.sh deploy/oci/edith.nginx.conf deploy/oci/*.service staging/deploy/
+          chmod +x staging/deploy/deploy.sh staging/deploy/bootstrap-vm.sh
+
+      - name: Configure SSH Key & Host Verification
+        env:
+          OCI_SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
+          SERVER_IP: ${{ secrets.SERVER_IP || '144.21.52.172' }}
+          SSH_PORT: ${{ secrets.OCI_SSH_PORT || '22' }}
+          OCI_KNOWN_HOSTS: ${{ secrets.OCI_KNOWN_HOSTS }}
+        run: |
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "${OCI_SSH_KEY}" > ~/.ssh/id_oci
+          chmod 0600 ~/.ssh/id_oci
+          if [ -n "${OCI_KNOWN_HOSTS}" ]; then
+            printf '%s\n' "${OCI_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${SSH_PORT}" -H "${SERVER_IP}" >> ~/.ssh/known_hosts
+          fi
+          chmod 0600 ~/.ssh/known_hosts
+
+      - name: Transfer ARM64 Artifacts via Rsync over SSH
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP || '144.21.52.172' }}
+          SSH_USER: ${{ secrets.OCI_SSH_USER || 'ubuntu' }}
+          SSH_PORT: ${{ secrets.OCI_SSH_PORT || '22' }}
+        run: |
+          ssh -i ~/.ssh/id_oci -p "${SSH_PORT}" "${SSH_USER}@${SERVER_IP}" "mkdir -p /tmp/edith-staging"
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_oci -p ${SSH_PORT} -o StrictHostKeyChecking=yes" \
+            staging/ "${SSH_USER}@${SERVER_IP}:/tmp/edith-staging/"
+
+      - name: Execute Server-Side Deployment & Health Checks
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP || '144.21.52.172' }}
+          SSH_USER: ${{ secrets.OCI_SSH_USER || 'ubuntu' }}
+          SSH_PORT: ${{ secrets.OCI_SSH_PORT || '22' }}
+          EDITH_PG_CONNECTION: ${{ secrets.EDITH_PG_CONNECTION }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_ISSUER: ${{ vars.JWT_ISSUER || 'https://edith.aml.cloud' }}
+          JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE || 'https://edith.aml.cloud' }}
+          OPENSEARCH_URL: ${{ vars.OPENSEARCH_URL || 'https://127.0.0.1:9200' }}
+          OPENSEARCH_USER: ${{ vars.OPENSEARCH_USER || 'admin' }}
+          OPENSEARCH_PASSWORD: ${{ secrets.OPENSEARCH_PASSWORD }}
+          OPENSEARCH_SKIP_SSL_VALIDATION: ${{ vars.OPENSEARCH_SKIP_SSL_VALIDATION || 'false' }}
+          EDITH_SMTP_USER: ${{ vars.EDITH_SMTP_USER || 'notifications@edith.aml.cloud' }}
+          EDITH_SMTP_PASSWORD: ${{ secrets.EDITH_SMTP_PASSWORD }}
+        run: |
+          {
+            for var in EDITH_PG_CONNECTION JWT_SECRET JWT_ISSUER JWT_AUDIENCE \
+                       OPENSEARCH_URL OPENSEARCH_USER OPENSEARCH_PASSWORD \
+                       OPENSEARCH_SKIP_SSL_VALIDATION EDITH_SMTP_USER EDITH_SMTP_PASSWORD; do
+              printf 'export %s=%q\n' "${var}" "${!var}"
+            done
+          } | ssh -i ~/.ssh/id_oci -p "${SSH_PORT}" "${SSH_USER}@${SERVER_IP}" \
+            "umask 077 && cat > /tmp/edith-staging/.deploy.env && bash /tmp/edith-staging/deploy/deploy.sh"
+
+      - name: Cleanup Local SSH Key
+        if: always()
+        run: rm -f ~/.ssh/id_oci ~/.ssh/known_hosts

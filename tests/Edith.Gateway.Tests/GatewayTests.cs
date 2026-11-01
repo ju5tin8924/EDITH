@@ -10,12 +10,38 @@ namespace Edith.Gateway.Tests;
 
 public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gateway.Program>>
 {
+    private readonly WebApplicationFactory<Edith.Gateway.Program> _factory;
     private readonly HttpClient _client;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public GatewayTests(WebApplicationFactory<Edith.Gateway.Program> factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
+    }
+
+    private async Task<string> GetTokenAsync(string role = EdithRoles.SuperAdmin, Guid? tenantId = null)
+    {
+        var tokenReq = new TokenRequest
+        {
+            Username = role == EdithRoles.SuperAdmin ? "admin.root" : (role == EdithRoles.Mlro ? "fatima.mlro" : "analyst.user"),
+            Password = "Password123!",
+            Role = role,
+            TenantId = tenantId ?? InMemoryTenantRegistry.DefaultTenantId
+        };
+        var tokenRes = await _client.PostAsJsonAsync("/api/v1/iam/token", tokenReq);
+        var token = await tokenRes.Content.ReadFromJsonAsync<TokenResponse>(JsonOptions);
+        return token!.AccessToken;
+    }
+
+    private async Task<HttpClient> CreateAuthenticatedClientAsync(string role = EdithRoles.SuperAdmin, Guid? tenantId = null)
+    {
+        var tid = tenantId ?? InMemoryTenantRegistry.DefaultTenantId;
+        var token = await GetTokenAsync(role, tid);
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        client.DefaultRequestHeaders.Add("X-Tenant-ID", tid.ToString());
+        return client;
     }
 
     [Fact]
@@ -38,6 +64,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
     [Fact]
     public async Task CaseResolution_With_Ssrf_Url_Is_Rejected()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.Mlro);
         var caseId = Guid.NewGuid();
         var resolveReq = new
         {
@@ -45,7 +72,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
             rationale = "Testing SSRF guard",
             cbsWebhookUrl = "http://169.254.169.254/latest/meta-data/"
         };
-        var res = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/resolve", resolveReq);
+        var res = await authClient.PostAsJsonAsync($"/api/v1/cases/{caseId}/resolve", resolveReq);
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         var body = await res.Content.ReadAsStringAsync();
         Assert.Contains("InvalidWebhookUrl", body);
@@ -189,6 +216,8 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
     [Fact]
     public async Task Case_Investigation_Workflow_EndToEnd_From_Hold_To_Resolution()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.Mlro);
+
         // 1. Screen blacklisted transaction (Viktor Anatolyevich Bout)
         var screenReq = new
         {
@@ -206,11 +235,11 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         };
         screenHttp.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         screenHttp.Headers.Add("X-Tenant-ID", InMemoryTenantRegistry.DefaultTenantId.ToString());
-        var screenRes = await _client.SendAsync(screenHttp);
+        var screenRes = await authClient.SendAsync(screenHttp);
         Assert.Equal(HttpStatusCode.OK, screenRes.StatusCode);
 
         // 2. Analyst views cases list
-        var casesRes = await _client.GetAsync("/api/v1/cases");
+        var casesRes = await authClient.GetAsync("/api/v1/cases");
         Assert.Equal(HttpStatusCode.OK, casesRes.StatusCode);
         var casesJson = await casesRes.Content.ReadAsStringAsync();
         using var casesDoc = JsonDocument.Parse(casesJson);
@@ -220,7 +249,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         var caseId = Guid.Parse(caseItem.GetProperty("id").GetString()!);
 
         // 3. Analyst acquires pessimistic lease lock with custom renewal duration (60 minutes)
-        var lockRes = await _client.PostAsync($"/api/v1/cases/{caseId}/acquire-lock?durationMinutes=60", null);
+        var lockRes = await authClient.PostAsync($"/api/v1/cases/{caseId}/acquire-lock?durationMinutes=60", null);
         Assert.Equal(HttpStatusCode.OK, lockRes.StatusCode);
         var lockJson = await lockRes.Content.ReadAsStringAsync();
         using var lockDoc = JsonDocument.Parse(lockJson);
@@ -230,25 +259,25 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
 
         // 4. Analyst adds multi-type comment
         var noteReq = new { content = "Verified OFAC SDN hit on Viktor Bout. Escalating to MLRO for freeze.", noteType = "INVESTIGATION" };
-        var noteRes = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/comments", noteReq);
+        var noteRes = await authClient.PostAsJsonAsync($"/api/v1/cases/{caseId}/comments", noteReq);
         Assert.Equal(HttpStatusCode.OK, noteRes.StatusCode);
 
         // 5. Transition to UnderReview then PendingApproval
         var transReview = new { newStatus = "UnderReview", userRole = "ANALYST", reason = "Analyst started EDD" };
-        var reviewRes = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/transition", transReview);
+        var reviewRes = await authClient.PostAsJsonAsync($"/api/v1/cases/{caseId}/transition", transReview);
         Assert.Equal(HttpStatusCode.OK, reviewRes.StatusCode);
 
         var transApprove = new { newStatus = "PendingApproval", userRole = "ANALYST", reason = "Four-eyes escalation to MLRO" };
-        var approveRes = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/transition", transApprove);
+        var approveRes = await authClient.PostAsJsonAsync($"/api/v1/cases/{caseId}/transition", transApprove);
         Assert.Equal(HttpStatusCode.OK, approveRes.StatusCode);
 
         // 6. MLRO resolves case with ReportedStrFreeze
         var resolveReq = new { resolution = "ReportedStrFreeze", rationale = "True match confirmed. Funds frozen under UAE UNSC resolutions." };
-        var resolveRes = await _client.PostAsJsonAsync($"/api/v1/cases/{caseId}/resolve", resolveReq);
+        var resolveRes = await authClient.PostAsJsonAsync($"/api/v1/cases/{caseId}/resolve", resolveReq);
         Assert.Equal(HttpStatusCode.OK, resolveRes.StatusCode);
 
         // 7. Verify case detail reflects Resolved state, audit entries, and added comments
-        var detailRes = await _client.GetAsync($"/api/v1/cases/{caseId}");
+        var detailRes = await authClient.GetAsync($"/api/v1/cases/{caseId}");
         Assert.Equal(HttpStatusCode.OK, detailRes.StatusCode);
         var detailJson = await detailRes.Content.ReadAsStringAsync();
         using var detailDoc = JsonDocument.Parse(detailJson);
@@ -259,12 +288,14 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
     [Fact]
     public async Task Portal_BulkUpload_And_Direct_CaseResolution_Succeed_Via_Gateway()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.Mlro, InMemoryTenantRegistry.DemoTenantId);
+
         // 1. Upload CSV via Gateway /api/v1/bulk/upload with keepSkipped=true
         var csv = "AML_TYPE,AML_FULLNAME,AML_IDDETAILS,AML_CATEGORY,AML_NATIONALITY\nINDIVIDUAL,VIKTOR ANATOLYEVICH BOUT,OFAC-9812,SANCTION,RU\nINDIVIDUAL,SALEM AL-MANSOORI,ID-9991,CLEAN,AE\n";
         using var form = new MultipartFormDataContent();
         form.Add(new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes(csv)), "file", "portal_test.csv");
 
-        var uploadRes = await _client.PostAsync("/api/v1/bulk/upload?keepSkipped=true&skippedFormat=json", form);
+        var uploadRes = await authClient.PostAsync("/api/v1/bulk/upload?keepSkipped=true&skippedFormat=json", form);
         Assert.Equal(HttpStatusCode.Accepted, uploadRes.StatusCode);
 
         // 2. Screen a distinct hit to create an Open case and resolve it directly using UI string 'FalsePositive'
@@ -283,10 +314,10 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         };
         screenHttp.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         screenHttp.Headers.Add("X-Tenant-ID", InMemoryTenantRegistry.DemoTenantId.ToString());
-        var screenRes = await _client.SendAsync(screenHttp);
+        var screenRes = await authClient.SendAsync(screenHttp);
         Assert.Equal(HttpStatusCode.OK, screenRes.StatusCode);
 
-        var casesRes = await _client.GetAsync("/api/v1/cases");
+        var casesRes = await authClient.GetAsync("/api/v1/cases");
         var casesJson = await casesRes.Content.ReadAsStringAsync();
         using var casesDoc = JsonDocument.Parse(casesJson);
         var openCase = casesDoc.RootElement.EnumerateArray().First(c =>
@@ -294,7 +325,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
             c.GetProperty("status").GetString() == "Open");
 
         var openCaseId = openCase.GetProperty("id").GetString();
-        var resolveRes = await _client.PostAsJsonAsync($"/api/v1/cases/{openCaseId}/resolve", new
+        var resolveRes = await authClient.PostAsJsonAsync($"/api/v1/cases/{openCaseId}/resolve", new
         {
             resolution = "FalsePositive",
             rationale = "Cleared via UI portal MLRO sign-off"
@@ -305,6 +336,8 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
     [Fact]
     public async Task Iam_User_And_Group_Crud_With_Pbkdf2_And_Screening_Enhancements_Work()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.SuperAdmin);
+
         // 1. Verify PBKDF2-SHA256 password hasher
         var hash = IamPasswordHasher.HashPassword("ComplianceSecret#2026");
         Assert.StartsWith("pbkdf2_sha256$", hash);
@@ -312,7 +345,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.False(IamPasswordHasher.VerifyPassword("WrongPassword", hash));
 
         // 2. Provision new IAM user
-        var createUserRes = await _client.PostAsJsonAsync("/api/v1/iam/users", new CreateIamUserRequest(
+        var createUserRes = await authClient.PostAsJsonAsync("/api/v1/iam/users", new CreateIamUserRequest(
             "nadia.alhashimi@adcb.ae",
             "ComplianceSecret#2026",
             "Nadia Al-Hashimi",
@@ -328,20 +361,20 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal("Nadia Al-Hashimi", createdUser.FullName);
 
         // 3. Update IAM user shift status and role
-        var updateUserRes = await _client.PutAsJsonAsync($"/api/v1/iam/users/{createdUser.Id}", new UpdateIamUserRequest(
+        var updateUserRes = await authClient.PutAsJsonAsync($"/api/v1/iam/users/{createdUser.Id}", new UpdateIamUserRequest(
             Role: "MLRO",
             ShiftStatus: "OFF_DUTY"));
         Assert.Equal(HttpStatusCode.OK, updateUserRes.StatusCode);
 
         // 4. Create IAM Group & Update Permissions
-        var createGroupRes = await _client.PostAsJsonAsync("/api/v1/iam/groups", new CreateIamGroupRequest(
+        var createGroupRes = await authClient.PostAsJsonAsync("/api/v1/iam/groups", new CreateIamGroupRequest(
             "SENIOR_SANCTIONS_DESK",
             [new IamGroupPermissionDto("MENU_SCREENING", true, true, true)]));
         Assert.Equal(HttpStatusCode.Created, createGroupRes.StatusCode);
         var createdGroup = await createGroupRes.Content.ReadFromJsonAsync<IamGroupDto>(JsonOptions);
         Assert.NotNull(createdGroup);
 
-        var updatePermsRes = await _client.PutAsJsonAsync($"/api/v1/iam/groups/{createdGroup.Id}/permissions", new UpdateGroupPermissionsRequest(
+        var updatePermsRes = await authClient.PutAsJsonAsync($"/api/v1/iam/groups/{createdGroup.Id}/permissions", new UpdateGroupPermissionsRequest(
             [
                 new IamGroupPermissionDto("MENU_SCREENING", true, true, true),
                 new IamGroupPermissionDto("MENU_CASES", true, true, false)
@@ -349,7 +382,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(HttpStatusCode.OK, updatePermsRes.StatusCode);
 
         // 5. Direct 1-Click Intercept Case Creation & Audit Certificate
-        var interceptRes = await _client.PostAsJsonAsync("/api/v1/screen/intercept-case", new
+        var interceptRes = await authClient.PostAsJsonAsync("/api/v1/screen/intercept-case", new
         {
             beneficiaryName = "Viktor Anatolyevich Bout",
             riskScore = 96.5m,
@@ -358,7 +391,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         });
         Assert.Equal(HttpStatusCode.Created, interceptRes.StatusCode);
 
-        var certRes = await _client.PostAsJsonAsync("/api/v1/screen/audit-certificate", new
+        var certRes = await authClient.PostAsJsonAsync("/api/v1/screen/audit-certificate", new
         {
             subjectName = "Viktor Anatolyevich Bout",
             subjectId = "OFAC-9812",
@@ -387,15 +420,17 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
     [Fact]
     public async Task Kyc360_Directory_Dossier_And_Edd_Workflow_Updates_Succeed()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.Mlro);
+
         // 1. List KYC dossiers
-        var listRes = await _client.GetAsync("/api/v1/kyc");
+        var listRes = await authClient.GetAsync("/api/v1/kyc");
         Assert.Equal(HttpStatusCode.OK, listRes.StatusCode);
         var list = await listRes.Content.ReadFromJsonAsync<List<KycDossierDto>>(JsonOptions);
         Assert.NotNull(list);
         Assert.NotEmpty(list);
 
         // 2. Lookup specific dossier by code
-        var getRes = await _client.GetAsync("/api/v1/kyc/CUST-AE-88902");
+        var getRes = await authClient.GetAsync("/api/v1/kyc/CUST-AE-88902");
         Assert.Equal(HttpStatusCode.OK, getRes.StatusCode);
         var dossier = await getRes.Content.ReadFromJsonAsync<KycDossierDto>(JsonOptions);
         Assert.NotNull(dossier);
@@ -404,7 +439,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.NotEmpty(dossier.Documents);
 
         // 3. Complete Periodic EDD Review Sign-Off
-        var eddRes = await _client.PutAsJsonAsync("/api/v1/kyc/CUST-AE-88902/edd", new KycEddUpdateRequest(
+        var eddRes = await authClient.PutAsJsonAsync("/api/v1/kyc/CUST-AE-88902/edd", new KycEddUpdateRequest(
             Action: "COMPLETE_EDD_REVIEW",
             RiskTier: "HIGH",
             NextReviewDate: "2027-10-25",
@@ -418,8 +453,10 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
     [Fact]
     public async Task Rules_Crud_DraftBacktest_And_Audit_Workflow_Succeeds()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.SuperAdmin);
+
         // 1. Create a structuring rule in SHADOW mode
-        var createRes = await _client.PostAsJsonAsync("/api/v1/rules", new
+        var createRes = await authClient.PostAsJsonAsync("/api/v1/rules", new
         {
             ruleCode = "RULE_TEST_SMURF_09",
             ruleName = "Test Structuring Avoidance Band",
@@ -445,7 +482,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(54999m, createdDoc.RootElement.GetProperty("structuringMaxAmount").GetDecimal());
 
         // 2. Promote rule to REALTIME via PUT
-        var updateRes = await _client.PutAsJsonAsync($"/api/v1/rules/{ruleId}", new
+        var updateRes = await authClient.PutAsJsonAsync($"/api/v1/rules/{ruleId}", new
         {
             ruleCode = "RULE_TEST_SMURF_09",
             ruleName = "Test Structuring Avoidance Band",
@@ -467,7 +504,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(40000m, updatedDoc.RootElement.GetProperty("structuringMinAmount").GetDecimal());
 
         // 3. Run Draft What-If Backtest with custom overrides
-        var backtestRes = await _client.PostAsJsonAsync("/api/v1/rules/backtest", new
+        var backtestRes = await authClient.PostAsJsonAsync("/api/v1/rules/backtest", new
         {
             ruleCode = "RULE_TEST_SMURF_09",
             ruleType = "TRANSACTION_THRESHOLD",
@@ -482,15 +519,17 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.True(btDoc.RootElement.GetProperty("sampleHits").GetArrayLength() > 0);
 
         // 4. Delete rule
-        var delRes = await _client.DeleteAsync($"/api/v1/rules/{ruleId}");
+        var delRes = await authClient.DeleteAsync($"/api/v1/rules/{ruleId}");
         Assert.Equal(HttpStatusCode.OK, delRes.StatusCode);
     }
 
     [Fact]
     public async Task Notification_Admin_Rules_Ledgers_And_TestFire_Workflow_Succeeds()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.SuperAdmin);
+
         // 1. Fetch notification dispatch rules
-        var rulesRes = await _client.GetAsync("/api/v1/notifications/rules");
+        var rulesRes = await authClient.GetAsync("/api/v1/notifications/rules");
         var rulesJson = await rulesRes.Content.ReadAsStringAsync();
         Assert.True(rulesRes.IsSuccessStatusCode, $"Status: {rulesRes.StatusCode}, Body: {rulesJson}");
         using var rulesDoc = JsonDocument.Parse(rulesJson);
@@ -507,17 +546,17 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
             fallbackRecipient = "MLRO Duty Officer",
             throttleMinutes = 0
         };
-        var createRes = await _client.PostAsJsonAsync("/api/v1/notifications/rules", createReq);
+        var createRes = await authClient.PostAsJsonAsync("/api/v1/notifications/rules", createReq);
         Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
         var createdRule = await createRes.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
         var ruleId = createdRule.GetProperty("id").GetString()!;
 
         // 3. Toggle rule active state
-        var toggleRes = await _client.PatchAsync($"/api/v1/notifications/rules/{ruleId}/toggle", null);
+        var toggleRes = await authClient.PatchAsync($"/api/v1/notifications/rules/{ruleId}/toggle", null);
         Assert.Equal(HttpStatusCode.OK, toggleRes.StatusCode);
 
         // 4. Test-fire simulated notification dispatch
-        var fireRes = await _client.PostAsJsonAsync("/api/v1/notifications/test-fire", new
+        var fireRes = await authClient.PostAsJsonAsync("/api/v1/notifications/test-fire", new
         {
             ruleId,
             channel = "TEAMS",
@@ -528,29 +567,31 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Contains("Test dispatch delivered", fireJson);
 
         // 5. Query delivery ledgers and shift roster
-        var ledgersRes = await _client.GetAsync("/api/v1/notifications/ledgers");
+        var ledgersRes = await authClient.GetAsync("/api/v1/notifications/ledgers");
         Assert.Equal(HttpStatusCode.OK, ledgersRes.StatusCode);
 
-        var shiftsRes = await _client.GetAsync("/api/v1/notifications/shifts");
+        var shiftsRes = await authClient.GetAsync("/api/v1/notifications/shifts");
         Assert.Equal(HttpStatusCode.OK, shiftsRes.StatusCode);
 
         // 6. Query inbox notifications
-        var inboxRes = await _client.GetAsync("/api/v1/notifications/inbox");
+        var inboxRes = await authClient.GetAsync("/api/v1/notifications/inbox");
         Assert.Equal(HttpStatusCode.OK, inboxRes.StatusCode);
     }
 
     [Fact]
     public async Task Delta_Sync_Adjudication_And_AuditReport_Workflow_Succeeds()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.Mlro);
+
         // 1. Fetch Delta Sources
-        var sourcesRes = await _client.GetAsync("/api/v1/delta/sources");
+        var sourcesRes = await authClient.GetAsync("/api/v1/delta/sources");
         Assert.Equal(HttpStatusCode.OK, sourcesRes.StatusCode);
         var sourcesJson = await sourcesRes.Content.ReadAsStringAsync();
         using var sourcesDoc = JsonDocument.Parse(sourcesJson);
         Assert.True(sourcesDoc.RootElement.GetArrayLength() >= 3);
 
         // 2. Trigger Delta Rescreening Sync Batch
-        var syncRes = await _client.PostAsync("/api/v1/delta/sync", null);
+        var syncRes = await authClient.PostAsync("/api/v1/delta/sync", null);
         Assert.Equal(HttpStatusCode.OK, syncRes.StatusCode);
         var syncJson = await syncRes.Content.ReadAsStringAsync();
         using var syncDoc = JsonDocument.Parse(syncJson);
@@ -558,7 +599,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.False(string.IsNullOrWhiteSpace(batchId));
 
         // 3. Adjudicate a Delta Hit (Dismiss false positive)
-        var adjRes = await _client.PostAsJsonAsync("/api/v1/delta/adjudicate", new
+        var adjRes = await authClient.PostAsJsonAsync("/api/v1/delta/adjudicate", new
         {
             hitId = "hit-test-001",
             customerCode = "CUST-AE-88902",
@@ -569,13 +610,15 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(HttpStatusCode.OK, adjRes.StatusCode);
 
         // 4. Query Delta Log Report
-        var logRes = await _client.GetAsync("/api/v1/delta/log-report");
+        var logRes = await authClient.GetAsync("/api/v1/delta/log-report");
         Assert.Equal(HttpStatusCode.OK, logRes.StatusCode);
     }
 
     [Fact]
     public async Task Audit_Ledger_WORM_Record_And_Query_Integrity_Succeeds()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.SuperAdmin);
+
         // 1. Record an immutable audit log entry
         var entryReq = new
         {
@@ -585,7 +628,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
             caseNumber = "EDITH-CAS-TEST-01",
             details = "Verified cryptographic WORM append operation."
         };
-        var recordRes = await _client.PostAsJsonAsync("/api/v1/reports/audit", entryReq);
+        var recordRes = await authClient.PostAsJsonAsync("/api/v1/reports/audit", entryReq);
         Assert.Equal(HttpStatusCode.OK, recordRes.StatusCode);
         var recordJson = await recordRes.Content.ReadAsStringAsync();
         using var recordDoc = JsonDocument.Parse(recordJson);
@@ -594,7 +637,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(64, hash.Length);
 
         // 2. Query audit logs and verify the recorded event exists
-        var queryRes = await _client.GetAsync("/api/v1/reports/audit?limit=10");
+        var queryRes = await authClient.GetAsync("/api/v1/reports/audit?limit=10");
         Assert.Equal(HttpStatusCode.OK, queryRes.StatusCode);
         var queryJson = await queryRes.Content.ReadAsStringAsync();
         Assert.Contains("SECURITY_VALIDATION_EVENT", queryJson);
@@ -604,8 +647,10 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
     [Fact]
     public async Task Settings_Masters_Scoring_Weights_And_Country_Risk_Succeeds()
     {
+        var authClient = await CreateAuthenticatedClientAsync(EdithRoles.SuperAdmin);
+
         // 1. Fetch System Masters
-        var mastersRes = await _client.GetAsync("/api/v1/settings/masters");
+        var mastersRes = await authClient.GetAsync("/api/v1/settings/masters");
         Assert.Equal(HttpStatusCode.OK, mastersRes.StatusCode);
         var mastersJson = await mastersRes.Content.ReadAsStringAsync();
         using var mastersDoc = JsonDocument.Parse(mastersJson);
@@ -613,7 +658,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.True(weights.GetProperty("nameWeightage").GetDecimal() > 0);
 
         // 2. Update Scoring Weights
-        var updateWeightsRes = await _client.PutAsJsonAsync("/api/v1/settings/scoring-weights", new
+        var updateWeightsRes = await authClient.PutAsJsonAsync("/api/v1/settings/scoring-weights", new
         {
             nameWeightage = 65m,
             nationalityWeightage = 15m,
@@ -624,7 +669,7 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
         Assert.Equal(HttpStatusCode.OK, updateWeightsRes.StatusCode);
 
         // 3. Upsert Country Risk Master
-        var countryRes = await _client.PostAsJsonAsync("/api/v1/settings/countries", new
+        var countryRes = await authClient.PostAsJsonAsync("/api/v1/settings/countries", new
         {
             code = "TST",
             countryName = "Testlandia",

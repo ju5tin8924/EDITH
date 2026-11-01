@@ -30,7 +30,7 @@ public static class BulkScreeningEndpoints
         var bulkGroup = app.MapGroup("/api/v1/bulk");
         var deltaGroup = app.MapGroup("/api/v1/delta");
 
-        var pgConn = connectionString ?? "Host=localhost;Port=5432;Database=edith_aml;Username=edith_admin;Password=EdithSecurePassword2026!";
+        var pgConn = connectionString ?? string.Empty;;
 
         // 1. Submit Bulk Screening Job (JSON or Multipart Form)
         bulkGroup.MapPost("/jobs", async (
@@ -108,7 +108,7 @@ public static class BulkScreeningEndpoints
             }, CancellationToken.None);
 
             return Results.Accepted($"/api/v1/bulk/jobs/{jobId}", summary);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 1b. Multipart Bulk Screening File Upload
         bulkGroup.MapPost("/upload", async (
@@ -216,7 +216,7 @@ public static class BulkScreeningEndpoints
             }, CancellationToken.None);
 
             return Results.Accepted($"/api/v1/bulk/jobs/{jobId}", summary);
-        }).DisableAntiforgery().AllowAnonymous();
+        }).DisableAntiforgery().RequireAuthorization("ComplianceDesk");
 
         // 1c. Get Skipped Records Export
         bulkGroup.MapGet("/jobs/{id:guid}/skipped", async (
@@ -226,7 +226,7 @@ public static class BulkScreeningEndpoints
         {
             var skipped = await jobRepo.GetSkippedRecordsAsync(id, ct);
             return Results.Ok(skipped);
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 2. Delta Rescreening Sync: Real PostgreSQL Customer Query & Batch Persistence
         deltaGroup.MapPost("/sync", async (
@@ -341,7 +341,7 @@ public static class BulkScreeningEndpoints
                     matchDetails = h.MatchDetails
                 })
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 3. Delta Batch Authorization: Scoped PostgreSQL Update & WORM Audit Trail
         deltaGroup.MapPost("/authorize", async (
@@ -415,7 +415,7 @@ public static class BulkScreeningEndpoints
                 affectedCount = req.ApprovedCustomerCodes?.Count ?? 0,
                 timestampUtc = DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture)
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 4. Single Hit Adjudication: Individual Maker/Checker Action & Audit Logging
         deltaGroup.MapPost("/adjudicate", async (
@@ -458,7 +458,7 @@ public static class BulkScreeningEndpoints
                 reasonCode = req.ReasonCode,
                 timestampUtc = DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture)
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 5. Direct Case Provisioning: Escalate Delta Hit into cases.aml_cases
         deltaGroup.MapPost("/escalate-case", async (
@@ -527,7 +527,7 @@ public static class BulkScreeningEndpoints
                 assignedQueue = "EDD_INVESTIGATION",
                 slaDueDate = slaDue.ToString("o", CultureInfo.InvariantCulture)
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 6. Watchlist Sources & Freshness Telemetry
         deltaGroup.MapGet("/sources", () =>
@@ -571,7 +571,7 @@ public static class BulkScreeningEndpoints
                     status = "HEALTHY"
                 }
             });
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         // 7. Delta Screening Log Report Query
         deltaGroup.MapGet("/log-report", (
@@ -594,7 +594,7 @@ public static class BulkScreeningEndpoints
             }
 
             return Results.Ok(filtered.ToList());
-        }).AllowAnonymous();
+        }).RequireAuthorization("ComplianceDesk");
 
         return app;
     }
@@ -614,7 +614,7 @@ public static class BulkScreeningEndpoints
         {
             return parsed;
         }
-        return DefaultTenantId;
+        throw new UnauthorizedAccessException("Valid tenant context is required.");
     }
 }
 

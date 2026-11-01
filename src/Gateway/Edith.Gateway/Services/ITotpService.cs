@@ -8,6 +8,7 @@ public interface ITotpService
 {
     string GenerateSecret(int byteLength = 20);
     string FormatOtpAuthUri(string username, string secretBase32, string issuer = "EDITH-AML");
+    string GenerateCode(string secretBase32);
     bool VerifyCode(string secretBase32, string code, int skewTolerance = 1);
     IReadOnlyList<string> GenerateRecoveryCodes(int count = 8);
     string HashRecoveryCode(string code);
@@ -29,6 +30,13 @@ public sealed class TotpService : ITotpService
         var escapedIssuer = Uri.EscapeDataString(issuer);
         var escapedUser = Uri.EscapeDataString(username);
         return $"otpauth://totp/{escapedIssuer}:{escapedUser}?secret={secretBase32}&issuer={escapedIssuer}&algorithm=SHA1&digits=6&period=30";
+    }
+
+    public string GenerateCode(string secretBase32)
+    {
+        var key = FromBase32(secretBase32);
+        var currentStep = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 30;
+        return ComputeTotp(key, currentStep).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public bool VerifyCode(string secretBase32, string code, int skewTolerance = 1)

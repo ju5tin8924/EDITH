@@ -6,6 +6,18 @@ namespace Edith.Gateway.Middleware;
 
 public sealed class TenantResolutionMiddleware
 {
+    private static readonly HashSet<string> PublicPaths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/health",
+        "/healthz",
+        "/api/v1/iam/login",
+        "/api/v1/iam/mfa/verify",
+        "/api/v1/iam/onboard/validate",
+        "/api/v1/iam/mfa/setup",
+        "/api/v1/iam/onboard/complete",
+        "/api/v1/iam/token"
+    };
+
     private readonly RequestDelegate _next;
 
     public TenantResolutionMiddleware(RequestDelegate next)
@@ -18,63 +30,60 @@ public sealed class TenantResolutionMiddleware
         ITenantRegistry tenantRegistry,
         ITenantContextAccessor tenantAccessor)
     {
-        var endpoint = context.GetEndpoint();
-        var allowsAnonymous = endpoint?.Metadata.GetMetadata<IAllowAnonymous>() != null;
-
         var path = context.Request.Path.Value ?? string.Empty;
-        if (allowsAnonymous || path.Equals("/health", StringComparison.OrdinalIgnoreCase) || path.StartsWith("/api/v1/iam/token", StringComparison.OrdinalIgnoreCase))
+
+        // Public authentication and health-check endpoints bypass strict tenant enforcement
+        if (PublicPaths.Contains(path) || path.StartsWith("/health", StringComparison.OrdinalIgnoreCase))
         {
             await _next(context);
             return;
         }
 
-        string? claimTenantRaw = null;
-        if (context.User.Identity?.IsAuthenticated == true)
+        // Unauthenticated requests will be rejected by Authorization middleware
+        if (context.User.Identity?.IsAuthenticated != true)
         {
-            claimTenantRaw = context.User.FindFirst("tenant_id")?.Value
-                          ?? context.User.FindFirst("tid")?.Value;
-        }
-
-        string? headerTenantRaw = null;
-        if (context.Request.Headers.TryGetValue("X-Tenant-ID", out var headerVal))
-        {
-            headerTenantRaw = headerVal.ToString();
-        }
-
-        // Cross-tenant mismatch check
-        if (!string.IsNullOrWhiteSpace(claimTenantRaw) &&
-            !string.IsNullOrWhiteSpace(headerTenantRaw) &&
-            !string.Equals(claimTenantRaw, headerTenantRaw, StringComparison.OrdinalIgnoreCase))
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new
-            {
-                type = "https://edith.aml.cloud/errors/tenant-mismatch",
-                title = "Tenant Access Denied",
-                status = StatusCodes.Status403Forbidden,
-                detail = "Cross-tenant mismatch: The provided X-Tenant-ID header does not match the authenticated token tenant."
-            });
+            await _next(context);
             return;
         }
 
-        var tenantIdRaw = claimTenantRaw ?? headerTenantRaw;
+        // Tenant MUST be derived from validated JWT claims
+        var claimTenantRaw = context.User.FindFirst("tenant_id")?.Value
+                          ?? context.User.FindFirst("tid")?.Value;
 
-        // Missing tenant context
-        if (string.IsNullOrWhiteSpace(tenantIdRaw))
+        if (string.IsNullOrWhiteSpace(claimTenantRaw))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             await context.Response.WriteAsJsonAsync(new
             {
-                type = "https://edith.aml.cloud/errors/tenant-required",
+                type = "https://edith.aml.cloud/errors/tenant-claim-missing",
                 title = "Tenant Context Missing",
                 status = StatusCodes.Status403Forbidden,
-                detail = "A valid tenant identity is required via 'tenant_id' claim or 'X-Tenant-ID' header."
+                detail = "The authenticated user identity does not contain an authoritative 'tenant_id' claim."
             });
             return;
+        }
+
+        // Forged or conflicting client header detection
+        if (context.Request.Headers.TryGetValue("X-Tenant-ID", out var headerVal))
+        {
+            var headerTenantRaw = headerVal.ToString();
+            if (!string.IsNullOrWhiteSpace(headerTenantRaw) &&
+                !string.Equals(claimTenantRaw, headerTenantRaw, StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    type = "https://edith.aml.cloud/errors/tenant-mismatch",
+                    title = "Tenant Access Denied",
+                    status = StatusCodes.Status403Forbidden,
+                    detail = "Cross-tenant mismatch: The provided X-Tenant-ID header does not match the authenticated token tenant."
+                });
+                return;
+            }
         }
 
         // Validate GUID syntax
-        if (!Guid.TryParse(tenantIdRaw, out var tenantGuid))
+        if (!Guid.TryParse(claimTenantRaw, out var tenantGuid))
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             await context.Response.WriteAsJsonAsync(new
@@ -82,12 +91,12 @@ public sealed class TenantResolutionMiddleware
                 type = "https://edith.aml.cloud/errors/invalid-tenant-id",
                 title = "Invalid Tenant ID",
                 status = StatusCodes.Status400BadRequest,
-                detail = $"The provided tenant identifier '{tenantIdRaw}' is not a valid GUID."
+                detail = $"The token tenant identifier '{claimTenantRaw}' is not a valid GUID."
             });
             return;
         }
 
-        // Validate tenant is registered and active
+        // Validate tenant is registered and currently active
         var tenant = tenantRegistry.FindTenant(tenantGuid);
         if (tenant == null || !tenant.IsActive)
         {
@@ -102,6 +111,7 @@ public sealed class TenantResolutionMiddleware
             return;
         }
 
+        // Establish ambient tenant context and propagate downstream
         tenantAccessor.CurrentTenant = tenant;
         context.Request.Headers["X-Tenant-ID"] = tenant.TenantId.ToString();
 

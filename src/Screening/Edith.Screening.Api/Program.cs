@@ -14,19 +14,29 @@ using Edith.Screening.Core.Search;
 var builder = WebApplication.CreateBuilder(args);
 
 var pgConn = builder.Configuration.GetConnectionString("EdithPostgres")
-    ?? Environment.GetEnvironmentVariable("EDITH_PG_CONNECTION")
-    ?? "Host=localhost;Port=5432;Database=edith_aml;Username=edith_admin;Password=EdithSecurePassword2026!";
+    ?? Environment.GetEnvironmentVariable("EDITH_PG_CONNECTION");
+
+if (builder.Environment.IsProduction())
+{
+    if (string.IsNullOrWhiteSpace(pgConn) || pgConn.Contains("EdithSecurePassword2026!"))
+    {
+        throw new InvalidOperationException("CRITICAL SECURITY ERROR: Database credentials must be provided for Screening API in Production.");
+    }
+}
 
 bool usePostgres = false;
-try
+if (!string.IsNullOrWhiteSpace(pgConn))
 {
-    using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=1");
-    probeConn.Open();
-    usePostgres = true;
-}
-catch
-{
-    usePostgres = false;
+    try
+    {
+        using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=1");
+        probeConn.Open();
+        usePostgres = true;
+    }
+    catch
+    {
+        usePostgres = false;
+    }
 }
 
 // Core Screening Services
@@ -42,7 +52,7 @@ var osOpts = new OpenSearchOptions
     Password = openSearchConfig.GetValue<string>("Password") ?? "Tr@ns@ct10n$2026!#",
     WatchlistIndex = openSearchConfig.GetValue<string>("WatchlistIndex") ?? "edith_watchlist_v1",
     CustomersIndex = openSearchConfig.GetValue<string>("CustomersIndex") ?? "edith_customers_v1",
-    SkipSslValidation = openSearchConfig.GetValue<bool>("SkipSslValidation", true)
+    SkipSslValidation = openSearchConfig.GetValue<bool>("SkipSslValidation", !builder.Environment.IsProduction() && openSearchConfig.GetValue<bool>("SkipSslValidation", false))
 };
 
 builder.Services.AddSingleton(osOpts);
@@ -62,7 +72,7 @@ builder.Services.AddHttpClient<IWatchlistSearchEngine, OpenSearchWatchlistSearch
 builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
 
 // State, Cache, Case & Bulk Services (PostgreSQL with In-Memory Fallback)
-if (usePostgres)
+if (usePostgres && !string.IsNullOrWhiteSpace(pgConn))
 {
     builder.Services.AddSingleton<IIdempotencyStore>(new PostgreSqlIdempotencyStore(pgConn));
     builder.Services.AddSingleton<IWhitelistService>(new PostgreSqlWhitelistService(pgConn));
@@ -91,8 +101,11 @@ builder.Services.AddSingleton<IBulkProgressNotifier, CallbackProgressNotifier>()
 builder.Services.AddScoped<IBulkIngestionPipeline, BulkIngestionPipeline>();
 builder.Services.AddHostedService<BulkScreeningBackgroundWorker>();
 
-// Background seed primes the search engine with baseline sanctions
-builder.Services.AddHostedService<WatchlistSeedService>();
+// Background seed primes the search engine with baseline sanctions (development only)
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHostedService<WatchlistSeedService>();
+}
 
 var app = builder.Build();
 

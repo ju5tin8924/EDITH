@@ -7,7 +7,9 @@ public static class CaseStateMachine
     private static readonly HashSet<string> ResolutionRoles = new(StringComparer.OrdinalIgnoreCase)
     {
         "MLRO",
+        "ISTR_MLRO",
         "COMPLIANCE_OFFICER",
+        "ADMIN",
         "SUPER_ADMIN"
     };
 
