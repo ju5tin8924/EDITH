@@ -120,7 +120,7 @@ sudo systemctl enable edith-screening.service edith-gateway.service
 
 # shortcut: rolling restart on single VM causes ~1-2s connection drop, upgrade to blue-green or OCI Load Balancer when running multiple nodes
 sudo systemctl restart edith-screening.service
-check_health "Edith.Screening.Api" "${SCREENING_URL}/healthz" 15 2 || {
+check_health "Edith.Screening.Api" "${SCREENING_URL}/health" 15 2 || {
   sudo journalctl -u edith-screening.service -n 50 --no-pager >&2
   exit 1
 }
