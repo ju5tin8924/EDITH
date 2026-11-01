@@ -1100,39 +1100,8 @@ export const WhitelistGovernanceView: React.FC = () => {
           <p className="text-xs text-muted mt-1">{pageMeta.definition}</p>
         </div>
 
-        {/* Mode Switcher & Primary CTA */}
+        {/* Primary CTA */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border border-border bg-surface-muted p-0.5 text-xs font-mono">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveMode('WATCHLIST');
-                if (location.pathname !== '/blacklist/watchlist') navigate('/blacklist/watchlist');
-              }}
-              className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer ${
-                activeMode === 'WATCHLIST'
-                  ? 'bg-primary text-white shadow-2xs'
-                  : 'text-muted hover:text-ink'
-              }`}
-            >
-              Blacklist / Watchlist ({watchlistItems.filter(w => w.isActive).length})
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveMode('WHITELIST');
-                if (location.pathname !== '/whitelist') navigate('/whitelist');
-              }}
-              className={`px-2.5 py-1 rounded-md font-bold transition cursor-pointer ${
-                activeMode === 'WHITELIST'
-                  ? 'bg-primary text-white shadow-2xs'
-                  : 'text-muted hover:text-ink'
-              }`}
-            >
-              Pass 5 Whitelist ({entries.filter(e => e.status === 'ACTIVE').length})
-            </button>
-          </div>
-
           {activeMode === 'WATCHLIST' ? (
             <>
               <button
