@@ -453,5 +453,107 @@ public sealed class ScreeningApiTests : IClassFixture<WebApplicationFactory<Prog
         var xmlContent = await xmlResponse.Content.ReadAsStringAsync();
         Assert.Contains("<AML_FULLNAME>VIKTOR BOUT</AML_FULLNAME>", xmlContent);
     }
-}
 
+    [Fact]
+    public async Task WatchlistAndWhitelistGovernance_CrudAndSoftRevocation_Works()
+    {
+        // 1. Sync a new INTERNAL_BLACKLIST entity with AliasName and IdDetails
+        var externalId = $"BLK-{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+        var syncReq = new WatchlistSyncRequest
+        {
+            Entities = new[]
+            {
+                new WatchlistEntityDto
+                {
+                    EntityExternalId = externalId,
+                    EntityType = "CORPORATE",
+                    FullName = "KHORRAMSHAHR MARITIME LOGISTICS",
+                    AliasName = "KML SHIPPING FZE",
+                    IdDetails = "IMO-9988771 | CBUAE Directive 2026/09",
+                    Nationality = "IR",
+                    SourceList = "INTERNAL_BLACKLIST",
+                    Category = "SANCTION",
+                    IsBlocked = true,
+                    IsActive = true
+                }
+            }
+        };
+
+        var syncRes = await _client.PostAsJsonAsync("/api/v1/watchlist/sync", syncReq);
+        Assert.Equal(HttpStatusCode.OK, syncRes.StatusCode);
+        var syncJson = await syncRes.Content.ReadAsStringAsync();
+        Assert.Contains("wormHash", syncJson);
+
+        // 2. Verify GET /api/v1/watchlist returns the entity with AliasName & IdDetails
+        var listRes = await _client.GetAsync($"/api/v1/watchlist?id={externalId}");
+        Assert.Equal(HttpStatusCode.OK, listRes.StatusCode);
+        var listBody = await listRes.Content.ReadAsStringAsync();
+        Assert.Contains("KHORRAMSHAHR MARITIME LOGISTICS", listBody);
+        Assert.Contains("KML SHIPPING FZE", listBody);
+        Assert.Contains("IMO-9988771", listBody);
+
+        // 3. Deactivate the watchlist entity (IsActive = false) and confirm screening no longer blocks it
+        var deactivateReq = new WatchlistSyncRequest
+        {
+            Entities = new[]
+            {
+                new WatchlistEntityDto
+                {
+                    EntityExternalId = externalId,
+                    EntityType = "CORPORATE",
+                    FullName = "KHORRAMSHAHR MARITIME LOGISTICS",
+                    AliasName = "KML SHIPPING FZE",
+                    IdDetails = "IMO-9988771 | DEACTIVATED: CBUAE Lift",
+                    Nationality = "IR",
+                    SourceList = "INTERNAL_BLACKLIST",
+                    Category = "SANCTION",
+                    IsBlocked = false,
+                    IsActive = false
+                }
+            }
+        };
+        var deactivateRes = await _client.PostAsJsonAsync("/api/v1/watchlist/sync", deactivateReq);
+        Assert.Equal(HttpStatusCode.OK, deactivateRes.StatusCode);
+
+        using var txReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/screen/transaction")
+        {
+            Content = JsonContent.Create(new ScreenTransactionRequest
+            {
+                TransactionRefNo = "TX-DEACT-001",
+                Amount = 15000m,
+                Currency = "AED",
+                SenderName = "Dubai Port Trading",
+                BeneficiaryName = "Khorramshahr Maritime Logistics"
+            })
+        };
+        txReq.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var txRes = await _client.SendAsync(txReq);
+        var txResult = await txRes.Content.ReadFromJsonAsync<ScreenTransactionResponse>(JsonOptions);
+        Assert.NotNull(txResult);
+        Assert.DoesNotContain(txResult.Matches, m => m.MatchedEntityId == externalId);
+
+        // 4. Create and soft-revoke a whitelist entry, confirming includeInactive=true preserves it for audit
+        var tenantId = Guid.NewGuid();
+        var createWlRes = await _client.PostAsJsonAsync("/api/v1/whitelists", new CreateWhitelistRequest
+        {
+            TenantId = tenantId,
+            EntityIdentifier = "OFAC-9812",
+            Reason = "Temporary clearance",
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(90)
+        });
+        Assert.Equal(HttpStatusCode.Created, createWlRes.StatusCode);
+        using var createdDoc = JsonDocument.Parse(await createWlRes.Content.ReadAsStringAsync());
+        var wlId = createdDoc.RootElement.GetProperty("id").GetGuid();
+
+        var delRes = await _client.DeleteAsync($"/api/v1/whitelists/{wlId}?tenantId={tenantId}");
+        Assert.Equal(HttpStatusCode.NoContent, delRes.StatusCode);
+
+        var activeOnlyRes = await _client.GetAsync($"/api/v1/whitelists?tenantId={tenantId}&includeInactive=false");
+        var activeOnlyBody = await activeOnlyRes.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(wlId.ToString(), activeOnlyBody);
+
+        var allGovernanceRes = await _client.GetAsync($"/api/v1/whitelists?tenantId={tenantId}&includeInactive=true");
+        var allGovernanceBody = await allGovernanceRes.Content.ReadAsStringAsync();
+        Assert.Contains(wlId.ToString(), allGovernanceBody);
+    }
+}

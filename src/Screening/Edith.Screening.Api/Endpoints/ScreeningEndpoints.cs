@@ -109,7 +109,7 @@ public static class ScreeningEndpoints
                 MinThresholdScore = request.MinThresholdScore ?? 80.00m
             };
 
-            var activeWhitelists = await whitelistService.GetActiveWhitelistsAsync(tenantId, ct);
+            var activeWhitelists = await whitelistService.GetActiveWhitelistsAsync(tenantId, ct: ct);
 
             // 7. Execute Multi-pass Screening Engine
             var decision = await engine.ScreenTransactionAsync(transaction, config, activeWhitelists, ct);
@@ -277,6 +277,14 @@ public static class ScreeningEndpoints
                 if (req.BirthYear.HasValue && candidate.Dob.HasValue)
                 {
                     yobDelta = Math.Abs(req.BirthYear.Value - candidate.Dob.Value.Year);
+                }
+
+                if (!string.IsNullOrWhiteSpace(req.Nationality) &&
+                    !string.IsNullOrWhiteSpace(candidate.Nationality) &&
+                    !string.Equals(req.Nationality.Trim(), candidate.Nationality.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    !isExactName && !isIdMatch)
+                {
+                    continue;
                 }
 
                 string whyMatched;
@@ -467,16 +475,18 @@ public static class ScreeningEndpoints
 
         group.MapGet("/whitelists", async (
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromQuery] Guid? tenantId,
+            [FromQuery] bool? includeInactive,
             [FromServices] IWhitelistService whitelistService,
             CancellationToken ct) =>
         {
-            Guid tenantId = DefaultTenantId;
+            Guid resolvedTenantId = tenantId ?? DefaultTenantId;
             if (!string.IsNullOrWhiteSpace(tenantHeader) && Guid.TryParse(tenantHeader, out var parsedTenant))
             {
-                tenantId = parsedTenant;
+                resolvedTenantId = parsedTenant;
             }
 
-            var list = await whitelistService.GetActiveWhitelistsAsync(tenantId, ct);
+            var list = await whitelistService.GetActiveWhitelistsAsync(resolvedTenantId, includeInactive ?? false, ct);
             return Results.Ok(list);
         });
 
@@ -515,17 +525,33 @@ public static class ScreeningEndpoints
         group.MapDelete("/whitelists/{id:guid}", async (
             Guid id,
             [FromHeader(Name = "X-Tenant-ID")] string? tenantHeader,
+            [FromQuery] Guid? tenantId,
             [FromServices] IWhitelistService whitelistService,
             CancellationToken ct) =>
         {
-            Guid tenantId = DefaultTenantId;
+            Guid resolvedTenantId = tenantId ?? DefaultTenantId;
             if (!string.IsNullOrWhiteSpace(tenantHeader) && Guid.TryParse(tenantHeader, out var parsedTenant))
             {
-                tenantId = parsedTenant;
+                resolvedTenantId = parsedTenant;
             }
 
-            var removed = await whitelistService.RemoveWhitelistAsync(tenantId, id, ct);
+            var removed = await whitelistService.RemoveWhitelistAsync(resolvedTenantId, id, ct);
             return removed ? Results.NoContent() : Results.NotFound(new { error = $"Whitelist entry '{id}' not found." });
+        });
+
+        group.MapGet("/watchlist", async (
+            [FromQuery] string? search,
+            [FromQuery] string? id,
+            [FromServices] IBulkJobRepository jobRepo,
+            CancellationToken ct) =>
+        {
+            var list = await jobRepo.SearchWatchlistEntitiesAsync(search, id, maxResults: 200, includeInactive: true, ct: ct);
+            if (list.Count == 0 && string.IsNullOrWhiteSpace(search) && string.IsNullOrWhiteSpace(id))
+            {
+                await jobRepo.UpsertWatchlistEntitiesBatchAsync(WatchlistSeedService.BaselineWatchlist, ct);
+                list = await jobRepo.SearchWatchlistEntitiesAsync(null, null, maxResults: 200, includeInactive: true, ct: ct);
+            }
+            return Results.Ok(list);
         });
 
         group.MapPost("/watchlist/sync", async (
@@ -544,13 +570,26 @@ public static class ScreeningEndpoints
                 Nationality = e.Nationality,
                 SourceList = e.SourceList,
                 Category = e.Category,
+                AliasName = e.AliasName,
+                IdDetails = e.IdDetails,
                 IsBlocked = e.IsBlocked,
                 IsActive = e.IsActive
             }).ToList();
 
             await jobRepo.UpsertWatchlistEntitiesBatchAsync(entities, ct);
             await searchEngine.IndexBatchAsync(entities, ct);
-            return Results.Ok(new { indexedCount = entities.Count, timestamp = DateTimeOffset.UtcNow });
+
+            var nowUtc = DateTimeOffset.UtcNow;
+            var hashInput = $"WATCHLIST_SYNC|{nowUtc:O}|{string.Join(',', entities.Select(x => $"{x.EntityExternalId}:{x.FullName}:{x.IsActive}:{x.IsBlocked}"))}";
+            var wormHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(hashInput)));
+
+            return Results.Ok(new
+            {
+                indexedCount = entities.Count,
+                timestamp = nowUtc,
+                wormHash = $"0x{wormHash}",
+                entities
+            });
         });
 
         group.MapPost("/bulk/upload", async (

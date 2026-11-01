@@ -39,7 +39,7 @@ public interface IBulkJobRepository
     Task SaveSkippedRecordsAsync(Guid jobId, IEnumerable<AmlEntityRecord> records, CancellationToken ct = default);
     Task<IReadOnlyList<AmlEntityRecord>> GetSkippedRecordsAsync(Guid jobId, CancellationToken ct = default);
     Task<bool> IsEntityAlreadyInSystemAsync(Guid tenantId, AmlEntityRecord record, CancellationToken ct = default);
-    Task<IReadOnlyList<WatchlistEntity>> SearchWatchlistEntitiesAsync(string? nameQuery, string? idQuery, int maxResults = 50, CancellationToken ct = default);
+    Task<IReadOnlyList<WatchlistEntity>> SearchWatchlistEntitiesAsync(string? nameQuery, string? idQuery, int maxResults = 50, bool includeInactive = false, CancellationToken ct = default);
 }
 
 public sealed class InMemoryBulkJobRepository : IBulkJobRepository
@@ -160,9 +160,13 @@ public sealed class InMemoryBulkJobRepository : IBulkJobRepository
         return Task.FromResult(false);
     }
 
-    public Task<IReadOnlyList<WatchlistEntity>> SearchWatchlistEntitiesAsync(string? nameQuery, string? idQuery, int maxResults = 50, CancellationToken ct = default)
+    public Task<IReadOnlyList<WatchlistEntity>> SearchWatchlistEntitiesAsync(string? nameQuery, string? idQuery, int maxResults = 50, bool includeInactive = false, CancellationToken ct = default)
     {
         var query = _entities.Values.AsEnumerable();
+        if (!includeInactive)
+        {
+            query = query.Where(e => e.IsActive);
+        }
         if (!string.IsNullOrWhiteSpace(nameQuery))
         {
             query = query.Where(e =>
@@ -324,9 +328,14 @@ public sealed class PostgreSqlBulkJobRepository : IBulkJobRepository
                     )
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     ON CONFLICT (entity_external_id, full_name) DO UPDATE SET
+                        entity_type = EXCLUDED.entity_type,
+                        dob = COALESCE(EXCLUDED.dob, screening.watchlist_entities.dob),
                         nationality = COALESCE(EXCLUDED.nationality, screening.watchlist_entities.nationality),
+                        source_list = EXCLUDED.source_list,
+                        category = EXCLUDED.category,
                         id_details = COALESCE(EXCLUDED.id_details, screening.watchlist_entities.id_details),
                         alias_name = COALESCE(EXCLUDED.alias_name, screening.watchlist_entities.alias_name),
+                        is_blocked = EXCLUDED.is_blocked,
                         is_active = EXCLUDED.is_active;
                     """);
 
@@ -566,7 +575,7 @@ public sealed class PostgreSqlBulkJobRepository : IBulkJobRepository
         }
     }
 
-    public async Task<IReadOnlyList<WatchlistEntity>> SearchWatchlistEntitiesAsync(string? nameQuery, string? idQuery, int maxResults = 50, CancellationToken ct = default)
+    public async Task<IReadOnlyList<WatchlistEntity>> SearchWatchlistEntitiesAsync(string? nameQuery, string? idQuery, int maxResults = 50, bool includeInactive = false, CancellationToken ct = default)
     {
         try
         {
@@ -579,7 +588,7 @@ public sealed class PostgreSqlBulkJobRepository : IBulkJobRepository
             const string sql = """
                 SELECT id, entity_external_id, entity_type, full_name, dob, nationality, source_list, category, id_details, alias_name, is_blocked, is_active
                 FROM screening.watchlist_entities
-                WHERE is_active = true
+                WHERE (@include_inactive = true OR is_active = true)
                   AND (@name = '' OR UPPER(full_name) LIKE '%' || UPPER(@name) || '%' OR UPPER(COALESCE(alias_name, '')) LIKE '%' || UPPER(@name) || '%')
                   AND (@id = '' OR UPPER(entity_external_id) LIKE '%' || UPPER(@id) || '%' OR UPPER(COALESCE(id_details, '')) LIKE '%' || UPPER(@id) || '%')
                 ORDER BY
@@ -593,6 +602,7 @@ public sealed class PostgreSqlBulkJobRepository : IBulkJobRepository
             cmd.Parameters.AddWithValue("name", name);
             cmd.Parameters.AddWithValue("id", id);
             cmd.Parameters.AddWithValue("limit", maxResults);
+            cmd.Parameters.AddWithValue("include_inactive", includeInactive);
 
             var results = new List<WatchlistEntity>();
             await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -619,7 +629,7 @@ public sealed class PostgreSqlBulkJobRepository : IBulkJobRepository
         }
         catch (Exception)
         {
-            return await _fallback.SearchWatchlistEntitiesAsync(nameQuery, idQuery, maxResults, ct);
+            return await _fallback.SearchWatchlistEntitiesAsync(nameQuery, idQuery, maxResults, includeInactive, ct);
         }
     }
 }

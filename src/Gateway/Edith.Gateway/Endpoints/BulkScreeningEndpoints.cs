@@ -274,7 +274,7 @@ public static class BulkScreeningEndpoints
                 customers.Add(new CustomerProfile { Id = Guid.NewGuid(), TenantId = tenantId, CustomerCode = "CUST-SA-12004", FullName = "Mansoor Mohammed Al-Marzooqi", Nationality = "AE" });
             }
 
-            var dbWatchlist = await jobRepo.SearchWatchlistEntitiesAsync(null, null, 50, ct);
+            var dbWatchlist = await jobRepo.SearchWatchlistEntitiesAsync(null, null, 50, ct: ct);
             var deltaWatchlist = new List<WatchlistEntity>(dbWatchlist);
             if (deltaWatchlist.Count == 0)
             {

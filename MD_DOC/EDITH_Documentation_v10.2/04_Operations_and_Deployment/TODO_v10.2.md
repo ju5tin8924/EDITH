@@ -31,6 +31,7 @@
 | **Phase 19** | IAM Access System Workflow, UX/UI & Enterprise Security Modernization (In-Place Edit Drawer, Faceted Directory, Structured Offboarding, Hierarchical Sub-Menu Matrix, Active Sessions & Audit Console) | `COMPLETED` |
 | **Phase 20** | System Masters & Calibration Hub Workflow, UX/UI & Feature Modernization (Full PostgreSQL CRUD Wiring, Auto-Balancing Sliders, Domain Separation, Currency Master, Real-Time Impact Calculator, Version History & 4-Eyes Staging) | `COMPLETED` |
 | **Phase 21** | Delta Rescreening Workflow, UX/UI & System Modernization (Filter Bar Wiring, Closed-Loop Escalation, Token Diff Drawer & Delta Tests) | `COMPLETED` |
+| **Phase 22** | Blacklist / Watchlist & Whitelist Governance Modernization ("Authorize New Blacklist/Watchlist" Workflow, Live `watchlist/sync` CRUD, 4-Eyes Maker-Checker, Blast-Radius Simulator, Soft Revocation & Cross-Module Escalation) | `COMPLETED` |
 
 ---
 
@@ -309,6 +310,27 @@
   - Extract genuine user identity from JWT claims/headers instead of hardcoding MLRO name.
   - Added new endpoints: `/api/v1/delta/adjudicate`, `/api/v1/delta/escalate-case`, `/api/v1/delta/sources`, and `/api/v1/delta/log-report`.
   - Added unit test suite `DeltaRescreeningTests.cs` verifying nationality weighting and threshold filtering (all 13 bulk tests passing).
+
+### [x] Phase 22: Blacklist / Watchlist & Whitelist Governance Modernization (v2.6.0 Target)
+- [x] **1. Decouple `/blacklist/watchlist` ("Authorize New Blacklist/Watchlist") from `/whitelist` ("Authorize New Exception")**:
+  - Separate route-aware workflows in `WhitelistGovernanceView.tsx` so `/blacklist/watchlist` manages internal blacklists and watchlists (`Authorize New Blacklist/Watchlist` CTA) while `/whitelist` manages Pass 5 false-positive exemptions (`Authorize New Exception` CTA).
+  - Expose `GET /api/v1/watchlist` in `ScreeningEndpoints.cs` and wire `POST /api/v1/watchlist/sync` with `AliasName`, `IdDetails`, `Category`, `SourceList`, `IsBlocked`, and `IsActive` persistence in PostgreSQL and OpenSearch.
+- [x] **2. 4-Eyes Maker-Checker Authorization & Dynamic Officer Attribution**:
+  - Replace hardcoded `'Fatima Al-Nuaimi (MLRO)'` with active session identity (`getSession().username` & role).
+  - Stage analyst-submitted blacklist/watchlist and whitelist entries as `PENDING_APPROVAL` requiring MLRO/Admin 4-eyes sign-off and WORM SHA-256 ledger attestation (`core.audit_ledgers`).
+- [x] **3. Pre-Commit Duplicate Check, Portfolio "Blast Radius" Simulation & Bulk Paste Import**:
+  - Real-time duplicate detection warning if a subject name or external ID already exists on the watchlist/whitelist.
+  - Interactive **"Simulate Portfolio Impact"** preview inside the modal evaluating candidate entries against customer dossiers before commit.
+  - Multi-line CSV/clipboard batch import mode inside `/blacklist/watchlist` for rapid regulatory directive ingestion.
+- [x] **4. Soft-Revocation Confirmation Modal, In-Place Edit & 1-Click Whitelist Renewal**:
+  - Replace unconfirmed hard SQL `DELETE` with soft deactivation (`is_active = false`) and a confirmation modal requiring mandatory revocation/deactivation rationale.
+  - Add in-place **Edit** for watchlist entities and **1-Click Renew (+90d / +365d)** for `EXPIRING_SOON` whitelist exemptions.
+  - Persist `category`, `accountNumber`, and `matchScope` across reloads without mixing mock fallback entries when live DB records exist.
+- [x] **5. Cross-Module 1-Click Blacklist Escalation, Corporate/Vessel Country Filter & Toast UX**:
+  - Add 1-click **"Add to Blacklist/Watchlist"** actions in `NameSearchView.tsx` and `ScreeningConsole.tsx` deep-linking with pre-filled entity metadata.
+  - Pass corporate/vessel country/flag (`nationality`) in `NameSearchView.tsx` and `POST /api/v1/screen/name-search`.
+  - Replace blocking browser `alert()` in `BulkScreeningView.tsx` with an inline status banner and direct link to `/delta/authorization`.
+  - Verified with integration test `WatchlistAndWhitelistGovernance_CrudAndSoftRevocation_Works` in `ScreeningApiTests.cs` (all 13 Screening API tests passing) and frontend production build (`tsc -b && vite build`).
 
 ---
 *Maintained by the EDITH Architecture & Compliance Engineering Team (v10.2).*

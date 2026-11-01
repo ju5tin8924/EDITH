@@ -310,9 +310,25 @@ export interface NameSearchRequest {
   name?: string;
   idNumber?: string;
   birthYear?: number;
+  nationality?: string;
   searchMode: NameSearchMode;
   minScore?: number;
   maxResults?: number;
+}
+
+export interface WatchlistEntityDto {
+  id?: string;
+  entityExternalId: string;
+  entityType: 'INDIVIDUAL' | 'CORPORATE' | 'VESSEL' | string;
+  fullName: string;
+  dob?: string | null;
+  nationality?: string | null;
+  sourceList: string;
+  category: 'SANCTIONS' | 'SANCTION' | 'PEP' | 'ADVERSE_MEDIA' | 'INTERNAL_BLACKLIST' | string;
+  aliasName?: string | null;
+  idDetails?: string | null;
+  isBlocked: boolean;
+  isActive: boolean;
 }
 
 export interface NameSearchMatch {

@@ -259,10 +259,12 @@ export const NameSearchView: React.FC = () => {
 
     try {
       const parsedYear = qPersona === 'INDIVIDUAL' && qBy.trim() ? parseInt(qBy.trim(), 10) : undefined;
+      const parsedNat = qPersona !== 'INDIVIDUAL' && qBy.trim() ? qBy.trim().toUpperCase() : undefined;
       const res = await EdithApi.searchNameAndId({
         name: qName,
         idNumber: qId,
         birthYear: isNaN(parsedYear as number) ? undefined : parsedYear,
+        nationality: parsedNat,
         searchMode: qMode,
         minScore,
         maxResults: 30
@@ -1506,6 +1508,20 @@ Compliance Status: ${response.totalMatches === 0 ? 'PASS (Auto-Cleared)' : 'HELD
                           >
                             <FileWarning className="w-3.5 h-3.5" />
                             <span>1-Click Intercept</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(
+                                `/blacklist/watchlist?action=add-blacklist&name=${encodeURIComponent(match.fullName)}&id=${encodeURIComponent(match.externalId)}&country=${encodeURIComponent(match.nationality || 'AE')}&reason=${encodeURIComponent(`Direct escalation from Name Search (${match.sanctionsList})`)}`
+                              )
+                            }
+                            className="px-3 py-2 rounded-lg text-xs font-mono font-bold bg-surface-muted text-ink border border-border hover:border-primary/40 transition flex items-center gap-1.5"
+                            title="Authorize or edit this entity on the Internal Blacklist / Watchlist"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                            <span>Add to Watchlist</span>
                           </button>
 
                           {isBorderline && (

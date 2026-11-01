@@ -14,6 +14,7 @@ import {
   CaseResolution,
   NameSearchRequest,
   NameSearchResponse,
+  WatchlistEntityDto,
   ScreeningAuditCertificate,
   IamUserRecord,
   IamGroupRecord,
@@ -883,7 +884,7 @@ export const EdithApi = {
     return await res.json();
   },
 
-  async fetchWhitelists(): Promise<Array<{
+  async fetchWhitelists(includeInactive: boolean = true): Promise<Array<{
     id: string;
     tenantId: string;
     customerId?: string;
@@ -894,12 +895,42 @@ export const EdithApi = {
     isActive: boolean;
   }>> {
     try {
-      const res = await fetch(`${API_BASE}/whitelists`, { headers: getAuthHeaders() });
+      const res = await fetch(`${API_BASE}/whitelists?includeInactive=${includeInactive}`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // ignore
     }
     return [];
+  },
+
+  async fetchWatchlistEntities(search?: string): Promise<WatchlistEntityDto[]> {
+    try {
+      const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+      const res = await fetch(`${API_BASE}/watchlist${qs}`, { headers: getAuthHeaders() });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return [];
+  },
+
+  async syncWatchlistEntities(entities: WatchlistEntityDto[]): Promise<{
+    indexedCount: number;
+    timestamp: string;
+    wormHash?: string;
+    entities?: WatchlistEntityDto[];
+  } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/watchlist/sync`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ entities })
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
+    }
+    return null;
   },
 
   async createWhitelist(payload: {

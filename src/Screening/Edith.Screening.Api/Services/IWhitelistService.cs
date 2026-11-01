@@ -5,7 +5,7 @@ namespace Edith.Screening.Api.Services;
 
 public interface IWhitelistService
 {
-    Task<IReadOnlyList<WhitelistEntry>> GetActiveWhitelistsAsync(Guid tenantId, CancellationToken ct = default);
+    Task<IReadOnlyList<WhitelistEntry>> GetActiveWhitelistsAsync(Guid tenantId, bool includeInactive = false, CancellationToken ct = default);
 
     Task<WhitelistEntry> AddWhitelistAsync(WhitelistEntry entry, CancellationToken ct = default);
 
@@ -16,11 +16,11 @@ public sealed class InMemoryWhitelistService : IWhitelistService
 {
     private readonly ConcurrentDictionary<Guid, WhitelistEntry> _entries = new();
 
-    public Task<IReadOnlyList<WhitelistEntry>> GetActiveWhitelistsAsync(Guid tenantId, CancellationToken ct = default)
+    public Task<IReadOnlyList<WhitelistEntry>> GetActiveWhitelistsAsync(Guid tenantId, bool includeInactive = false, CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
         var active = _entries.Values
-            .Where(w => w.TenantId == tenantId && w.IsActive && (w.ExpiresAt == null || w.ExpiresAt > now))
+            .Where(w => w.TenantId == tenantId && (includeInactive || (w.IsActive && (w.ExpiresAt == null || w.ExpiresAt > now))))
             .ToList();
 
         return Task.FromResult<IReadOnlyList<WhitelistEntry>>(active);
@@ -36,7 +36,8 @@ public sealed class InMemoryWhitelistService : IWhitelistService
     {
         if (_entries.TryGetValue(whitelistId, out var entry) && entry.TenantId == tenantId)
         {
-            return Task.FromResult(_entries.TryRemove(whitelistId, out _));
+            _entries[whitelistId] = entry with { IsActive = false };
+            return Task.FromResult(true);
         }
 
         return Task.FromResult(false);
@@ -52,7 +53,7 @@ public sealed class PostgreSqlWhitelistService : IWhitelistService
         _connectionString = connectionString;
     }
 
-    public async Task<IReadOnlyList<WhitelistEntry>> GetActiveWhitelistsAsync(Guid tenantId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<WhitelistEntry>> GetActiveWhitelistsAsync(Guid tenantId, bool includeInactive = false, CancellationToken ct = default)
     {
         await using var conn = new Npgsql.NpgsqlConnection(_connectionString);
         await conn.OpenAsync(ct);
@@ -60,11 +61,12 @@ public sealed class PostgreSqlWhitelistService : IWhitelistService
         const string sql = """
             SELECT id, tenant_id, customer_id, entity_identifier, match_scope, reason, expires_at, is_active
             FROM screening.whitelists
-            WHERE tenant_id = @tenant_id AND is_active = true AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP);
+            WHERE tenant_id = @tenant_id AND (@include_inactive = true OR (is_active = true AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)));
             """;
 
         await using var cmd = new Npgsql.NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("tenant_id", tenantId);
+        cmd.Parameters.AddWithValue("include_inactive", includeInactive);
 
         var list = new List<WhitelistEntry>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -122,7 +124,7 @@ public sealed class PostgreSqlWhitelistService : IWhitelistService
         await conn.OpenAsync(ct);
 
         await using var cmd = new Npgsql.NpgsqlCommand(
-            "DELETE FROM screening.whitelists WHERE id = @id AND tenant_id = @tenant_id;", conn);
+            "UPDATE screening.whitelists SET is_active = false WHERE id = @id AND tenant_id = @tenant_id;", conn);
         cmd.Parameters.AddWithValue("id", whitelistId);
         cmd.Parameters.AddWithValue("tenant_id", tenantId);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;

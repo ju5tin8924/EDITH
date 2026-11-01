@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { 
   ShieldAlert, 
   CheckCircle2, 
@@ -62,6 +63,7 @@ const DEFAULT_BLANK_PAYLOAD: TransactionScreeningRequest = {
 };
 
 export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }) => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<TransactionScreeningRequest>({
     sourceAccount: 'AE820330000001234567890',
@@ -923,6 +925,20 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                                 >
                                   <PlusCircle className="w-3.5 h-3.5" />
                                   <span>Whitelist</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    navigate(
+                                      `/blacklist/watchlist?action=add-blacklist&name=${encodeURIComponent(cand.canonicalName)}&id=${encodeURIComponent(cand.candidateId)}&country=${encodeURIComponent(cand.nationality || 'AE')}&reason=${encodeURIComponent(`Escalated from Transaction Screening Console (${cand.sanctionsList || 'SANCTIONS'})`)}`
+                                    )
+                                  }
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-surface-muted text-ink border border-border hover:border-primary/40 transition flex items-center gap-1.5"
+                                  title="Add or update entity on Internal Blacklist / Watchlist"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5 text-critical" />
+                                  <span>Watchlist</span>
                                 </button>
                               </div>
                             </div>

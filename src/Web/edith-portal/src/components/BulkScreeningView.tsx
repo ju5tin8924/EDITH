@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Layers, 
   UploadCloud, 
@@ -25,6 +26,8 @@ interface ExtendedBulkJob extends BulkJobSummary {
 }
 
 export const BulkScreeningView: React.FC = () => {
+  const navigate = useNavigate();
+  const [deltaBanner, setDeltaBanner] = useState<string | null>(null);
   const [jobs, setJobs] = useState<ExtendedBulkJob[]>([
     {
       jobId: 'bulk-job-901',
@@ -141,7 +144,9 @@ export const BulkScreeningView: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(`Delta Rescreening Completed (${data.syncBatchId}): Evaluated ${data.scannedCustomers} customers against UN Sanctions Update. ${data.newDeltaHits} new match(es) identified.`);
+        setDeltaBanner(
+          `Delta Rescreening Completed (${data.syncBatchId}): Evaluated ${data.scannedCustomers} customers against UN Sanctions Update. ${data.newDeltaHits} new match(es) identified.`
+        );
         return;
       }
     } catch {
@@ -149,7 +154,9 @@ export const BulkScreeningView: React.FC = () => {
     } finally {
       setDeltaSyncRunning(false);
     }
-    alert('Delta Rescreening Completed: Evaluated 175,000 customers against UN Sanctions Update 2026-Q1. 3 new potential matches identified.');
+    setDeltaBanner(
+      'Delta Rescreening Completed: Evaluated 175,000 customers against UN Sanctions Update 2026-Q1. 3 new potential matches identified.'
+    );
   };
 
   const pageMeta = usePageMeta(
@@ -169,6 +176,30 @@ export const BulkScreeningView: React.FC = () => {
       )}
 
       {/* Title Bar */}
+      {deltaBanner && (
+        <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/30 text-accent text-xs font-mono flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 shrink-0" />
+            <span>{deltaBanner}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/delta/authorization')}
+              className="px-3 py-1 rounded-lg bg-primary text-white font-bold hover:bg-primary/90 cursor-pointer"
+            >
+              Open Delta Queue →
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeltaBanner(null)}
+              className="text-muted hover:text-ink font-bold px-1.5 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
       <div className="relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl border border-border shadow-xs">
         <GridPattern className="opacity-35" width={24} height={24} />
 

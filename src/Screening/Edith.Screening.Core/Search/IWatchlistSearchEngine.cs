@@ -45,6 +45,16 @@ public sealed class InMemoryWatchlistSearchEngine : IWatchlistSearchEngine, IDis
         {
             foreach (var entity in entities)
             {
+                _items.RemoveAll(x =>
+                    x.Entity.Id == entity.Id ||
+                    (string.Equals(x.Entity.EntityExternalId, entity.EntityExternalId, StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(x.Entity.FullName, entity.FullName, StringComparison.OrdinalIgnoreCase)));
+
+                if (!entity.IsActive)
+                {
+                    continue;
+                }
+
                 var norm = _normalizer.Normalize(entity.FullName, entity.EntityType == "CORPORATE");
                 var tokens = norm.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
 

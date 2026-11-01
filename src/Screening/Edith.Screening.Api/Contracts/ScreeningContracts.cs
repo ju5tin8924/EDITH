@@ -156,6 +156,10 @@ public sealed record WatchlistEntityDto
     [Required]
     public required string Category { get; init; }
 
+    public string? AliasName { get; init; }
+
+    public string? IdDetails { get; init; }
+
     public bool IsBlocked { get; init; } = true;
 
     public bool IsActive { get; init; } = true;
@@ -193,6 +197,7 @@ public sealed record NameSearchRequest
     public string? Name { get; init; }
     public string? IdNumber { get; init; }
     public int? BirthYear { get; init; }
+    public string? Nationality { get; init; }
     /// <summary>
     /// Search mode: "EXACT", "FUZZY", or "EXACT_NAME_AND_ID"
     /// </summary>
