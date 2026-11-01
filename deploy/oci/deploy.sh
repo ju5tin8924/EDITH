@@ -87,7 +87,9 @@ sudo tee "${ENV_FILE}" >/dev/null <<EOF
 ASPNETCORE_ENVIRONMENT=Production
 DOTNET_ENVIRONMENT=Production
 EDITH_PG_CONNECTION=${EDITH_PG_CONNECTION}
+ConnectionStrings__EdithPostgres=${EDITH_PG_CONNECTION}
 JWT_SECRET=${JWT_SECRET}
+Jwt__Secret=${JWT_SECRET}
 Jwt__Issuer=${JWT_ISSUER:-https://edith.aml.cloud}
 Jwt__Audience=${JWT_AUDIENCE:-https://edith.aml.cloud}
 OpenSearch__BaseUrl=${OPENSEARCH_URL:-https://127.0.0.1:9200}

@@ -13,8 +13,8 @@ using Edith.Screening.Core.Search;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var pgConn = builder.Configuration.GetConnectionString("EdithPostgres")
-    ?? Environment.GetEnvironmentVariable("EDITH_PG_CONNECTION");
+var pgConn = Environment.GetEnvironmentVariable("EDITH_PG_CONNECTION")
+    ?? builder.Configuration.GetConnectionString("EdithPostgres");
 
 if (builder.Environment.IsProduction())
 {
