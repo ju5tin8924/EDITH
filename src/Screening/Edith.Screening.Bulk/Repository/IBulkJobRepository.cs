@@ -639,6 +639,54 @@ public sealed class PostgreSqlBulkJobRepository : IBulkJobRepository
                     IsActive = reader.GetBoolean(11)
                 });
             }
+            await reader.DisposeAsync();
+
+            if (results.Count == 0 && !string.IsNullOrWhiteSpace(name) && name.Contains(' '))
+            {
+                var tokens = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                 .Where(t => t.Length >= 3)
+                                 .Take(2)
+                                 .ToList();
+
+                if (tokens.Count >= 2)
+                {
+                    const string tokenSql = """
+                        SELECT id, entity_external_id, entity_type, full_name, dob, nationality, source_list, category, id_details, alias_name, is_blocked, is_active
+                        FROM screening.watchlist_entities
+                        WHERE (@include_inactive = true OR is_active = true)
+                          AND (UPPER(full_name) LIKE '%' || UPPER(@t0) || '%' OR UPPER(COALESCE(alias_name, '')) LIKE '%' || UPPER(@t0) || '%')
+                          AND (UPPER(full_name) LIKE '%' || UPPER(@t1) || '%' OR UPPER(COALESCE(alias_name, '')) LIKE '%' || UPPER(@t1) || '%')
+                        ORDER BY full_name
+                        LIMIT @limit;
+                        """;
+
+                    await using var tokenCmd = new NpgsqlCommand(tokenSql, conn);
+                    tokenCmd.Parameters.AddWithValue("t0", tokens[0]);
+                    tokenCmd.Parameters.AddWithValue("t1", tokens[1]);
+                    tokenCmd.Parameters.AddWithValue("limit", maxResults);
+                    tokenCmd.Parameters.AddWithValue("include_inactive", includeInactive);
+
+                    await using var tokenReader = await tokenCmd.ExecuteReaderAsync(ct);
+                    while (await tokenReader.ReadAsync(ct))
+                    {
+                        results.Add(new WatchlistEntity
+                        {
+                            Id = tokenReader.GetGuid(0),
+                            EntityExternalId = tokenReader.GetString(1),
+                            EntityType = tokenReader.GetString(2),
+                            FullName = tokenReader.GetString(3),
+                            Dob = tokenReader.IsDBNull(4) ? null : tokenReader.GetFieldValue<DateOnly>(4),
+                            Nationality = tokenReader.IsDBNull(5) ? null : tokenReader.GetString(5),
+                            SourceList = tokenReader.GetString(6),
+                            Category = tokenReader.GetString(7),
+                            IdDetails = tokenReader.IsDBNull(8) ? null : tokenReader.GetString(8),
+                            AliasName = tokenReader.IsDBNull(9) ? null : tokenReader.GetString(9),
+                            IsBlocked = tokenReader.GetBoolean(10),
+                            IsActive = tokenReader.GetBoolean(11)
+                        });
+                    }
+                }
+            }
 
             return results;
         }

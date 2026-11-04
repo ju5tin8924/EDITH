@@ -56,7 +56,7 @@ var osOpts = new OpenSearchOptions
 };
 
 builder.Services.AddSingleton(osOpts);
-builder.Services.AddHttpClient<IWatchlistSearchEngine, OpenSearchWatchlistSearchEngine>(client =>
+builder.Services.AddHttpClient("OpenSearch", client =>
 {
     client.BaseAddress = new Uri(osOpts.BaseUrl);
 }).ConfigurePrimaryHttpMessageHandler(() =>
@@ -67,6 +67,17 @@ builder.Services.AddHttpClient<IWatchlistSearchEngine, OpenSearchWatchlistSearch
         handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
     }
     return handler;
+});
+
+builder.Services.AddSingleton<IWatchlistSearchEngine>(sp =>
+{
+    var clientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient = clientFactory.CreateClient("OpenSearch");
+    var normalizer = sp.GetRequiredService<ITextNormalizer>();
+    var memSearch = sp.GetRequiredService<InMemoryWatchlistSearchEngine>();
+    var openSearch = new OpenSearchWatchlistSearchEngine(httpClient, normalizer, osOpts, memSearch);
+    var jobRepo = sp.GetService<IBulkJobRepository>();
+    return new HybridWatchlistSearchEngine(openSearch, jobRepo, memSearch);
 });
 
 builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
