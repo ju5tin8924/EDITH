@@ -812,10 +812,14 @@ public static class ScreeningEndpoints
 
     private static string FormatListBadge(string sourceList, string externalId)
     {
+        if (string.Equals(sourceList, "WORLD_CHECK", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(sourceList, "WORLD_CHECK_GLOBAL", StringComparison.OrdinalIgnoreCase) ||
+            externalId.StartsWith("WC-", StringComparison.OrdinalIgnoreCase))
+        {
+            return "WORLD_CHECK";
+        }
         if (string.Equals(sourceList, "BULK_INGEST", StringComparison.OrdinalIgnoreCase))
         {
-            if (externalId.StartsWith("WC-", StringComparison.OrdinalIgnoreCase))
-                return "WORLD_CHECK_GLOBAL";
             return "UAE_EOCN_WATCHLIST";
         }
         return sourceList;

@@ -1999,11 +1999,12 @@ export const ReportsAuditView: React.FC = () => {
                       }}
                       className="w-full px-2.5 py-1.5 rounded-lg bg-surface-muted border border-border text-ink text-xs font-bold"
                     >
-                      <option value="ALL">All Sources (OFAC/UN/EU/UK)</option>
+                      <option value="ALL">All Sources (OFAC/UN/EU/UK/WORLD_CHECK)</option>
                       <option value="OFAC">OFAC SDN</option>
                       <option value="UN">UN Consolidated</option>
                       <option value="EU">EU Sanctions</option>
                       <option value="UK">UK Sanctions</option>
+                      <option value="WORLD_CHECK">Refinitiv World-Check</option>
                     </select>
                   </div>
 
@@ -2176,7 +2177,7 @@ export const ReportsAuditView: React.FC = () => {
                 <div>
                   <div className="font-bold">No Daily Blacklist Sync Run Executed Yet</div>
                   <div className="text-[11px]">
-                    Showing baseline watchlist audit entries below. Trigger the first manual update in Blacklist Data Management to populate full OFAC, UN, EU, and UK run reports.
+                    Showing baseline watchlist audit entries below. Trigger the first manual update in Blacklist Data Management to populate full OFAC, UN, EU, UK, and World-Check run reports.
                   </div>
                 </div>
                 <button

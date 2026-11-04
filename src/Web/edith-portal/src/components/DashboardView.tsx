@@ -1002,10 +1002,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
               {/* Part A: Blacklist Distribution by Source (Pie/Donut Chart + Source Breakdown) */}
               {(() => {
                 const defaultSources = [
-                  { sourceType: 'OFAC', displayName: 'OFAC SDN List', activeCount: 18420, removedCount: 0, percentageOfTotal: 42.1, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
-                  { sourceType: 'UN', displayName: 'UN Consolidated List', activeCount: 11290, removedCount: 0, percentageOfTotal: 25.8, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
-                  { sourceType: 'EU', displayName: 'EU Financial Sanctions', activeCount: 7450, removedCount: 0, percentageOfTotal: 17.0, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
-                  { sourceType: 'UK', displayName: 'UK FCDO Sanctions List', activeCount: 6610, removedCount: 0, percentageOfTotal: 15.1, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' }
+                  { sourceType: 'OFAC', displayName: 'OFAC SDN List', activeCount: 19487, removedCount: 0, percentageOfTotal: 0.7, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
+                  { sourceType: 'UN', displayName: 'UN Consolidated List', activeCount: 1010, removedCount: 0, percentageOfTotal: 0.04, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
+                  { sourceType: 'EU', displayName: 'EU Financial Sanctions', activeCount: 6269, removedCount: 0, percentageOfTotal: 0.2, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
+                  { sourceType: 'UK', displayName: 'UK FCDO Sanctions List', activeCount: 6420, removedCount: 0, percentageOfTotal: 0.2, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
+                  { sourceType: 'WORLD_CHECK', displayName: 'Refinitiv World-Check Premium Global Intelligence', activeCount: 2570410, removedCount: 0, percentageOfTotal: 98.7, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' }
                 ];
                 const rawSources = blDistribution && blDistribution.sources && blDistribution.sources.length > 0
                   ? blDistribution.sources
@@ -1018,7 +1019,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
                   OFAC: { stroke: '#1a237e', badge: 'bg-[#1a237e]/10 text-[#1a237e]', dot: 'bg-[#1a237e]' },
                   UN: { stroke: '#0284c7', badge: 'bg-sky-100 text-sky-800', dot: 'bg-sky-600' },
                   EU: { stroke: '#059669', badge: 'bg-emerald-100 text-emerald-800', dot: 'bg-emerald-600' },
-                  UK: { stroke: '#d97706', badge: 'bg-amber-100 text-amber-800', dot: 'bg-amber-600' }
+                  UK: { stroke: '#d97706', badge: 'bg-amber-100 text-amber-800', dot: 'bg-amber-600' },
+                  WORLD_CHECK: { stroke: '#7c3aed', badge: 'bg-purple-100 text-purple-800', dot: 'bg-purple-600' }
                 };
 
                 const radius = 42;
@@ -1037,7 +1039,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
                             const dash = (pct / 100) * circumference;
                             const offset = -((cumulativePct / 100) * circumference);
                             cumulativePct += pct;
-                            const color = palette[s.sourceType]?.stroke || '#1a237e';
+                            const color = palette[s.sourceType]?.stroke || '#7c3aed';
                             return (
                               <circle
                                 key={s.sourceType}
@@ -1056,7 +1058,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                           <span className="text-[9px] uppercase text-muted font-bold">Total Active</span>
                           <span className="text-sm font-bold text-ink">{totalActive.toLocaleString()}</span>
-                          <span className="text-[9px] text-primary font-bold">4 Sources</span>
+                          <span className="text-[9px] text-primary font-bold">{rawSources.length} Sources</span>
                         </div>
                       </div>
                       <div className="text-[10px] text-muted mt-1 text-center">

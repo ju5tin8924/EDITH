@@ -99,17 +99,17 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
     {
         if (string.IsNullOrWhiteSpace(url))
         {
-            return new UrlValidationResultDto(false, string.Empty, "Please enter a valid HTTP or HTTPS URL for the blacklist source.");
+            return new UrlValidationResultDto(false, string.Empty, "Please enter a valid HTTP, HTTPS, or file URL for the blacklist source.");
         }
 
         var trimmed = url.Trim();
         if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFile))
         {
-            return new UrlValidationResultDto(false, trimmed, "The URL must be a valid absolute HTTP or HTTPS address (e.g., https://...).");
+            return new UrlValidationResultDto(false, trimmed, "The URL must be a valid absolute HTTP, HTTPS, or FILE address (e.g., https://... or file:///...).");
         }
 
-        if (string.IsNullOrWhiteSpace(uri.Host) || uri.Host.Contains(' '))
+        if (uri.Scheme != Uri.UriSchemeFile && (string.IsNullOrWhiteSpace(uri.Host) || uri.Host.Contains(' ')))
         {
             return new UrlValidationResultDto(false, trimmed, "The URL host name is invalid.");
         }
@@ -143,7 +143,8 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
                         WHEN 'UN' THEN 2
                         WHEN 'EU' THEN 3
                         WHEN 'UK' THEN 4
-                        ELSE 5
+                        WHEN 'WORLD_CHECK' THEN 5
+                        ELSE 6
                     END;
                     """;
 
@@ -188,7 +189,7 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
         }
 
         return _memSources.Values
-            .OrderBy(s => s.SourceType switch { "OFAC" => 1, "UN" => 2, "EU" => 3, "UK" => 4, _ => 5 })
+            .OrderBy(s => s.SourceType switch { "OFAC" => 1, "UN" => 2, "EU" => 3, "UK" => 4, "WORLD_CHECK" => 5, _ => 6 })
             .ToList();
     }
 
@@ -274,6 +275,45 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
         var sw = Stopwatch.StartNew();
         try
         {
+            if (Uri.TryCreate(validation.NormalizedUrl, UriKind.Absolute, out var testUri) && testUri.Scheme == Uri.UriSchemeFile)
+            {
+                if (!File.Exists(testUri.LocalPath))
+                {
+                    sw.Stop();
+                    return new SourceTestResultDto
+                    {
+                        SourceType = key,
+                        SourceRefId = source.SourceRefId,
+                        TestedUrl = validation.NormalizedUrl,
+                        IsReachable = false,
+                        IsXmlValid = false,
+                        HttpStatusCode = 404,
+                        LatencyMs = sw.ElapsedMilliseconds,
+                        UserMessage = $"Local feed file not found at '{testUri.LocalPath}'.",
+                        TechnicalDetails = "File.Exists returned false."
+                    };
+                }
+
+                await using var fileStream = File.OpenRead(testUri.LocalPath);
+                var outcome = await SanctionsFeedParsers.ParseXmlStreamAsync(key, source.SourceRefId, fileStream, maxRecords: 5, ct: ct);
+                sw.Stop();
+
+                return new SourceTestResultDto
+                {
+                    SourceType = key,
+                    SourceRefId = source.SourceRefId,
+                    TestedUrl = validation.NormalizedUrl,
+                    IsReachable = true,
+                    IsXmlValid = true,
+                    HttpStatusCode = 200,
+                    LatencyMs = sw.ElapsedMilliseconds,
+                    RootElementName = outcome.RootElementName,
+                    SampleRecordCount = outcome.Records.Count,
+                    SampleRecords = outcome.Records,
+                    UserMessage = $"Connected to {key} feed successfully (File stream, root <{outcome.RootElementName}>, {outcome.Records.Count} sample record(s) verified in {sw.ElapsedMilliseconds} ms)."
+                };
+            }
+
             using var req = new HttpRequestMessage(HttpMethod.Get, validation.NormalizedUrl);
             using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             var statusCode = (int)resp.StatusCode;
@@ -297,7 +337,7 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
             }
 
             await using var stream = await resp.Content.ReadAsStreamAsync(ct);
-            var outcome = await SanctionsFeedParsers.ParseXmlStreamAsync(key, source.SourceRefId, stream, maxRecords: 5, ct: ct);
+            var outcomeHttp = await SanctionsFeedParsers.ParseXmlStreamAsync(key, source.SourceRefId, stream, maxRecords: 5, ct: ct);
             sw.Stop();
 
             return new SourceTestResultDto
@@ -309,10 +349,10 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
                 IsXmlValid = true,
                 HttpStatusCode = statusCode,
                 LatencyMs = sw.ElapsedMilliseconds,
-                RootElementName = outcome.RootElementName,
-                SampleRecordCount = outcome.Records.Count,
-                SampleRecords = outcome.Records,
-                UserMessage = $"Connected to {key} successfully (HTTP {statusCode}, root <{outcome.RootElementName}>, {outcome.Records.Count} sample record(s) verified in {sw.ElapsedMilliseconds} ms)."
+                RootElementName = outcomeHttp.RootElementName,
+                SampleRecordCount = outcomeHttp.Records.Count,
+                SampleRecords = outcomeHttp.Records,
+                UserMessage = $"Connected to {key} successfully (HTTP {statusCode}, root <{outcomeHttp.RootElementName}>, {outcomeHttp.Records.Count} sample record(s) verified in {sw.ElapsedMilliseconds} ms)."
             };
         }
         catch (Exception ex)
@@ -670,6 +710,18 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
             stat.AttemptCount = attempts;
             try
             {
+                if (Uri.TryCreate(source.Url, UriKind.Absolute, out var sourceUri) && sourceUri.Scheme == Uri.UriSchemeFile)
+                {
+                    if (!File.Exists(sourceUri.LocalPath))
+                    {
+                        throw new FileNotFoundException($"Feed file not found at '{sourceUri.LocalPath}'.");
+                    }
+                    await using var fileStream = File.OpenRead(sourceUri.LocalPath);
+                    parseOutcome = await SanctionsFeedParsers.ParseXmlStreamAsync(source.SourceType, source.SourceRefId, fileStream, maxRecords: null, ct: ct);
+                    lastFetchEx = null;
+                    break;
+                }
+
                 using var req = new HttpRequestMessage(HttpMethod.Get, source.Url);
                 using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
                 if (!resp.IsSuccessStatusCode)
@@ -2113,7 +2165,8 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
             ["OFAC"] = (0, 0),
             ["UN"] = (0, 0),
             ["EU"] = (0, 0),
-            ["UK"] = (0, 0)
+            ["UK"] = (0, 0),
+            ["WORLD_CHECK"] = (0, 0)
         };
 
         bool dbLoaded = false;
@@ -2132,6 +2185,7 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
                                 WHEN UPPER(source_list) LIKE 'UN%' THEN 'UN'
                                 WHEN UPPER(source_list) LIKE 'EU%' THEN 'EU'
                                 WHEN UPPER(source_list) LIKE 'UK%' OR UPPER(source_list) LIKE 'OFSI%' THEN 'UK'
+                                WHEN UPPER(source_list) LIKE 'WORLD%' THEN 'WORLD_CHECK'
                                 ELSE 'OFAC'
                             END
                         ) AS src,
@@ -2311,6 +2365,7 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
         "UN" => BlacklistSourceDefaults.UnRefId,
         "EU" => BlacklistSourceDefaults.EuRefId,
         "UK" => BlacklistSourceDefaults.UkRefId,
+        "WORLD_CHECK" => BlacklistSourceDefaults.WorldCheckRefId,
         _ => BlacklistSourceDefaults.OfacRefId
     };
 

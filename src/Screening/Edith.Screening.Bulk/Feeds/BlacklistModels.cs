@@ -8,11 +8,13 @@ public static class BlacklistSourceDefaults
     public const string UnRefId = "538f31c944a9880b5137a07b";
     public const string EuRefId = "538f325c44a9880b5137a07c";
     public const string UkRefId = "5526919db8143b3250b77a02";
+    public const string WorldCheckRefId = "540e11a944a9880b5137a07d";
 
     public const string OfacDefaultUrl = "http://www.treasury.gov/ofac/downloads/sdn.xml";
     public const string UnDefaultUrl = "https://scsanctions.un.org/resources/xml/en/consolidated.xml";
     public const string EuDefaultUrl = "https://webgate.ec.europa.eu/fsd/fsf/public/files/xmlFullSanctionsList/content?token=dG9rZW4tMjAxNw";
     public const string UkDefaultUrl = "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.xml";
+    public const string WorldCheckDefaultUrl = "file:///opt/edith/worldcheck/premium-world-check.xml";
 
     public static IReadOnlyList<BlacklistSourceConfig> CreateDefaultSources() =>
     [
@@ -49,6 +51,15 @@ public static class BlacklistSourceDefaults
             SourceRefId = UkRefId,
             DisplayName = "UK FCDO Consolidated Sanctions List",
             Url = UkDefaultUrl,
+            IsEnabled = true,
+            LastStatus = "NEVER_RUN"
+        },
+        new()
+        {
+            SourceType = "WORLD_CHECK",
+            SourceRefId = WorldCheckRefId,
+            DisplayName = "Refinitiv World-Check Premium Global Intelligence",
+            Url = WorldCheckDefaultUrl,
             IsEnabled = true,
             LastStatus = "NEVER_RUN"
         }

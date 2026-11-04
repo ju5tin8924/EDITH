@@ -131,11 +131,13 @@ public static class SanctionsFeedParsers
             "EU" => string.Equals(localName, "sanctionEntity", StringComparison.OrdinalIgnoreCase),
             "UK" => string.Equals(localName, "Designation", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(localName, "FinancialSanctionsTarget", StringComparison.OrdinalIgnoreCase),
+            "WORLD_CHECK" => string.Equals(localName, "record", StringComparison.OrdinalIgnoreCase),
             _ => string.Equals(localName, "sdnEntry", StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(localName, "INDIVIDUAL", StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(localName, "ENTITY", StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(localName, "sanctionEntity", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(localName, "Designation", StringComparison.OrdinalIgnoreCase)
+                 string.Equals(localName, "Designation", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(localName, "record", StringComparison.OrdinalIgnoreCase)
         };
     }
 
@@ -151,6 +153,7 @@ public static class SanctionsFeedParsers
             "UN" => ParseUnEntry(sourceRefId, elementLocalName, el),
             "EU" => ParseEuEntry(sourceRefId, el),
             "UK" => ParseUkEntry(sourceRefId, el),
+            "WORLD_CHECK" => ParseWorldCheckEntry(sourceRefId, el),
             _ => ParseOfacEntry(sourceRefId, el)
         };
     }
@@ -613,6 +616,160 @@ public static class SanctionsFeedParsers
             Nationalities = nationalities,
             Programs = programs,
             Remarks = otherInfo
+        };
+    }
+
+    private static NormalizedBlacklistRecord? ParseWorldCheckEntry(string sourceRefId, XElement el)
+    {
+        var uid = el.Attribute("uid")?.Value?.Trim();
+        if (string.IsNullOrWhiteSpace(uid))
+        {
+            return null;
+        }
+
+        var extId = $"WC-{uid}";
+        var category = el.Attribute("category")?.Value?.Trim() ?? "SANCTION";
+        var subCat = el.Attribute("sub-category")?.Value?.Trim() ?? string.Empty;
+
+        var person = el.Element("person");
+        var ei = person?.Attribute("e-i")?.Value?.Trim()?.ToUpperInvariant() ?? "U";
+        var entityType = ei == "E" ? "CORPORATE" : "INDIVIDUAL";
+        var position = person?.Element("position")?.Value?.Trim();
+
+        var names = person?.Element("names");
+        var firstName = names?.Element("first_name")?.Value?.Trim();
+        var lastName = names?.Element("last_name")?.Value?.Trim();
+        var fullName = !string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(lastName)
+            ? $"{firstName} {lastName}"
+            : (!string.IsNullOrWhiteSpace(lastName) ? lastName : (firstName ?? string.Empty));
+
+        var aliases = new List<string>();
+        if (names?.Element("aliases") is { } aliasesEl)
+        {
+            foreach (var a in aliasesEl.Elements("alias"))
+            {
+                var val = a.Value?.Trim();
+                if (!string.IsNullOrWhiteSpace(val) && !val.Equals("null", StringComparison.OrdinalIgnoreCase))
+                {
+                    aliases.Add(val);
+                }
+            }
+        }
+
+        var dobs = new List<string>();
+        if (person?.Element("agedata") is { } ageData)
+        {
+            var rawDob = ageData.Element("dob")?.Value?.Trim();
+            if (!string.IsNullOrWhiteSpace(rawDob) && !rawDob.Equals("null", StringComparison.OrdinalIgnoreCase))
+            {
+                dobs.Add(rawDob);
+            }
+            if (ageData.Element("dobs") is { } dobsEl)
+            {
+                foreach (var d in dobsEl.Elements("dob"))
+                {
+                    var dt = d.Value?.Trim();
+                    if (!string.IsNullOrWhiteSpace(dt) && !dt.Equals("null", StringComparison.OrdinalIgnoreCase) && !dobs.Contains(dt))
+                    {
+                        dobs.Add(dt);
+                    }
+                }
+            }
+        }
+
+        var ids = new List<string>();
+        var addresses = new List<string>();
+        var nationalities = new List<string>();
+        string? furtherInfo = null;
+
+        if (el.Element("details") is { } details)
+        {
+            furtherInfo = details.Element("further_information")?.Value?.Trim();
+
+            if (details.Element("passports") is { } passportsEl)
+            {
+                foreach (var p in passportsEl.Elements("passport"))
+                {
+                    var val = p.Value?.Trim();
+                    var country = p.Attribute("country")?.Value?.Trim();
+                    if (!string.IsNullOrWhiteSpace(val) && !val.Equals("null", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ids.Add(string.IsNullOrWhiteSpace(country) ? $"Passport {val}" : $"Passport {val} ({country})");
+                    }
+                }
+            }
+
+            if (details.Element("id_numbers") is { } idsEl)
+            {
+                foreach (var id in idsEl.Elements("id"))
+                {
+                    var val = id.Value?.Trim();
+                    var itype = id.Attribute("type")?.Value?.Trim();
+                    var loc = id.Attribute("loc")?.Value?.Trim();
+                    if (!string.IsNullOrWhiteSpace(val) && !val.Equals("null", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var prefix = !string.IsNullOrWhiteSpace(itype) ? $"{itype}: " : "ID: ";
+                        var suffix = !string.IsNullOrWhiteSpace(loc) ? $" ({loc})" : "";
+                        ids.Add($"{prefix}{val}{suffix}");
+                    }
+                }
+            }
+
+            if (details.Element("locations") is { } locsEl)
+            {
+                foreach (var loc in locsEl.Elements("location"))
+                {
+                    var city = loc.Attribute("city")?.Value?.Trim();
+                    var state = loc.Attribute("state")?.Value?.Trim();
+                    var country = loc.Attribute("country")?.Value?.Trim();
+                    var locStr = string.Join(", ", new[] { city, state, country }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                    if (!string.IsNullOrWhiteSpace(locStr))
+                    {
+                        addresses.Add(locStr);
+                    }
+                }
+            }
+
+            if (details.Element("citizenships") is { } citsEl)
+            {
+                foreach (var c in citsEl.Elements("citizenship"))
+                {
+                    var val = c.Value?.Trim();
+                    if (!string.IsNullOrWhiteSpace(val) && !val.Equals("null", StringComparison.OrdinalIgnoreCase)) nationalities.Add(val);
+                }
+            }
+            if (details.Element("countries") is { } countriesEl)
+            {
+                foreach (var c in countriesEl.Elements("country"))
+                {
+                    var val = c.Value?.Trim();
+                    if (!string.IsNullOrWhiteSpace(val) && !val.Equals("null", StringComparison.OrdinalIgnoreCase) && !nationalities.Contains(val))
+                    {
+                        nationalities.Add(val);
+                    }
+                }
+            }
+        }
+
+        var programs = !string.IsNullOrWhiteSpace(subCat) ? new List<string> { subCat } : ["WORLD_CHECK"];
+        var remarks = string.Join(" | ", new[] { position, furtherInfo }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        return new NormalizedBlacklistRecord
+        {
+            SourceType = "WORLD_CHECK",
+            SourceRefId = sourceRefId,
+            SourceList = "WORLD_CHECK",
+            EntityExternalId = extId,
+            EntityType = entityType,
+            FullName = fullName,
+            Category = category,
+            Aliases = aliases,
+            DatesOfBirth = dobs,
+            Identifications = ids,
+            Addresses = addresses,
+            Nationalities = nationalities,
+            Programs = programs,
+            Remarks = string.IsNullOrWhiteSpace(remarks) ? null : remarks
         };
     }
 

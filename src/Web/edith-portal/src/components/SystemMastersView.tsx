@@ -2019,7 +2019,7 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
 
             <div className="divide-y divide-border border border-border rounded-xl bg-white shadow-xs">
               {[
-                { key: 'customerScreening', label: 'Customer Onboarding & Periodic Screening', desc: 'Screen retail and corporate customers against OFAC, UN, and local watchlists' },
+                { key: 'customerScreening', label: 'Customer Onboarding & Periodic Screening', desc: 'Screen retail and corporate customers against OFAC, UN, EU, UK, and World-Check watchlists' },
                 { key: 'beneficiaryBankScreening', label: 'Beneficiary Bank Screening', desc: 'Screen SWIFT BIC codes and correspondent institutions against sanction lists' },
                 { key: 'correspondentBankScreening', label: 'Correspondent Bank Screening', desc: 'Verify intermediary settlement routing against embargoed jurisdictions' },
                 { key: 'partnerUboScreening', label: 'Partner / UBO Screening', desc: 'Traverse 25%+ ownership share structures for Sanction/PEP affiliations' },
