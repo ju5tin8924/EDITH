@@ -1,4 +1,4 @@
-﻿using Edith.Database.Migrator;
+using Edith.Database.Migrator;
 
 namespace Edith.Database.Migrator.Tests;
 
@@ -52,13 +52,13 @@ public class SqlMigratorTests
     }
 
     [Fact]
-    public void Ddl_defines_the_expected_39_tables()
+    public void Ddl_defines_the_expected_45_tables()
     {
-        // 7 core + 8 rules + 13 screening + 7 cases + 4 notifications, per MD_DOC/03_Technical_Architecture_and_Database/database_v10.0.md.
+        // 7 core + 8 rules + 19 screening (13 base + 6 blacklist sync) + 7 cases + 4 notifications.
         var tableCount = SqlMigrator.LoadScripts(includeDevSeed: false)
             .Sum(s => CountOccurrences(s.Sql, "CREATE TABLE "));
 
-        Assert.Equal(39, tableCount);
+        Assert.Equal(45, tableCount);
     }
 
     private static int CountOccurrences(string text, string token)

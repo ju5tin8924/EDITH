@@ -17,6 +17,7 @@ using Edith.Rules.Sandbox;
 using Edith.Screening.Api.Endpoints;
 using Edith.Screening.Api.Services;
 using Edith.Screening.Bulk.Delta;
+using Edith.Screening.Bulk.Feeds;
 using Edith.Screening.Bulk.Notifications;
 using Edith.Screening.Bulk.Parsing;
 using Edith.Screening.Bulk.Processing;
@@ -183,7 +184,7 @@ builder.Services.AddHttpClient<ICbsWebhookDispatcher, CbsWebhookDispatcher>();
 builder.Services.AddSingleton<IRuleEngine, RuleEngine>();
 builder.Services.AddSingleton<IRuleBacktester, RuleBacktester>();
 
-// 9. Bulk Screening & Delta Sync Services
+// 9. Bulk Screening, Daily Blacklist Sync & Delta Sync Services
 builder.Services.AddScoped<IBulkScreeningProcessor, BulkScreeningProcessor>();
 builder.Services.AddSingleton<IDeltaRescreeningService, DeltaRescreeningService>();
 builder.Services.AddSingleton<IAmlStreamingParser, AmlStreamingParser>();
@@ -202,6 +203,15 @@ builder.Services.AddSingleton<IBulkProgressNotifier>(sp =>
 });
 builder.Services.AddScoped<IBulkIngestionPipeline, BulkIngestionPipeline>();
 builder.Services.AddHostedService<BulkScreeningBackgroundWorker>();
+
+builder.Services.AddSingleton<IBlacklistSyncService>(sp =>
+{
+    var searchEngine = sp.GetService<IWatchlistSearchEngine>();
+    var memSearch = sp.GetService<InMemoryWatchlistSearchEngine>();
+    var logger = sp.GetService<ILogger<BlacklistSyncService>>();
+    return new BlacklistSyncService(usePostgres ? pgConn : null, null, searchEngine, memSearch, logger);
+});
+builder.Services.AddHostedService<BlacklistSyncWorker>();
 
 // 10. Add-on Services (goAML, AI Copilot, Entity Graph)
 builder.Services.AddSingleton<IGoAmlExporter, GoAmlExporter>();
@@ -243,6 +253,7 @@ app.MapScreeningEndpoints(includeHealth: false);
 app.MapCaseEndpoints();
 app.MapRuleEndpoints();
 app.MapBulkScreeningEndpoints(pgConn);
+app.MapBlacklistSyncEndpoints();
 app.MapAddonEndpoints();
 app.MapKycEndpoints();
 app.MapSettingsEndpoints();

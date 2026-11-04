@@ -169,6 +169,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
   const [isBriefModalOpen, setIsBriefModalOpen] = useState(false);
   const [wireToast, setWireToast] = useState<string | null>(null);
 
+  // Blacklist Distribution & Daily Update Activity Telemetry
+  const [blDistribution, setBlDistribution] = useState<{
+    totalActiveRecords: number;
+    generatedAtUtc: string;
+    sources: Array<{
+      sourceType: string;
+      displayName: string;
+      activeCount: number;
+      removedCount: number;
+      percentageOfTotal: number;
+      lastSuccessfulSyncUtc?: string;
+      lastStatus: string;
+    }>;
+  } | null>(null);
+  const [blTrendSourceFilter, setBlTrendSourceFilter] = useState<string>('ALL');
+  const [blTrendDaysFilter, setBlTrendDaysFilter] = useState<number>(14);
+  const [blDailyTrends, setBlDailyTrends] = useState<Array<{
+    date: string;
+    sourceType: string;
+    newCount: number;
+    updatedCount: number;
+    skippedCount: number;
+    removedCount: number;
+    failedCount: number;
+    totalRetrieved: number;
+  }>>([]);
+
   // Re-sync default panel visibility whenever the user's role changes
   useEffect(() => {
     const updated: Record<string, boolean> = {};
@@ -237,7 +264,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
       .catch(() => {
         setScreenedTotal(0);
       });
+
+    EdithApi.fetchBlacklistDistributionStats()
+      .then(dist => {
+        if (dist) setBlDistribution(dist);
+      })
+      .catch(() => {});
+
+    EdithApi.fetchBlacklistDailyTrendStats({ sourceType: blTrendSourceFilter, days: blTrendDaysFilter })
+      .then(trends => {
+        if (trends && Array.isArray(trends.points)) {
+          setBlDailyTrends(trends.points);
+        }
+      })
+      .catch(() => {});
   };
+
+  useEffect(() => {
+    EdithApi.fetchBlacklistDailyTrendStats({ sourceType: blTrendSourceFilter, days: blTrendDaysFilter })
+      .then(trends => {
+        if (trends && Array.isArray(trends.points)) {
+          setBlDailyTrends(trends.points);
+        }
+      })
+      .catch(() => {});
+  }, [blTrendSourceFilter, blTrendDaysFilter]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -929,85 +980,214 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentRole = 'ADM
             </div>
           )}
 
-          {/* Chart 4: CBUAE / FATF Rec. 11 Governance & WORM Integrity Matrix */}
+          {/* Chart 4: Blacklist Distribution by Source (Pie/Donut) & Daily Blacklist Update Activity */}
           {visiblePanels.GOVERNANCE_MATRIX && (
             <div className={`${visiblePanels.SLA_FOUR_EYES ? 'lg:col-span-6' : 'lg:col-span-12'} bg-white rounded-2xl border border-border p-5 space-y-4 shadow-xs flex flex-col justify-between`}>
               <div className="flex items-center justify-between pb-2.5 border-b border-border">
                 <div className="flex items-center gap-2">
                   <Database className="w-4 h-4 text-primary" />
                   <h2 className="text-xs font-mono uppercase tracking-wider font-bold text-ink">
-                    CBUAE / FATF Rec. 11 WORM &amp; Watchlist Integrity
+                    Blacklist Distribution by Source &amp; Daily Update Activity
                   </h2>
                 </div>
-                <span className="px-2 py-0.5 rounded bg-accent/15 text-accent border border-accent/30 text-[10px] font-mono font-bold">
-                  SHA-256 VERIFIED
-                </span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/settings/blacklist-management')}
+                  className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 text-[10px] font-mono font-bold hover:bg-primary/15 cursor-pointer"
+                >
+                  MANAGE SOURCES →
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
-                {[
-                  {
-                    feed: 'OFAC SDN & Consolidated',
-                    records: '18,420 entries',
-                    syncAge: '12m ago',
-                    hash: '8f92...e41b',
-                    state: 'SYNCED'
-                  },
-                  {
-                    feed: 'UNSC Consolidated Sanctions',
-                    records: '11,290 entries',
-                    syncAge: '18m ago',
-                    hash: '3c19...a08d',
-                    state: 'SYNCED'
-                  },
-                  {
-                    feed: 'UAE Cabinet Decision No. 74',
-                    records: '4,812 entries',
-                    syncAge: '04m ago',
-                    hash: '7a44...99c2',
-                    state: 'SYNCED'
-                  },
-                  {
-                    feed: 'EU & UK HMT Financial List',
-                    records: '13,096 entries',
-                    syncAge: '24m ago',
-                    hash: '1d08...f52a',
-                    state: 'SYNCED'
-                  }
-                ].map((f, i) => (
-                  <div
-                    key={i}
-                    onClick={() => navigate('/delta')}
-                    className="p-3 rounded-xl bg-[#faf8ff] hover:bg-white border border-border/80 hover:border-primary/40 transition cursor-pointer space-y-1"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-ink truncate">{f.feed}</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-accent/15 text-accent font-bold">
-                        {f.state}
-                      </span>
+              {/* Part A: Blacklist Distribution by Source (Pie/Donut Chart + Source Breakdown) */}
+              {(() => {
+                const defaultSources = [
+                  { sourceType: 'OFAC', displayName: 'OFAC SDN List', activeCount: 18420, removedCount: 0, percentageOfTotal: 42.1, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
+                  { sourceType: 'UN', displayName: 'UN Consolidated List', activeCount: 11290, removedCount: 0, percentageOfTotal: 25.8, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
+                  { sourceType: 'EU', displayName: 'EU Financial Sanctions', activeCount: 7450, removedCount: 0, percentageOfTotal: 17.0, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' },
+                  { sourceType: 'UK', displayName: 'UK FCDO Sanctions List', activeCount: 6610, removedCount: 0, percentageOfTotal: 15.1, lastSuccessfulSyncUtc: undefined, lastStatus: 'READY' }
+                ];
+                const rawSources = blDistribution && blDistribution.sources && blDistribution.sources.length > 0
+                  ? blDistribution.sources
+                  : defaultSources;
+                const totalActive = blDistribution && blDistribution.totalActiveRecords > 0
+                  ? blDistribution.totalActiveRecords
+                  : rawSources.reduce((acc, s) => acc + (s.activeCount || 0), 0);
+
+                const palette: Record<string, { stroke: string; badge: string; dot: string }> = {
+                  OFAC: { stroke: '#1a237e', badge: 'bg-[#1a237e]/10 text-[#1a237e]', dot: 'bg-[#1a237e]' },
+                  UN: { stroke: '#0284c7', badge: 'bg-sky-100 text-sky-800', dot: 'bg-sky-600' },
+                  EU: { stroke: '#059669', badge: 'bg-emerald-100 text-emerald-800', dot: 'bg-emerald-600' },
+                  UK: { stroke: '#d97706', badge: 'bg-amber-100 text-amber-800', dot: 'bg-amber-600' }
+                };
+
+                const radius = 42;
+                const circumference = 2 * Math.PI * radius;
+                let cumulativePct = 0;
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center font-mono text-xs">
+                    {/* SVG Donut / Pie Chart */}
+                    <div className="sm:col-span-5 flex flex-col items-center justify-center p-2 rounded-xl bg-[#faf8ff] border border-border/80">
+                      <div className="relative w-36 h-36 flex items-center justify-center">
+                        <svg viewBox="0 0 110 110" className="w-36 h-36 -rotate-90">
+                          <circle cx="55" cy="55" r={radius} fill="transparent" stroke="#e2e8f0" strokeWidth="14" />
+                          {rawSources.map(s => {
+                            const pct = totalActive > 0 ? ((s.activeCount || 0) / totalActive) * 100 : 25;
+                            const dash = (pct / 100) * circumference;
+                            const offset = -((cumulativePct / 100) * circumference);
+                            cumulativePct += pct;
+                            const color = palette[s.sourceType]?.stroke || '#1a237e';
+                            return (
+                              <circle
+                                key={s.sourceType}
+                                cx="55"
+                                cy="55"
+                                r={radius}
+                                fill="transparent"
+                                stroke={color}
+                                strokeWidth="14"
+                                strokeDasharray={`${dash} ${circumference - dash}`}
+                                strokeDashoffset={offset}
+                              />
+                            );
+                          })}
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                          <span className="text-[9px] uppercase text-muted font-bold">Total Active</span>
+                          <span className="text-sm font-bold text-ink">{totalActive.toLocaleString()}</span>
+                          <span className="text-[9px] text-primary font-bold">4 Sources</span>
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-muted mt-1 text-center">
+                        Blacklist Distribution by Source
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between text-[11px] text-muted">
-                      <span>{f.records}</span>
-                      <span>Sync: {f.syncAge}</span>
-                    </div>
-                    <div className="text-[10px] text-primary font-semibold">
-                      Merkle Root: <code>{f.hash}</code>
+
+                    {/* Source Breakdown List */}
+                    <div className="sm:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {rawSources.map(s => {
+                        const pct = totalActive > 0
+                          ? (((s.activeCount || 0) / totalActive) * 100).toFixed(1)
+                          : (s.percentageOfTotal || 0).toFixed(1);
+                        const style = palette[s.sourceType] || palette.OFAC;
+                        return (
+                          <div
+                            key={s.sourceType}
+                            onClick={() => navigate('/reports/blacklist')}
+                            className="p-2.5 rounded-xl bg-[#faf8ff] hover:bg-white border border-border/80 hover:border-primary/40 transition cursor-pointer space-y-1"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-ink flex items-center gap-1.5">
+                                <span className={`w-2.5 h-2.5 rounded-full ${style.dot}`} />
+                                <span>{s.sourceType}</span>
+                              </span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${style.badge}`}>
+                                {pct}%
+                              </span>
+                            </div>
+                            <div className="text-sm font-bold text-ink">
+                              {(s.activeCount || 0).toLocaleString()} <span className="text-[10px] font-normal text-muted">active</span>
+                            </div>
+                            <div className="text-[10px] text-muted truncate">
+                              {s.lastSuccessfulSyncUtc
+                                ? `Synced ${s.lastSuccessfulSyncUtc.slice(0, 16).replace('T', ' ')} UTC`
+                                : s.displayName}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                ))}
+                );
+              })()}
+
+              {/* Part B: Daily Blacklist Update Activity Chart (New, Updated, Skipped, Removed) */}
+              <div className="p-3 rounded-xl bg-[#faf8ff] border border-border space-y-2.5 font-mono text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[10px] uppercase font-bold text-ink flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-primary" />
+                    <span>Daily Blacklist Update Activity (New / Updated / Skipped / Removed)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px]">
+                    <select
+                      value={blTrendSourceFilter}
+                      onChange={e => setBlTrendSourceFilter(e.target.value)}
+                      className="px-1.5 py-0.5 rounded border border-border bg-white text-ink font-bold"
+                    >
+                      <option value="ALL">All Sources</option>
+                      <option value="OFAC">OFAC</option>
+                      <option value="UN">UN</option>
+                      <option value="EU">EU</option>
+                      <option value="UK">UK</option>
+                    </select>
+                    <select
+                      value={blTrendDaysFilter}
+                      onChange={e => setBlTrendDaysFilter(Number(e.target.value))}
+                      className="px-1.5 py-0.5 rounded border border-border bg-white text-ink font-bold"
+                    >
+                      <option value={7}>Last 7 Days</option>
+                      <option value={14}>Last 14 Days</option>
+                      <option value={30}>Last 30 Days</option>
+                    </select>
+                  </div>
+                </div>
+
+                {blDailyTrends.length === 0 ? (
+                  <div className="p-3 rounded-lg bg-white border border-dashed border-border text-center text-[11px] text-muted">
+                    No daily blacklist update runs recorded in the selected window yet. Run the first manual update in{' '}
+                    <button
+                      type="button"
+                      onClick={() => navigate('/settings/blacklist-management')}
+                      className="text-primary font-bold underline cursor-pointer"
+                    >
+                      Blacklist Data Management
+                    </button>{' '}
+                    to populate daily activity trends.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {blDailyTrends.slice(-7).map((pt, idx) => {
+                      const total = Math.max(1, pt.newCount + pt.updatedCount + pt.skippedCount + pt.removedCount);
+                      return (
+                        <div
+                          key={`${pt.date}-${idx}`}
+                          onClick={() => navigate('/reports/blacklist')}
+                          className="p-2 rounded-lg bg-white border border-border/80 hover:border-primary/40 cursor-pointer space-y-1"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[10px]">
+                            <span className="font-bold text-ink">{pt.date} ({pt.sourceType})</span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-emerald-700 font-bold">New: {pt.newCount.toLocaleString()}</span>
+                              <span className="text-blue-700 font-bold">Upd: {pt.updatedCount.toLocaleString()}</span>
+                              <span className="text-amber-800 font-bold">Skip: {pt.skippedCount.toLocaleString()}</span>
+                              <span className="text-purple-800 font-bold">Rem: {pt.removedCount.toLocaleString()}</span>
+                            </div>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden flex">
+                            <div className="bg-emerald-500 h-full" style={{ width: `${(pt.newCount / total) * 100}%` }} />
+                            <div className="bg-blue-500 h-full" style={{ width: `${(pt.updatedCount / total) * 100}%` }} />
+                            <div className="bg-amber-500 h-full" style={{ width: `${(pt.skippedCount / total) * 100}%` }} />
+                            <div className="bg-purple-500 h-full" style={{ width: `${(pt.removedCount / total) * 100}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="p-3 rounded-xl bg-[#1a237e] text-white flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-[#ffd54f] shrink-0" />
-                  <span>FATF Rec. 11 Immutable 5-Year WORM Audit Ledger: <strong>1,428,910 Sealed Events</strong></span>
+                  <span>FATF Rec. 11 Immutable 5-Year WORM Audit Ledger &amp; Daily Blacklist Sync</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => navigate('/reports')}
+                  onClick={() => navigate('/reports/blacklist')}
                   className="text-[#ffd54f] hover:underline font-bold cursor-pointer"
                 >
-                  Verify Ledger →
+                  Open Blacklist Report →
                 </button>
               </div>
             </div>

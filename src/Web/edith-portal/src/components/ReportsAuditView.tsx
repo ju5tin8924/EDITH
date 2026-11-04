@@ -503,8 +503,33 @@ export const ReportsAuditView: React.FC = () => {
     riskTier: 'ALL'
   });
 
-  // Report 3: Blacklist Report Filters
-  const [blacklistActionFilter, setBlacklistActionFilter] = useState<'ALL' | 'CREATED' | 'UPDATED' | 'DELETED'>('ALL');
+  // Report 3: Blacklist Report Filters & Daily Run State
+  const [blacklistActionFilter, setBlacklistActionFilter] = useState<'ALL' | 'NEW' | 'UPDATED' | 'SKIPPED' | 'REMOVED' | 'FAILED'>('ALL');
+  const [blRuns, setBlRuns] = useState<any[]>([]);
+  const [blSelectedRunId, setBlSelectedRunId] = useState<string>('');
+  const [blSelectedRun, setBlSelectedRun] = useState<any | null>(null);
+  const [blItemsPage, setBlItemsPage] = useState<{
+    totalCount: number;
+    page: number;
+    pageSize: number;
+    categoryTotals: Record<string, number>;
+    items: any[];
+  }>({
+    totalCount: 0,
+    page: 1,
+    pageSize: 50,
+    categoryTotals: {},
+    items: []
+  });
+  const [blRunErrors, setBlRunErrors] = useState<any[]>([]);
+  const [blSourceFilter, setBlSourceFilter] = useState<string>('ALL');
+  const [blSearchQuery, setBlSearchQuery] = useState<string>('');
+  const [blReasonFilter, setBlReasonFilter] = useState<string>('ALL');
+  const [blSortBy, setBlSortBy] = useState<string>('PRIMARY_NAME');
+  const [blSortDir, setBlSortDir] = useState<'ASC' | 'DESC'>('ASC');
+  const [blPageNum, setBlPageNum] = useState<number>(1);
+  const [blLoadingItems, setBlLoadingItems] = useState<boolean>(false);
+  const [blInspectedItem, setBlInspectedItem] = useState<any | null>(null);
 
   // Report 5 & 12: Online STR & STR History Filters
   const [strAlertTypeFilter, setStrAlertTypeFilter] = useState('ALL');
@@ -527,6 +552,68 @@ export const ReportsAuditView: React.FC = () => {
   useEffect(() => {
     setActiveTab(resolveTabFromPath(location.pathname));
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (activeTab === 'BLACKLIST') {
+      loadBlacklistRunsAndSelect();
+    }
+  }, [activeTab, location.search]);
+
+  useEffect(() => {
+    if (activeTab === 'BLACKLIST' && blSelectedRunId) {
+      loadSelectedBlacklistRunDetails(blSelectedRunId);
+    }
+  }, [
+    activeTab,
+    blSelectedRunId,
+    blacklistActionFilter,
+    blSourceFilter,
+    blSearchQuery,
+    blReasonFilter,
+    blSortBy,
+    blSortDir,
+    blPageNum
+  ]);
+
+  const loadBlacklistRunsAndSelect = async () => {
+    try {
+      const runs = await EdithApi.fetchBlacklistRuns(30).catch(() => []);
+      setBlRuns(runs);
+      const qsRunId = new URLSearchParams(location.search).get('runId');
+      if (qsRunId && runs.some((r: any) => r.runId === qsRunId)) {
+        setBlSelectedRunId(qsRunId);
+      } else if (runs.length > 0 && !blSelectedRunId) {
+        setBlSelectedRunId(runs[0].runId);
+      }
+    } catch {
+      // fallback if no runs yet
+    }
+  };
+
+  const loadSelectedBlacklistRunDetails = async (runId: string) => {
+    try {
+      setBlLoadingItems(true);
+      const [runInfo, itemsRes, errsRes] = await Promise.all([
+        EdithApi.fetchBlacklistRunById(runId).catch(() => null),
+        EdithApi.fetchBlacklistRunItems(runId, {
+          sourceType: blSourceFilter,
+          actionCategory: blacklistActionFilter,
+          search: blSearchQuery,
+          reasonFilter: blReasonFilter,
+          sortBy: blSortBy,
+          sortDir: blSortDir,
+          page: blPageNum,
+          pageSize: 50
+        }).catch(() => null),
+        EdithApi.fetchBlacklistRunErrors(runId).catch(() => [])
+      ]);
+      if (runInfo) setBlSelectedRun(runInfo);
+      if (itemsRes) setBlItemsPage(itemsRes);
+      if (Array.isArray(errsRes)) setBlRunErrors(errsRes);
+    } finally {
+      setBlLoadingItems(false);
+    }
+  };
 
   useEffect(() => {
     loadAllReportData();
@@ -628,7 +715,10 @@ export const ReportsAuditView: React.FC = () => {
 
   const filteredBlacklistRows = useMemo(() => {
     return BLACKLIST_ROWS.filter(row => {
-      if (blacklistActionFilter !== 'ALL' && row.actionType !== blacklistActionFilter) return false;
+      if (blacklistActionFilter === 'NEW' && row.actionType !== 'CREATED') return false;
+      if (blacklistActionFilter === 'UPDATED' && row.actionType !== 'UPDATED') return false;
+      if (blacklistActionFilter === 'REMOVED' && row.actionType !== 'DELETED') return false;
+      if (blacklistActionFilter === 'SKIPPED' || blacklistActionFilter === 'FAILED') return false;
       return true;
     });
   }, [blacklistActionFilter]);
@@ -785,6 +875,21 @@ export const ReportsAuditView: React.FC = () => {
           }))
         };
       case 'BLACKLIST':
+        if (blItemsPage.items && blItemsPage.items.length > 0) {
+          return {
+            columns: ['RecordId', 'PrimaryName', 'SourceType', 'EntityType', 'ActionCategory', 'ReasonCode', 'ReasonDetail', 'UpdatedTimestampUtc'],
+            rows: blItemsPage.items.map(item => ({
+              RecordId: item.externalId,
+              PrimaryName: item.primaryName,
+              SourceType: item.sourceType,
+              EntityType: item.entityType,
+              ActionCategory: item.actionCategory,
+              ReasonCode: item.reasonCode,
+              ReasonDetail: item.reasonDetail,
+              UpdatedTimestampUtc: item.recordedAtUtc
+            }))
+          };
+        }
         return {
           columns: ['EntryId', 'EntityName', 'Category', 'Nationality', 'Action', 'Date', 'Operator', 'Remarks'],
           rows: filteredBlacklistRows.map(b => ({
@@ -1619,60 +1724,578 @@ export const ReportsAuditView: React.FC = () => {
       {/* TAB 3: BLACKLIST REPORT                                             */}
       {/* =================================================================== */}
       {activeTab === 'BLACKLIST' && (
-        <div className="bg-surface p-4 rounded-xl border border-border space-y-3 font-mono text-xs">
-          <div className="flex justify-between items-center pb-2 border-b border-border">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-critical" />
-              <span>Blacklist Audit Report (WC/PEP)</span>
-            </h2>
-            <div className="flex items-center gap-1.5">
-              {(['ALL', 'CREATED', 'UPDATED', 'DELETED'] as const).map(mode => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setBlacklistActionFilter(mode)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
-                    blacklistActionFilter === mode
-                      ? 'bg-primary text-white border-primary'
-                      : 'bg-surface-muted text-muted border-border hover:text-ink'
-                  }`}
+        <div className="bg-surface p-4 rounded-xl border border-border space-y-4 font-mono text-xs">
+          {/* Header & Run Selector */}
+          <div className="flex flex-wrap justify-between items-center gap-3 pb-3 border-b border-border">
+            <div>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-critical" />
+                <span>Daily Blacklist Update &amp; Audit Report (OFAC, UN, EU, UK)</span>
+              </h2>
+              <p className="text-[11px] text-muted mt-0.5">
+                Full 4-category classification (New, Updated, Skipped with 90-day retention, Removed, and Failed) with field-level comparison diffs.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {blRuns.length > 0 && (
+                <select
+                  value={blSelectedRunId}
+                  onChange={e => {
+                    setBlSelectedRunId(e.target.value);
+                    setBlPageNum(1);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-surface-muted border border-border text-ink font-bold text-xs"
                 >
-                  {mode}
-                </button>
-              ))}
+                  {blRuns.map((r: any) => (
+                    <option key={r.runId} value={r.runId}>
+                      {r.startedAtUtc?.slice(0, 19).replace('T', ' ')} UTC • {r.triggerMode} • {r.overallStatus} ({(r.totalRetrieved || 0).toLocaleString()} rec)
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <button
+                type="button"
+                onClick={() => loadBlacklistRunsAndSelect()}
+                className="px-2.5 py-1.5 rounded-lg border border-border bg-white hover:bg-slate-50 text-ink font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${blLoadingItems ? 'animate-spin text-primary' : 'text-muted'}`} />
+                <span>Refresh</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/settings/blacklist-management')}
+                className="px-3 py-1.5 rounded-lg bg-primary text-white font-bold flex items-center gap-1.5 hover:bg-primary-hover cursor-pointer"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Manage Sources &amp; Run Sync →</span>
+              </button>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-border text-muted text-[10px] uppercase bg-surface-muted">
-                  <th className="py-2 px-3">UID</th>
-                  <th className="py-2 px-3">Entity Name</th>
-                  <th className="py-2 px-3">Source</th>
-                  <th className="py-2 px-3">Action</th>
-                  <th className="py-2 px-3">Date</th>
-                  <th className="py-2 px-3">Remarks</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredBlacklistRows.map(row => (
-                  <tr key={row.entryId} className="hover:bg-surface-hover">
-                    <td className="py-2 px-3 font-bold text-primary">{row.entryId}</td>
-                    <td className="py-2 px-3 font-semibold text-ink">{row.entityName}</td>
-                    <td className="py-2 px-3">{row.category}</td>
-                    <td className="py-2 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary">
-                        {row.actionType}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-muted">{row.actionDate}</td>
-                    <td className="py-2 px-3 text-muted truncate max-w-xs">{row.remarks}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {blSelectedRun ? (
+            <>
+              {/* Section 1: General Information Banner */}
+              <div className="p-3.5 rounded-xl bg-surface-muted border border-border space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        blSelectedRun.overallStatus === 'SUCCESS'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : blSelectedRun.overallStatus === 'PARTIALLY_COMPLETED' || blSelectedRun.overallStatus === 'COMPLETED_WITH_WARNINGS'
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          : 'bg-rose-100 text-rose-800 border border-rose-300'
+                      }`}
+                    >
+                      {blSelectedRun.overallStatus}
+                    </span>
+                    <span className="font-bold text-ink">{blSelectedRun.userSummaryMessage}</span>
+                  </div>
+                  <span className="text-[10px] text-primary font-bold">
+                    WORM Hash: <code>{blSelectedRun.wormHash ? `${blSelectedRun.wormHash.slice(0, 18)}...` : 'PENDING'}</code>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-[11px] text-muted">
+                  <div>
+                    Update Date &amp; Time:{' '}
+                    <strong className="text-ink">{blSelectedRun.startedAtUtc?.slice(0, 19).replace('T', ' ')} UTC</strong>
+                  </div>
+                  <div>
+                    Trigger Mode: <strong className="text-ink">{blSelectedRun.triggerMode} ({blSelectedRun.triggeredBy})</strong>
+                  </div>
+                  <div>
+                    Execution Duration:{' '}
+                    <strong className="text-ink">{((blSelectedRun.durationMs || 0) / 1000).toFixed(2)}s</strong>
+                  </div>
+                  <div>
+                    Sources Processed:{' '}
+                    <strong className="text-ink">{(blSelectedRun.sourcesProcessed || []).join(', ')}</strong>
+                  </div>
+                  <div>
+                    Run ID: <strong className="text-ink">{blSelectedRun.runId.slice(0, 12)}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Overall Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5">
+                <div
+                  onClick={() => { setBlacklistActionFilter('ALL'); setBlPageNum(1); }}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    blacklistActionFilter === 'ALL' ? 'bg-primary/10 border-primary' : 'bg-white border-border hover:border-primary/40'
+                  }`}
+                >
+                  <div className="text-[10px] text-muted uppercase font-bold">Total Retrieved</div>
+                  <div className="text-lg font-bold text-ink mt-0.5">{(blSelectedRun.totalRetrieved || 0).toLocaleString()}</div>
+                </div>
+
+                <div
+                  onClick={() => { setBlacklistActionFilter('NEW'); setBlPageNum(1); }}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    blacklistActionFilter === 'NEW' ? 'bg-emerald-100 border-emerald-500' : 'bg-emerald-50/70 border-emerald-200 hover:border-emerald-400'
+                  }`}
+                >
+                  <div className="text-[10px] text-emerald-800 uppercase font-bold">New Added</div>
+                  <div className="text-lg font-bold text-emerald-900 mt-0.5">{(blSelectedRun.newCount || 0).toLocaleString()}</div>
+                </div>
+
+                <div
+                  onClick={() => { setBlacklistActionFilter('UPDATED'); setBlPageNum(1); }}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    blacklistActionFilter === 'UPDATED' ? 'bg-blue-100 border-blue-500' : 'bg-blue-50/70 border-blue-200 hover:border-blue-400'
+                  }`}
+                >
+                  <div className="text-[10px] text-blue-800 uppercase font-bold">Updated / Reactivated</div>
+                  <div className="text-lg font-bold text-blue-900 mt-0.5">{(blSelectedRun.updatedCount || 0).toLocaleString()}</div>
+                </div>
+
+                <div
+                  onClick={() => { setBlacklistActionFilter('SKIPPED'); setBlPageNum(1); }}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    blacklistActionFilter === 'SKIPPED' ? 'bg-amber-100 border-amber-500' : 'bg-amber-50/70 border-amber-200 hover:border-amber-400'
+                  }`}
+                >
+                  <div className="text-[10px] text-amber-900 uppercase font-bold">Skipped (Duplicates)</div>
+                  <div className="text-lg font-bold text-amber-950 mt-0.5">{(blSelectedRun.skippedCount || 0).toLocaleString()}</div>
+                </div>
+
+                <div
+                  onClick={() => { setBlacklistActionFilter('REMOVED'); setBlPageNum(1); }}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    blacklistActionFilter === 'REMOVED' ? 'bg-purple-100 border-purple-500' : 'bg-purple-50/70 border-purple-200 hover:border-purple-400'
+                  }`}
+                >
+                  <div className="text-[10px] text-purple-800 uppercase font-bold">Removed (Inactive)</div>
+                  <div className="text-lg font-bold text-purple-900 mt-0.5">{(blSelectedRun.removedCount || 0).toLocaleString()}</div>
+                </div>
+
+                <div
+                  onClick={() => { setBlacklistActionFilter('FAILED'); setBlPageNum(1); }}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    blacklistActionFilter === 'FAILED' ? 'bg-rose-100 border-rose-500' : 'bg-rose-50/70 border-rose-200 hover:border-rose-400'
+                  }`}
+                >
+                  <div className="text-[10px] text-rose-800 uppercase font-bold">Failed / Invalid</div>
+                  <div className="text-lg font-bold text-rose-900 mt-0.5">{(blSelectedRun.failedCount || 0).toLocaleString()}</div>
+                </div>
+              </div>
+
+              {/* Section 3: Source-Wise Summary Table (OFAC, UN, EU, UK) */}
+              {Array.isArray(blSelectedRun.sourceMetrics) && blSelectedRun.sourceMetrics.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold uppercase text-muted">
+                    Source-Wise Breakdown (OFAC, UN, EU, UK)
+                  </div>
+                  <div className="overflow-x-auto border border-border rounded-xl bg-white">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="bg-surface-muted border-b border-border text-[10px] uppercase text-muted">
+                        <tr>
+                          <th className="py-2 px-3">Source</th>
+                          <th className="py-2 px-3">Status</th>
+                          <th className="py-2 px-3 text-right">Retrieved</th>
+                          <th className="py-2 px-3 text-right">New</th>
+                          <th className="py-2 px-3 text-right">Updated</th>
+                          <th className="py-2 px-3 text-right">Skipped</th>
+                          <th className="py-2 px-3 text-right">Removed</th>
+                          <th className="py-2 px-3 text-right">Failed</th>
+                          <th className="py-2 px-3 text-right">Duration</th>
+                          <th className="py-2 px-3">Status / Error Details</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {blSelectedRun.sourceMetrics.map((sm: any) => (
+                          <tr
+                            key={sm.sourceType}
+                            onClick={() => {
+                              setBlSourceFilter(blSourceFilter === sm.sourceType ? 'ALL' : sm.sourceType);
+                              setBlPageNum(1);
+                            }}
+                            className={`cursor-pointer hover:bg-surface-hover ${
+                              blSourceFilter === sm.sourceType ? 'bg-primary/5' : ''
+                            }`}
+                          >
+                            <td className="py-2 px-3 font-bold text-primary">{sm.sourceType}</td>
+                            <td className="py-2 px-3">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  sm.status === 'SUCCESS'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : sm.status === 'COMPLETED_WITH_WARNINGS'
+                                    ? 'bg-amber-100 text-amber-900'
+                                    : 'bg-rose-100 text-rose-800'
+                                }`}
+                              >
+                                {sm.status}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-right font-bold">{(sm.totalRetrieved || 0).toLocaleString()}</td>
+                            <td className="py-2 px-3 text-right font-bold text-emerald-700">{(sm.newCount || 0).toLocaleString()}</td>
+                            <td className="py-2 px-3 text-right font-bold text-blue-700">{(sm.updatedCount || 0).toLocaleString()}</td>
+                            <td className="py-2 px-3 text-right font-bold text-amber-800">{(sm.skippedCount || 0).toLocaleString()}</td>
+                            <td className="py-2 px-3 text-right font-bold text-purple-800">{(sm.removedCount || 0).toLocaleString()}</td>
+                            <td className="py-2 px-3 text-right font-bold text-rose-700">{(sm.failedCount || 0).toLocaleString()}</td>
+                            <td className="py-2 px-3 text-right text-muted">{((sm.durationMs || 0) / 1000).toFixed(2)}s</td>
+                            <td className="py-2 px-3 text-muted max-w-xs truncate" title={sm.errorMessage || 'Verified complete'}>
+                              {sm.errorMessage || 'Complete & verified'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Structured Error Banner if any errors occurred in this run */}
+              {blRunErrors.length > 0 && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-1.5">
+                  <div className="font-bold text-rose-900 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    <span>Run Error Log ({blRunErrors.length} issues recorded)</span>
+                  </div>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {blRunErrors.map((err: any) => (
+                      <div key={err.id} className="text-[11px] text-rose-900 flex items-start justify-between gap-2 bg-white/80 p-2 rounded border border-rose-200">
+                        <div>
+                          <span className="font-bold">[{err.sourceType} • {err.stage}]</span> {err.userFriendlyMessage}
+                          {err.recordKey && <span className="text-rose-700 ml-1">(Record: {err.recordKey})</span>}
+                        </div>
+                        <span className="text-[10px] text-rose-700 shrink-0">{err.occurredAtUtc?.slice(11, 19)} UTC</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Section 4: Detailed Record Filter Bar & Paginated Table */}
+              <div className="space-y-2.5 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-6 gap-2">
+                  {/* Search by Name or Record ID */}
+                  <div className="sm:col-span-2 relative">
+                    <Search className="w-3.5 h-3.5 text-muted absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={blSearchQuery}
+                      onChange={e => {
+                        setBlSearchQuery(e.target.value);
+                        setBlPageNum(1);
+                      }}
+                      placeholder="Search Entity Name or Source Record ID..."
+                      className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-surface-muted border border-border text-ink text-xs"
+                    />
+                  </div>
+
+                  {/* Source Filter */}
+                  <div>
+                    <select
+                      value={blSourceFilter}
+                      onChange={e => {
+                        setBlSourceFilter(e.target.value);
+                        setBlPageNum(1);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface-muted border border-border text-ink text-xs font-bold"
+                    >
+                      <option value="ALL">All Sources (OFAC/UN/EU/UK)</option>
+                      <option value="OFAC">OFAC SDN</option>
+                      <option value="UN">UN Consolidated</option>
+                      <option value="EU">EU Sanctions</option>
+                      <option value="UK">UK Sanctions</option>
+                    </select>
+                  </div>
+
+                  {/* Category Filter */}
+                  <div>
+                    <select
+                      value={blacklistActionFilter}
+                      onChange={e => {
+                        setBlacklistActionFilter(e.target.value as any);
+                        setBlPageNum(1);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface-muted border border-border text-ink text-xs font-bold"
+                    >
+                      <option value="ALL">All Categories</option>
+                      <option value="NEW">New Added</option>
+                      <option value="UPDATED">Updated / Reactivated</option>
+                      <option value="SKIPPED">Skipped (Duplicates)</option>
+                      <option value="REMOVED">Removed (Inactive)</option>
+                      <option value="FAILED">Failed / Invalid</option>
+                    </select>
+                  </div>
+
+                  {/* Reason Filter */}
+                  <div>
+                    <select
+                      value={blReasonFilter}
+                      onChange={e => {
+                        setBlReasonFilter(e.target.value);
+                        setBlPageNum(1);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface-muted border border-border text-ink text-xs"
+                    >
+                      <option value="ALL">All Reasons</option>
+                      <option value="EXACT_ATTRIBUTE_MATCH">Exact Attribute Match (Skipped)</option>
+                      <option value="NEW_RECORD">Newly Added Record</option>
+                      <option value="REACTIVATED_RECORD">Reactivated Record</option>
+                      <option value="CHANGED">Attribute Modified</option>
+                      <option value="MISSING_FROM_LATEST_FEED">Missing from Feed (Removed)</option>
+                    </select>
+                  </div>
+
+                  {/* Sort Selector */}
+                  <div className="flex gap-1">
+                    <select
+                      value={blSortBy}
+                      onChange={e => setBlSortBy(e.target.value)}
+                      className="flex-1 px-2 py-1.5 rounded-lg bg-surface-muted border border-border text-ink text-xs"
+                    >
+                      <option value="PRIMARY_NAME">Sort: Name</option>
+                      <option value="EXTERNAL_ID">Sort: Record ID</option>
+                      <option value="SOURCE_TYPE">Sort: Source</option>
+                      <option value="ACTION_CATEGORY">Sort: Action</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setBlSortDir(d => (d === 'ASC' ? 'DESC' : 'ASC'))}
+                      className="px-2 py-1.5 rounded-lg border border-border bg-surface-muted text-ink font-bold text-xs cursor-pointer"
+                    >
+                      {blSortDir}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Detailed Record Table */}
+                <div className="overflow-x-auto border border-border rounded-xl bg-white">
+                  <table className="w-full text-left">
+                    <thead className="bg-surface-muted border-b border-border text-[10px] uppercase text-muted">
+                      <tr>
+                        <th className="py-2.5 px-3">Record ID</th>
+                        <th className="py-2.5 px-3">Name / Entity</th>
+                        <th className="py-2.5 px-3">Source</th>
+                        <th className="py-2.5 px-3">Record Type</th>
+                        <th className="py-2.5 px-3">Action Taken</th>
+                        <th className="py-2.5 px-3">Reason / Change Summary</th>
+                        <th className="py-2.5 px-3">Timestamp (UTC)</th>
+                        <th className="py-2.5 px-3 text-right">Inspect</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border text-[11px]">
+                      {blLoadingItems ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-muted">
+                            Loading blacklist report records...
+                          </td>
+                        </tr>
+                      ) : blItemsPage.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-muted">
+                            No records match the current filter criteria for this run.
+                          </td>
+                        </tr>
+                      ) : (
+                        blItemsPage.items.map((item: any) => (
+                          <tr key={item.id} className="hover:bg-surface-hover">
+                            <td className="py-2 px-3 font-bold text-primary">{item.externalId}</td>
+                            <td className="py-2 px-3 font-semibold text-ink">{item.primaryName}</td>
+                            <td className="py-2 px-3 font-bold">{item.sourceType}</td>
+                            <td className="py-2 px-3 text-muted">{item.entityType}</td>
+                            <td className="py-2 px-3">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.actionCategory === 'NEW'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : item.actionCategory === 'UPDATED'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : item.actionCategory === 'SKIPPED'
+                                    ? 'bg-amber-100 text-amber-900'
+                                    : item.actionCategory === 'REMOVED'
+                                    ? 'bg-purple-100 text-purple-900'
+                                    : 'bg-rose-100 text-rose-800'
+                                }`}
+                              >
+                                {item.actionCategory}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 max-w-md truncate text-muted" title={item.reasonDetail}>
+                              {item.reasonDetail}
+                            </td>
+                            <td className="py-2 px-3 text-muted whitespace-nowrap">
+                              {item.recordedAtUtc?.slice(0, 19).replace('T', ' ')}
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setBlInspectedItem(item)}
+                                className="px-2 py-0.5 rounded border border-border bg-surface hover:bg-surface-hover text-ink text-[10px] font-bold cursor-pointer"
+                              >
+                                Details →
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-muted">
+                  <div>
+                    Showing page <strong className="text-ink">{blItemsPage.page}</strong> of{' '}
+                    <strong className="text-ink">{Math.max(1, Math.ceil((blItemsPage.totalCount || 0) / (blItemsPage.pageSize || 50)))}</strong>{' '}
+                    ({(blItemsPage.totalCount || 0).toLocaleString()} matching records)
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={blPageNum <= 1}
+                      onClick={() => setBlPageNum(p => Math.max(1, p - 1))}
+                      className="px-2.5 py-1 rounded border border-border bg-white text-ink font-bold disabled:opacity-40 cursor-pointer"
+                    >
+                      ← Prev
+                    </button>
+                    <button
+                      type="button"
+                      disabled={blPageNum * (blItemsPage.pageSize || 50) >= (blItemsPage.totalCount || 0)}
+                      onClick={() => setBlPageNum(p => p + 1)}
+                      className="px-2.5 py-1 rounded border border-border bg-white text-ink font-bold disabled:opacity-40 cursor-pointer"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* Fallback display before the first manual run is triggered */
+            <div className="space-y-3">
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="font-bold">No Daily Blacklist Sync Run Executed Yet</div>
+                  <div className="text-[11px]">
+                    Showing baseline watchlist audit entries below. Trigger the first manual update in Blacklist Data Management to populate full OFAC, UN, EU, and UK run reports.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/settings/blacklist-management')}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-white font-bold text-xs cursor-pointer"
+                >
+                  Open Blacklist Data Management →
+                </button>
+              </div>
+
+              <div className="overflow-x-auto border border-border rounded-xl">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-border text-muted text-[10px] uppercase bg-surface-muted">
+                      <th className="py-2 px-3">UID</th>
+                      <th className="py-2 px-3">Entity Name</th>
+                      <th className="py-2 px-3">Source</th>
+                      <th className="py-2 px-3">Action</th>
+                      <th className="py-2 px-3">Date</th>
+                      <th className="py-2 px-3">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredBlacklistRows.map(row => (
+                      <tr key={row.entryId} className="hover:bg-surface-hover">
+                        <td className="py-2 px-3 font-bold text-primary">{row.entryId}</td>
+                        <td className="py-2 px-3 font-semibold text-ink">{row.entityName}</td>
+                        <td className="py-2 px-3">{row.category}</td>
+                        <td className="py-2 px-3">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary">
+                            {row.actionType}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-muted">{row.actionDate}</td>
+                        <td className="py-2 px-3 text-muted truncate max-w-xs">{row.remarks}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Record Diff & Reason Inspector Modal */}
+          {blInspectedItem && (
+            <div
+              className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+              onClick={() => setBlInspectedItem(null)}
+            >
+              <div
+                className="w-full max-w-2xl bg-white rounded-2xl border border-border shadow-2xl p-5 space-y-4 font-mono text-xs"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <div>
+                    <div className="text-[10px] text-primary font-bold uppercase">
+                      {blInspectedItem.sourceType} RECORD AUDIT // {blInspectedItem.externalId}
+                    </div>
+                    <h3 className="text-sm font-bold text-ink mt-0.5">{blInspectedItem.primaryName}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBlInspectedItem(null)}
+                    className="p-1 rounded text-muted hover:text-ink cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2.5 bg-surface-muted p-3 rounded-xl border border-border">
+                  <div>
+                    <div className="text-[10px] text-muted uppercase">Action Category</div>
+                    <div className="font-bold text-ink mt-0.5">{blInspectedItem.actionCategory}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted uppercase">Reason Code</div>
+                    <div className="font-bold text-primary mt-0.5">{blInspectedItem.reasonCode}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted uppercase">Recorded At (UTC)</div>
+                    <div className="font-bold text-ink mt-0.5">{blInspectedItem.recordedAtUtc?.slice(0, 19).replace('T', ' ')}</div>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#faf8ff] border border-border space-y-1">
+                  <div className="text-[10px] text-muted uppercase font-bold">Reason &amp; Comparison Summary</div>
+                  <div className="text-ink leading-relaxed">{blInspectedItem.reasonDetail}</div>
+                </div>
+
+                {(blInspectedItem.beforeSnapshotJson || blInspectedItem.afterSnapshotJson) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl bg-slate-50 border border-border space-y-1">
+                      <div className="text-[10px] text-muted uppercase font-bold">Previous Attributes (Before)</div>
+                      <pre className="text-[10px] text-ink whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+                        {blInspectedItem.beforeSnapshotJson || 'None (New Record)'}
+                      </pre>
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-50/40 border border-emerald-200 space-y-1">
+                      <div className="text-[10px] text-emerald-800 uppercase font-bold">Latest Feed Attributes (After)</div>
+                      <pre className="text-[10px] text-ink whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+                        {blInspectedItem.afterSnapshotJson || 'Marked Inactive (Removed from latest feed)'}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-2 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setBlInspectedItem(null)}
+                    className="px-4 py-1.5 rounded-lg bg-primary text-white font-bold cursor-pointer"
+                  >
+                    Close Inspector
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

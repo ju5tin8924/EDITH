@@ -163,6 +163,10 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
                 var category = src.TryGetProperty("category", out var catProp) ? catProp.GetString() ?? "SANCTION" : "SANCTION";
                 var isBlocked = !src.TryGetProperty("is_blocked", out var blkProp) || blkProp.GetBoolean();
                 var isActive = !src.TryGetProperty("is_active", out var actProp) || actProp.GetBoolean();
+                if (!isActive)
+                {
+                    continue;
+                }
 
                 DateOnly? dob = null;
                 if (src.TryGetProperty("date_of_birth", out var dobProp) &&

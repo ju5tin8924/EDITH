@@ -181,6 +181,7 @@ const DEFAULT_MENU_ITEMS: MenuItemEntitlement[] = [
     enabled: true,
     subMenus: [
       { code: 'MENU_SETTINGS_NOTIFICATIONS', label: 'Notification & Webhook Admin', path: '/notifications', icon: 'BellRing', enabled: true },
+      { code: 'MENU_SETTINGS_BLACKLIST', label: 'Blacklist Data Management', path: '/settings/blacklist-management', icon: 'Database', enabled: true },
       { code: 'MENU_SETTINGS_GROUPS', label: 'User Groups', path: '/settings/user-groups', icon: 'Users', enabled: true },
       { code: 'MENU_SETTINGS_USERS', label: 'Users', path: '/settings/users', icon: 'Users', enabled: true },
       { code: 'MENU_SETTINGS_MENU_MASTER', label: 'Menu Master', path: '/settings/menu-master', icon: 'Settings', enabled: true },
@@ -249,22 +250,33 @@ export const EdithApi = {
         const mappedMenus: MenuItemEntitlement[] = Array.isArray(serverMenus) && serverMenus.length > 0
           ? serverMenus.map((m: any) => {
               const isReports = m.key === 'MENU_REPORTS' || m.code === 'MENU_REPORTS' || m.code === 'REPORTS';
+              const isSettings = m.key === 'MENU_SETTINGS' || m.code === 'MENU_SETTINGS' || m.code === 'SETTINGS';
+              const subMenus: MenuItemEntitlement[] = isReports
+                ? REPORT_SUB_MENUS
+                : (m.subMenus?.map((s: any) => ({
+                    code: s.key || s.code,
+                    label: s.label,
+                    path: s.route || s.path,
+                    icon: s.icon,
+                    enabled: true,
+                    subGroup: s.subGroup
+                  })) || []);
+              if (isSettings && !subMenus.some(s => s.path === '/settings/blacklist-management')) {
+                subMenus.unshift({
+                  code: 'MENU_SETTINGS_BLACKLIST',
+                  label: 'Blacklist Data Management',
+                  path: '/settings/blacklist-management',
+                  icon: 'Database',
+                  enabled: true
+                });
+              }
               return {
                 code: m.key || m.code,
                 label: isReports ? 'Reports' : m.label,
                 path: m.route || m.path,
                 icon: m.icon,
                 enabled: true,
-                subMenus: isReports
-                  ? REPORT_SUB_MENUS
-                  : m.subMenus?.map((s: any) => ({
-                      code: s.key || s.code,
-                      label: s.label,
-                      path: s.route || s.path,
-                      icon: s.icon,
-                      enabled: true,
-                      subGroup: s.subGroup
-                    }))
+                subMenus
               };
             })
           : DEFAULT_MENU_ITEMS;
@@ -1625,5 +1637,386 @@ export const EdithApi = {
       throw new Error(`Failed to mark all notifications as read: ${res.statusText}`);
     }
     return await res.json();
+  },
+
+  // 14. Daily Blacklist Data Management, Scheduler & Reporting Endpoints
+  async fetchBlacklistSources(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/blacklist/sources`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch blacklist sources: ${res.statusText}`);
+    const list = await res.json();
+    return (Array.isArray(list) ? list : []).map((s: any) => ({
+      ...s,
+      id: s.sourceRefId || s.id,
+      feedUrl: s.url || s.feedUrl,
+      lastSuccessfulSyncUtc: s.lastSuccessfulSyncAt || s.lastSuccessfulSyncUtc,
+      lastUpdateStatus: s.lastStatus || s.lastUpdateStatus || 'NEVER_RUN',
+      lastErrorMessage: s.lastErrorUserMessage || s.lastErrorMessage
+    }));
+  },
+
+  async updateBlacklistSource(sourceType: string, payload: { feedUrl?: string; isEnabled?: boolean; displayName?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/blacklist/sources/${encodeURIComponent(sourceType)}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        url: payload.feedUrl || '',
+        isEnabled: payload.isEnabled ?? true
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.userMessage || err.error || `Failed to update source ${sourceType}`);
+    }
+    const s = await res.json();
+    return {
+      ...s,
+      id: s.sourceRefId || s.id,
+      feedUrl: s.url || s.feedUrl,
+      lastSuccessfulSyncUtc: s.lastSuccessfulSyncAt || s.lastSuccessfulSyncUtc,
+      lastUpdateStatus: s.lastStatus || s.lastUpdateStatus || 'NEVER_RUN',
+      lastErrorMessage: s.lastErrorUserMessage || s.lastErrorMessage
+    };
+  },
+
+  async validateBlacklistUrl(url: string): Promise<{ isValid: boolean; normalizedUrl?: string; message: string }> {
+    const res = await fetch(`${API_BASE}/blacklist/sources/validate-url`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ url })
+    });
+    if (!res.ok) throw new Error(`Failed to validate URL: ${res.statusText}`);
+    const data = await res.json();
+    return {
+      isValid: !!data.isValid,
+      normalizedUrl: data.normalizedUrl,
+      message: data.userMessage || data.message || ''
+    };
+  },
+
+  async testBlacklistSource(sourceType: string, url?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/blacklist/sources/${encodeURIComponent(sourceType)}/test`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ url })
+    });
+    if (!res.ok) throw new Error(`Failed to test source ${sourceType}: ${res.statusText}`);
+    const data = await res.json();
+    return {
+      ...data,
+      isValidXml: data.isXmlValid ?? data.isValidXml,
+      rootElement: data.rootElementName || data.rootElement,
+      sampleRecordsCount: data.sampleRecordCount ?? data.sampleRecordsCount ?? 0,
+      userFriendlyMessage: data.userMessage || data.userFriendlyMessage,
+      sampleRecords: (data.sampleRecords || []).map((r: any) => ({
+        ...r,
+        externalId: r.entityExternalId || r.externalId,
+        primaryName: r.fullName || r.primaryName
+      }))
+    };
+  },
+
+  async fetchBlacklistScheduleConfig(): Promise<{
+    isScheduleEnabled: boolean;
+    dailyRunTimeUtc: string;
+    timezone: string;
+    retentionDays: number;
+    lastScheduledRunUtc?: string;
+    nextScheduledRunUtc?: string;
+    updatedBy?: string;
+    updatedAtUtc: string;
+  }> {
+    const res = await fetch(`${API_BASE}/blacklist/config`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch blacklist schedule: ${res.statusText}`);
+    const data = await res.json();
+    return {
+      isScheduleEnabled: !!data.isScheduleEnabled,
+      dailyRunTimeUtc: data.dailyExecutionTimeUtc || data.dailyRunTimeUtc || '02:00',
+      timezone: data.timezone || 'UTC',
+      retentionDays: data.retentionDays || 90,
+      lastScheduledRunUtc: data.lastScheduledRunDate || data.lastScheduledRunUtc,
+      nextScheduledRunUtc: data.nextScheduledRunUtc,
+      updatedBy: data.updatedBy,
+      updatedAtUtc: data.updatedAt || data.updatedAtUtc
+    };
+  },
+
+  async updateBlacklistScheduleConfig(payload: {
+    isScheduleEnabled?: boolean;
+    dailyRunTimeUtc?: string;
+    retentionDays?: number;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE}/blacklist/config`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        isScheduleEnabled: !!payload.isScheduleEnabled,
+        dailyExecutionTimeUtc: payload.dailyRunTimeUtc || '02:00',
+        retentionDays: payload.retentionDays || 90
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Failed to update schedule configuration`);
+    }
+    const data = await res.json();
+    return {
+      isScheduleEnabled: !!data.isScheduleEnabled,
+      dailyRunTimeUtc: data.dailyExecutionTimeUtc || data.dailyRunTimeUtc || '02:00',
+      timezone: data.timezone || 'UTC',
+      retentionDays: data.retentionDays || 90,
+      lastScheduledRunUtc: data.lastScheduledRunDate || data.lastScheduledRunUtc,
+      nextScheduledRunUtc: data.nextScheduledRunUtc,
+      updatedBy: data.updatedBy,
+      updatedAtUtc: data.updatedAt || data.updatedAtUtc
+    };
+  },
+
+  async fetchBlacklistLiveStatus(): Promise<any> {
+    const res = await fetch(`${API_BASE}/blacklist/status`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch live blacklist sync status: ${res.statusText}`);
+    const data = await res.json();
+    const run = data.activeOrLatestRun;
+    return {
+      isRunning: !!data.isRunning,
+      currentSource: data.currentSource || run?.currentSource,
+      currentStage: data.isRunning ? (data.currentSource || 'SYNCING') : 'IDLE',
+      sourcesCompleted: run ? (run.sourcesSucceeded || 0) + (run.sourcesFailed || 0) : 0,
+      totalSources: run?.sourcesProcessed || 4,
+      recordsRetrievedSoFar: run?.totalRetrieved || 0,
+      newSoFar: run?.totalNew || 0,
+      updatedSoFar: run?.totalUpdated || 0,
+      skippedSoFar: run?.totalSkipped || 0,
+      removedSoFar: run?.totalRemoved || 0,
+      failedSoFar: run?.totalFailed || 0,
+      userMessage: data.isRunning
+        ? `Running blacklist update (${data.currentSource || 'processing sources'})...`
+        : (run?.userSummaryMessage || 'No blacklist update is currently running.')
+    };
+  },
+
+  async triggerBlacklistSync(sources?: string[], waitForCompletion: boolean = false): Promise<any> {
+    const res = await fetch(`${API_BASE}/blacklist/sync`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ sources, waitForCompletion })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok && res.status !== 409) {
+      throw new Error(data.userMessage || data.message || `Failed to trigger blacklist sync`);
+    }
+    return {
+      ...data,
+      userMessage: data.message || data.userMessage,
+      httpStatus: res.status
+    };
+  },
+
+  async fetchBlacklistRuns(limit: number = 30): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/blacklist/runs?limit=${limit}`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch blacklist runs: ${res.statusText}`);
+    const list = await res.json();
+    return (Array.isArray(list) ? list : []).map((r: any) => ({
+      ...r,
+      runId: r.id || r.runId,
+      startedAtUtc: r.startedAt || r.startedAtUtc,
+      completedAtUtc: r.completedAt || r.completedAtUtc,
+      overallStatus: r.status || r.overallStatus,
+      newCount: r.totalNew ?? r.newCount ?? 0,
+      updatedCount: r.totalUpdated ?? r.updatedCount ?? 0,
+      skippedCount: r.totalSkipped ?? r.skippedCount ?? 0,
+      removedCount: r.totalRemoved ?? r.removedCount ?? 0,
+      failedCount: r.totalFailed ?? r.failedCount ?? 0,
+      sourcesProcessed: Array.isArray(r.sourceStats) && r.sourceStats.length > 0
+        ? r.sourceStats.map((s: any) => s.sourceType)
+        : ['OFAC', 'UN', 'EU', 'UK'],
+      sourceMetrics: (r.sourceStats || []).map((s: any) => ({
+        ...s,
+        errorMessage: s.userErrorMessage || s.errorMessage
+      }))
+    }));
+  },
+
+  async fetchBlacklistRunById(runId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch blacklist run ${runId}: ${res.statusText}`);
+    const r = await res.json();
+    return {
+      ...r,
+      runId: r.id || r.runId,
+      startedAtUtc: r.startedAt || r.startedAtUtc,
+      completedAtUtc: r.completedAt || r.completedAtUtc,
+      overallStatus: r.status || r.overallStatus,
+      newCount: r.totalNew ?? r.newCount ?? 0,
+      updatedCount: r.totalUpdated ?? r.updatedCount ?? 0,
+      skippedCount: r.totalSkipped ?? r.skippedCount ?? 0,
+      removedCount: r.totalRemoved ?? r.removedCount ?? 0,
+      failedCount: r.totalFailed ?? r.failedCount ?? 0,
+      sourcesProcessed: Array.isArray(r.sourceStats) && r.sourceStats.length > 0
+        ? r.sourceStats.map((s: any) => s.sourceType)
+        : ['OFAC', 'UN', 'EU', 'UK'],
+      sourceMetrics: (r.sourceStats || []).map((s: any) => ({
+        ...s,
+        errorMessage: s.userErrorMessage || s.errorMessage
+      }))
+    };
+  },
+
+  async fetchBlacklistRunItems(
+    runId: string,
+    params?: {
+      sourceType?: string;
+      actionCategory?: string;
+      search?: string;
+      reasonFilter?: string;
+      sortBy?: string;
+      sortDir?: string;
+      page?: number;
+      pageSize?: number;
+    }
+  ): Promise<{
+    runId: string;
+    totalCount: number;
+    page: number;
+    pageSize: number;
+    categoryTotals: Record<string, number>;
+    items: any[];
+  }> {
+    const qs = new URLSearchParams();
+    if (params?.sourceType && params.sourceType !== 'ALL') qs.set('source', params.sourceType);
+    if (params?.actionCategory && params.actionCategory !== 'ALL') qs.set('action', params.actionCategory);
+    if (params?.search) qs.set('search', params.search);
+    if (params?.reasonFilter && params.reasonFilter !== 'ALL') qs.set('reason', params.reasonFilter);
+    if (params?.sortBy) {
+      const sortMap: Record<string, string> = {
+        PRIMARY_NAME: 'name',
+        EXTERNAL_ID: 'externalId',
+        SOURCE_TYPE: 'source',
+        ACTION_CATEGORY: 'action'
+      };
+      qs.set('sortBy', sortMap[params.sortBy] || params.sortBy);
+    }
+    if (params?.sortDir) qs.set('sortDir', params.sortDir.toLowerCase());
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.pageSize) qs.set('pageSize', String(params.pageSize));
+    const res = await fetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}/items?${qs.toString()}`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error(`Failed to fetch blacklist run items: ${res.statusText}`);
+    const data = await res.json();
+    return {
+      runId: data.runId || runId,
+      totalCount: data.totalCount || 0,
+      page: data.page || 1,
+      pageSize: data.pageSize || 50,
+      categoryTotals: data.categoryTotals || {},
+      items: (data.items || []).map((item: any) => ({
+        ...item,
+        externalId: item.entityExternalId || item.externalId,
+        primaryName: item.fullName || item.primaryName,
+        entityType: item.entityType || 'SANCTIONS_ENTITY',
+        actionCategory: item.action || item.actionCategory,
+        reasonCode: item.comparisonResult || item.reasonCode,
+        reasonDetail: item.reason || item.reasonDetail,
+        beforeSnapshotJson: item.previousDetailsJson || item.beforeSnapshotJson,
+        afterSnapshotJson: item.currentDetailsJson || item.afterSnapshotJson,
+        recordedAtUtc: item.processedAt || item.recordedAtUtc
+      }))
+    };
+  },
+
+  async fetchBlacklistRunErrors(runId: string): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}/errors`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch blacklist run errors: ${res.statusText}`);
+    const list = await res.json();
+    return (Array.isArray(list) ? list : []).map((err: any) => ({
+      ...err,
+      stage: err.errorCategory || err.stage,
+      errorCode: err.errorCategory || err.errorCode,
+      userFriendlyMessage: err.userMessage || err.userFriendlyMessage,
+      recordKey: err.affectedRecordId || err.recordKey,
+      occurredAtUtc: err.occurredAt || err.occurredAtUtc
+    }));
+  },
+
+  async fetchBlacklistDistributionStats(): Promise<{
+    totalActiveRecords: number;
+    generatedAtUtc: string;
+    sources: Array<{
+      sourceType: string;
+      displayName: string;
+      activeCount: number;
+      removedCount: number;
+      percentageOfTotal: number;
+      lastSuccessfulSyncUtc?: string;
+      lastStatus: string;
+    }>;
+  }> {
+    const res = await fetch(`${API_BASE}/blacklist/stats/distribution`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch blacklist distribution stats: ${res.statusText}`);
+    const data = await res.json();
+    return {
+      totalActiveRecords: data.totalActiveEntities ?? data.totalActiveRecords ?? 0,
+      generatedAtUtc: data.generatedAt || data.generatedAtUtc || new Date().toISOString(),
+      sources: (data.sources || []).map((s: any) => ({
+        sourceType: s.sourceType,
+        displayName: s.displayName,
+        activeCount: s.activeCount || 0,
+        removedCount: s.inactiveCount ?? s.removedCount ?? 0,
+        percentageOfTotal: Number(s.percentage ?? s.percentageOfTotal ?? 0),
+        lastSuccessfulSyncUtc: s.lastSyncAt || s.lastSuccessfulSyncUtc,
+        lastStatus: 'SYNCED'
+      }))
+    };
+  },
+
+  async fetchBlacklistDailyTrendStats(params?: {
+    sourceType?: string;
+    days?: number;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
+    sourceFilter: string;
+    startDate: string;
+    endDate: string;
+    points: Array<{
+      date: string;
+      sourceType: string;
+      newCount: number;
+      updatedCount: number;
+      skippedCount: number;
+      removedCount: number;
+      failedCount: number;
+      totalRetrieved: number;
+    }>;
+  }> {
+    const qs = new URLSearchParams();
+    if (params?.sourceType && params.sourceType !== 'ALL') qs.set('source', params.sourceType);
+    if (params?.days) {
+      const start = new Date(Date.now() - params.days * 86400000).toISOString().slice(0, 10);
+      qs.set('startDate', start);
+    }
+    if (params?.startDate) qs.set('startDate', params.startDate);
+    if (params?.endDate) qs.set('endDate', params.endDate);
+    const res = await fetch(`${API_BASE}/blacklist/stats/daily?${qs.toString()}`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error(`Failed to fetch blacklist daily trend stats: ${res.statusText}`);
+    const list = await res.json();
+    const points = (Array.isArray(list) ? list : (list.points || [])).map((p: any) => ({
+      date: p.date,
+      sourceType: p.sourceType || 'ALL',
+      newCount: p.newCount || 0,
+      updatedCount: p.updatedCount || 0,
+      skippedCount: p.skippedCount || 0,
+      removedCount: p.removedCount || 0,
+      failedCount: p.failedCount || 0,
+      totalRetrieved: p.retrievedCount ?? p.totalRetrieved ?? 0
+    }));
+    return {
+      sourceFilter: params?.sourceType || 'ALL',
+      startDate: params?.startDate || '',
+      endDate: params?.endDate || '',
+      points
+    };
   }
 };

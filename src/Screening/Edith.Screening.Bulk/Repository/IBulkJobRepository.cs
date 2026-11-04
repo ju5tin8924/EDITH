@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Edith.Screening.Bulk.Feeds;
 using Edith.Screening.Bulk.Models;
 using Edith.Screening.Core.Models;
 using Npgsql;
@@ -108,6 +109,7 @@ public sealed class InMemoryBulkJobRepository : IBulkJobRepository
         {
             if (!string.IsNullOrWhiteSpace(e.FullName)) _knownEntities.TryAdd(e.FullName.Trim(), 1);
             if (!string.IsNullOrWhiteSpace(e.EntityExternalId)) _knownEntities.TryAdd(e.EntityExternalId.Trim(), 1);
+            if (!string.IsNullOrWhiteSpace(e.IdDetails)) _knownEntities.TryAdd(e.IdDetails.Trim(), 1);
             _entities[$"{e.EntityExternalId}:{e.FullName}"] = e;
         }
         return Task.CompletedTask;
@@ -147,12 +149,18 @@ public sealed class InMemoryBulkJobRepository : IBulkJobRepository
 
     public Task<bool> IsEntityAlreadyInSystemAsync(Guid tenantId, AmlEntityRecord record, CancellationToken ct = default)
     {
-        if (!string.IsNullOrWhiteSpace(record.AmlFullName) && _knownEntities.ContainsKey(record.AmlFullName))
+        var canonicalHash = BlacklistRecordComparer.ComputeBulkRecordHash(record);
+        if (_knownEntities.ContainsKey(canonicalHash))
         {
             return Task.FromResult(true);
         }
 
-        if (!string.IsNullOrWhiteSpace(record.AmlIdDetails) && _knownEntities.ContainsKey(record.AmlIdDetails))
+        if (!string.IsNullOrWhiteSpace(record.AmlFullName) && _knownEntities.ContainsKey(record.AmlFullName.Trim()))
+        {
+            return Task.FromResult(true);
+        }
+
+        if (!string.IsNullOrWhiteSpace(record.AmlIdDetails) && _knownEntities.ContainsKey(record.AmlIdDetails.Trim()))
         {
             return Task.FromResult(true);
         }
@@ -546,25 +554,32 @@ public sealed class PostgreSqlBulkJobRepository : IBulkJobRepository
             await using var conn = new NpgsqlConnection(_connectionString);
             await conn.OpenAsync(ct);
 
-            var extId = !string.IsNullOrWhiteSpace(record.AmlUid) ? record.AmlUid : (record.AmlIdDetails ?? string.Empty);
+            var extId = !string.IsNullOrWhiteSpace(record.AmlUid) ? record.AmlUid.Trim() : (record.AmlIdDetails?.Trim() ?? string.Empty);
 
+            // Check against active watchlist_entities only (not screening.customers), matching all relevant attributes
             const string sql = """
                 SELECT EXISTS (
-                    SELECT 1 FROM screening.customers
-                    WHERE (id_number = @id AND @id <> '')
-                       OR UPPER(full_name) = UPPER(@name)
-                    UNION ALL
                     SELECT 1 FROM screening.watchlist_entities
-                    WHERE (entity_external_id = @id AND @id <> '' AND UPPER(full_name) = UPPER(@name))
-                       OR (id_details = @id_details AND @id_details <> '')
-                       OR (@id = '' AND UPPER(full_name) = UPPER(@name))
+                    WHERE is_active = true
+                      AND (
+                          (entity_external_id = @id AND @id <> '' AND UPPER(full_name) = UPPER(@name))
+                          OR (id_details = @id_details AND @id_details <> '' AND UPPER(full_name) = UPPER(@name))
+                          OR (
+                              UPPER(full_name) = UPPER(@name)
+                              AND COALESCE(UPPER(nationality), '') = COALESCE(UPPER(@nat), '')
+                              AND COALESCE(UPPER(alias_name), '') = COALESCE(UPPER(@alias), '')
+                              AND COALESCE(UPPER(id_details), '') = COALESCE(UPPER(@id_details), '')
+                          )
+                      )
                 );
                 """;
 
             await using var cmd = new NpgsqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("id", extId);
-            cmd.Parameters.AddWithValue("id_details", record.AmlIdDetails ?? string.Empty);
-            cmd.Parameters.AddWithValue("name", record.AmlFullName ?? string.Empty);
+            cmd.Parameters.AddWithValue("id_details", record.AmlIdDetails?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("name", record.AmlFullName?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("nat", record.AmlNationality?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("alias", record.AmlAliasName?.Trim() ?? string.Empty);
 
             var result = await cmd.ExecuteScalarAsync(ct);
             return result is true;

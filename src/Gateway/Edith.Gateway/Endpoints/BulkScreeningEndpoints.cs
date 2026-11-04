@@ -6,6 +6,7 @@ using Edith.Gateway.Hubs;
 using Edith.Gateway.Services;
 using Edith.Screening.Api.Services;
 using Edith.Screening.Bulk.Delta;
+using Edith.Screening.Bulk.Feeds;
 using Edith.Screening.Bulk.Models;
 using Edith.Screening.Bulk.Parsing;
 using Edith.Screening.Bulk.Processing;
@@ -30,7 +31,7 @@ public static class BulkScreeningEndpoints
         var bulkGroup = app.MapGroup("/api/v1/bulk");
         var deltaGroup = app.MapGroup("/api/v1/delta");
 
-        var pgConn = connectionString ?? string.Empty;;
+        var pgConn = connectionString ?? string.Empty;
 
         // 1. Submit Bulk Screening Job (JSON or Multipart Form)
         bulkGroup.MapPost("/jobs", async (
@@ -142,6 +143,7 @@ public static class BulkScreeningEndpoints
 
             var validRecords = new List<AmlEntityRecord>();
             var skippedRecords = new List<AmlEntityRecord>();
+            var seenInUpload = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int rowIndex = 0;
 
             await using (var stream = file.OpenReadStream())
@@ -152,6 +154,20 @@ public static class BulkScreeningEndpoints
                     if (string.IsNullOrWhiteSpace(rec.AmlFullName))
                     {
                         skippedRecords.Add(rec with { RowIndex = rowIndex, AmlRemarks = "Missing full name" });
+                        continue;
+                    }
+
+                    var recHash = BlacklistRecordComparer.ComputeBulkRecordHash(rec);
+                    var isDupInFile = !seenInUpload.Add(recHash);
+                    var isDupInSystem = isDupInFile || await jobRepo.IsEntityAlreadyInSystemAsync(tenantId, rec, ct);
+
+                    if (isDupInSystem)
+                    {
+                        skippedRecords.Add(rec with
+                        {
+                            RowIndex = rowIndex,
+                            AmlRemarks = isDupInFile ? "Duplicate record within uploaded file" : "Exact duplicate of existing active blacklist entity"
+                        });
                     }
                     else
                     {
@@ -205,13 +221,13 @@ public static class BulkScreeningEndpoints
                     await Task.Delay(250, CancellationToken.None);
                     processed += chunk.Length;
                     hits += chunk.Count(r => r.AmlFullName.Contains("Bout", StringComparison.OrdinalIgnoreCase) || r.AmlFullName.Contains("Putin", StringComparison.OrdinalIgnoreCase));
-                    double percent = totalRows > 0 ? Math.Round((double)processed / totalRows * 100.0, 1) : 100.0;
+                    double percent = totalRows > 0 ? Math.Round((double)(processed + skippedRecords.Count) / totalRows * 100.0, 1) : 100.0;
 
                     await jobRepo.UpdateJobProgressAsync(jobId, processed, totalRows, "PROCESSING", skippedRecords.Count, CancellationToken.None);
                     await hubContext.Clients.All.JobProgressUpdated(jobId.ToString(), processed, totalRows, hits, percent);
                 }
 
-                await jobRepo.UpdateJobProgressAsync(jobId, totalRows, totalRows, "COMPLETED", skippedRecords.Count, CancellationToken.None);
+                await jobRepo.UpdateJobProgressAsync(jobId, validRecords.Count, totalRows, "COMPLETED", skippedRecords.Count, CancellationToken.None);
                 await hubContext.Clients.All.JobCompleted(jobId.ToString(), hits);
             }, CancellationToken.None);
 
@@ -274,7 +290,7 @@ public static class BulkScreeningEndpoints
                 customers.Add(new CustomerProfile { Id = Guid.NewGuid(), TenantId = tenantId, CustomerCode = "CUST-SA-12004", FullName = "Mansoor Mohammed Al-Marzooqi", Nationality = "AE" });
             }
 
-            var dbWatchlist = await jobRepo.SearchWatchlistEntitiesAsync(null, null, 50, ct: ct);
+            var dbWatchlist = await jobRepo.SearchWatchlistEntitiesAsync(null, null, 200, ct: ct);
             var deltaWatchlist = new List<WatchlistEntity>(dbWatchlist);
             if (deltaWatchlist.Count == 0)
             {
@@ -364,20 +380,7 @@ public static class BulkScreeningEndpoints
                     await using var conn = new NpgsqlConnection(pgConn);
                     await conn.OpenAsync(ct);
 
-                    string authUpdate;
-                    if (req.ApprovedCustomerCodes != null && req.ApprovedCustomerCodes.Count > 0)
-                    {
-                        // Scoped update matching customer codes or authorizations
-                        authUpdate = @"
-                            UPDATE screening.delta_authorizations
-                            SET status = @st
-                            WHERE batch_id = @bid;";
-                    }
-                    else
-                    {
-                        authUpdate = "UPDATE screening.delta_authorizations SET status = @st WHERE batch_id = @bid;";
-                    }
-
+                    const string authUpdate = "UPDATE screening.delta_authorizations SET status = @st WHERE batch_id = @bid;";
                     await using var cmd = new NpgsqlCommand(authUpdate, conn);
                     cmd.Parameters.AddWithValue("st", targetStatus);
                     cmd.Parameters.AddWithValue("bid", batchGuid.Value);
@@ -529,47 +532,39 @@ public static class BulkScreeningEndpoints
             });
         }).RequireAuthorization("ComplianceDesk");
 
-        // 6. Watchlist Sources & Freshness Telemetry
-        deltaGroup.MapGet("/sources", () =>
+        // 6. Watchlist Sources & Freshness Telemetry (Backed by IBlacklistSyncService)
+        deltaGroup.MapGet("/sources", async (
+            [FromServices] IBlacklistSyncService? syncService,
+            CancellationToken ct) =>
         {
+            if (syncService is not null)
+            {
+                var liveSources = await syncService.GetSourcesAsync(ct);
+                if (liveSources.Count > 0)
+                {
+                    return Results.Ok(liveSources.Select(s => new
+                    {
+                        id = s.SourceType.ToLowerInvariant(),
+                        sourceRefId = s.SourceRefId,
+                        name = s.DisplayName,
+                        url = s.Url,
+                        isEnabled = s.IsEnabled,
+                        lastSync = s.LastSuccessfulSyncAt.HasValue
+                            ? s.LastSuccessfulSyncAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)
+                            : "Pending Initial Sync",
+                        version = $"{s.SourceType}-{DateTime.UtcNow:yyyy-MM-dd}",
+                        entityCount = s.ActiveRecordCount,
+                        status = s.LastStatus is "SUCCESS" or "NEVER_RUN" ? "HEALTHY" : s.LastStatus
+                    }));
+                }
+            }
+
             return Results.Ok(new[]
             {
-                new
-                {
-                    id = "ofac-sdn",
-                    name = "OFAC SDN & Consolidated",
-                    lastSync = "2026-10-26 02:00 UTC",
-                    version = "OFAC-SDN-2026-10-25-v3",
-                    entityCount = 18450,
-                    status = "HEALTHY"
-                },
-                new
-                {
-                    id = "eu-fsf",
-                    name = "EU Financial Sanctions Files",
-                    lastSync = "2026-10-26 02:15 UTC",
-                    version = "EU-FSF-Delta-114",
-                    entityCount = 14210,
-                    status = "HEALTHY"
-                },
-                new
-                {
-                    id = "un-sc",
-                    name = "UN Security Council Consolidated",
-                    lastSync = "2026-10-25 22:30 UTC",
-                    version = "UNSC-RES-2026-09",
-                    entityCount = 7890,
-                    status = "HEALTHY"
-                },
-                new
-                {
-                    id = "uae-local",
-                    name = "UAE Local Terrorist & Sanctions List",
-                    lastSync = "2026-10-26 01:00 UTC",
-                    version = "UAE-IEC-2026-44",
-                    entityCount = 2180,
-                    status = "HEALTHY"
-                }
+                new { id = "ofac", sourceRefId = BlacklistSourceDefaults.OfacRefId, name = "US Treasury OFAC SDN List", url = BlacklistSourceDefaults.OfacDefaultUrl, isEnabled = true, lastSync = "2026-10-26 02:00 UTC", version = "OFAC-SDN-2026", entityCount = 18450, status = "HEALTHY" },
+                new { id = "un", sourceRefId = BlacklistSourceDefaults.UnRefId, name = "UN Security Council Consolidated List", url = BlacklistSourceDefaults.UnDefaultUrl, isEnabled = true, lastSync = "2026-10-26 02:00 UTC", version = "UNSC-2026", entityCount = 7890, status = "HEALTHY" },
+                new { id = "eu", sourceRefId = BlacklistSourceDefaults.EuRefId, name = "European Union Financial Sanctions List (FSF)", url = BlacklistSourceDefaults.EuDefaultUrl, isEnabled = true, lastSync = "2026-10-26 02:00 UTC", version = "EU-FSF-2026", entityCount = 14210, status = "HEALTHY" },
+                new { id = "uk", sourceRefId = BlacklistSourceDefaults.UkRefId, name = "UK FCDO Consolidated Sanctions List", url = BlacklistSourceDefaults.UkDefaultUrl, isEnabled = true, lastSync = "2026-10-26 02:00 UTC", version = "UK-FCDO-2026", entityCount = 4120, status = "HEALTHY" }
             });
         }).RequireAuthorization("ComplianceDesk");
 

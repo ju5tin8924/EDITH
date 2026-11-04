@@ -23,13 +23,19 @@ import {
   X,
   Info,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Database,
+  Play,
+  RefreshCw,
+  Clock,
+  FileText
 } from 'lucide-react';
 import { EdithApi } from '../services/api';
 import { EdithLoader } from './EdithLogo';
 import { GeneralErrorBanner } from './ErrorEngineUi';
 
 export type SystemMastersTab = 
+  | 'BLACKLIST_MANAGEMENT'
   | 'COUNTRIES' 
   | 'NATIONALITIES' 
   | 'CURRENCIES'
@@ -145,6 +151,208 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Blacklist Data Management State
+  const [blSources, setBlSources] = useState<any[]>([]);
+  const [blUrlEdits, setBlUrlEdits] = useState<Record<string, string>>({});
+  const [blUrlValidation, setBlUrlValidation] = useState<Record<string, { isValid: boolean; message: string }>>({});
+  const [blTestModal, setBlTestModal] = useState<any | null>(null);
+  const [blTestingSource, setBlTestingSource] = useState<string | null>(null);
+  const [blSavingSource, setBlSavingSource] = useState<string | null>(null);
+  const [blSchedule, setBlSchedule] = useState<{
+    isScheduleEnabled: boolean;
+    dailyRunTimeUtc: string;
+    timezone: string;
+    retentionDays: number;
+    lastScheduledRunUtc?: string;
+    nextScheduledRunUtc?: string;
+    updatedBy?: string;
+    updatedAtUtc?: string;
+  }>({
+    isScheduleEnabled: false,
+    dailyRunTimeUtc: '02:00',
+    timezone: 'UTC',
+    retentionDays: 90
+  });
+  const [blLiveStatus, setBlLiveStatus] = useState<any>({
+    isRunning: false,
+    currentStage: 'IDLE',
+    sourcesCompleted: 0,
+    totalSources: 0,
+    recordsRetrievedSoFar: 0,
+    newSoFar: 0,
+    updatedSoFar: 0,
+    skippedSoFar: 0,
+    removedSoFar: 0,
+    failedSoFar: 0,
+    userMessage: 'No blacklist update is currently running.'
+  });
+  const [blRuns, setBlRuns] = useState<any[]>([]);
+  const [blLoading, setBlLoading] = useState(false);
+  const [blTriggering, setBlTriggering] = useState(false);
+  const [blScheduleSaving, setBlScheduleSaving] = useState(false);
+  const [blInspectErrorsRun, setBlInspectErrorsRun] = useState<{ runId: string; errors: any[] } | null>(null);
+
+  const loadBlacklistManagement = async (silent: boolean = false) => {
+    try {
+      if (!silent) setBlLoading(true);
+      const [sourcesRes, schedRes, statusRes, runsRes] = await Promise.all([
+        EdithApi.fetchBlacklistSources().catch(() => []),
+        EdithApi.fetchBlacklistScheduleConfig().catch(() => null),
+        EdithApi.fetchBlacklistLiveStatus().catch(() => null),
+        EdithApi.fetchBlacklistRuns(20).catch(() => [])
+      ]);
+      if (Array.isArray(sourcesRes)) {
+        setBlSources(sourcesRes);
+        setBlUrlEdits(prev => {
+          const next = { ...prev };
+          for (const s of sourcesRes) {
+            if (next[s.sourceType] === undefined) {
+              next[s.sourceType] = s.feedUrl;
+            }
+          }
+          return next;
+        });
+      }
+      if (schedRes) {
+        setBlSchedule(schedRes);
+      }
+      if (statusRes) {
+        setBlLiveStatus(statusRes);
+      }
+      if (Array.isArray(runsRes)) {
+        setBlRuns(runsRes);
+      }
+    } catch (err) {
+      console.error('Failed to load blacklist management data:', err);
+    } finally {
+      if (!silent) setBlLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'BLACKLIST_MANAGEMENT') {
+      loadBlacklistManagement();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'BLACKLIST_MANAGEMENT' || !blLiveStatus?.isRunning) return;
+    const timer = setInterval(async () => {
+      try {
+        const st = await EdithApi.fetchBlacklistLiveStatus();
+        setBlLiveStatus(st);
+        if (!st.isRunning) {
+          await loadBlacklistManagement(true);
+        }
+      } catch {
+        // ignore transient poll error
+      }
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [activeTab, blLiveStatus?.isRunning]);
+
+  const handleValidateBlUrl = async (sourceType: string) => {
+    const url = blUrlEdits[sourceType] ?? '';
+    try {
+      const res = await EdithApi.validateBlacklistUrl(url);
+      setBlUrlValidation(prev => ({ ...prev, [sourceType]: { isValid: res.isValid, message: res.message } }));
+      if (res.isValid && res.normalizedUrl) {
+        setBlUrlEdits(prev => ({ ...prev, [sourceType]: res.normalizedUrl! }));
+      }
+    } catch (e: any) {
+      setBlUrlValidation(prev => ({ ...prev, [sourceType]: { isValid: false, message: e.message || 'Validation failed.' } }));
+    }
+  };
+
+  const handleSaveBlSource = async (source: any, overrideEnabled?: boolean) => {
+    const sourceType = source.sourceType;
+    const feedUrl = blUrlEdits[sourceType] ?? source.feedUrl;
+    const isEnabled = overrideEnabled !== undefined ? overrideEnabled : source.isEnabled;
+    try {
+      setBlSavingSource(sourceType);
+      setSaveError(null);
+      const updated = await EdithApi.updateBlacklistSource(sourceType, {
+        feedUrl,
+        isEnabled,
+        displayName: source.displayName
+      });
+      setBlSources(prev => prev.map(s => (s.sourceType === sourceType ? updated : s)));
+      setBlUrlEdits(prev => ({ ...prev, [sourceType]: updated.feedUrl }));
+      setSaveSuccess(`${sourceType} source configuration saved successfully.`);
+      setTimeout(() => setSaveSuccess(null), 3500);
+    } catch (e: any) {
+      setSaveError(e.message || `Unable to update ${sourceType} configuration.`);
+    } finally {
+      setBlSavingSource(null);
+    }
+  };
+
+  const handleTestBlSource = async (sourceType: string) => {
+    const url = blUrlEdits[sourceType];
+    try {
+      setBlTestingSource(sourceType);
+      setSaveError(null);
+      const res = await EdithApi.testBlacklistSource(sourceType, url);
+      setBlTestModal(res);
+    } catch (e: any) {
+      setSaveError(e.message || `Connectivity test failed for ${sourceType}.`);
+    } finally {
+      setBlTestingSource(null);
+    }
+  };
+
+  const handleSaveBlSchedule = async () => {
+    try {
+      setBlScheduleSaving(true);
+      setSaveError(null);
+      const updated = await EdithApi.updateBlacklistScheduleConfig({
+        isScheduleEnabled: blSchedule.isScheduleEnabled,
+        dailyRunTimeUtc: blSchedule.dailyRunTimeUtc,
+        retentionDays: blSchedule.retentionDays
+      });
+      setBlSchedule(updated);
+      setSaveSuccess(
+        updated.isScheduleEnabled
+          ? `Automated daily schedule enabled for ${updated.dailyRunTimeUtc} UTC (Next run: ${updated.nextScheduledRunUtc?.slice(0, 16).replace('T', ' ')} UTC).`
+          : `Automated daily schedule is disabled (Manual Verification Gate active).`
+      );
+      setTimeout(() => setSaveSuccess(null), 4000);
+    } catch (e: any) {
+      setSaveError(e.message || 'Unable to save schedule settings.');
+    } finally {
+      setBlScheduleSaving(false);
+    }
+  };
+
+  const handleTriggerManualBlSync = async (selectedSources?: string[]) => {
+    try {
+      setBlTriggering(true);
+      setSaveError(null);
+      const res = await EdithApi.triggerBlacklistSync(selectedSources, false);
+      if (res.httpStatus === 409) {
+        setSaveError(res.userMessage || 'A blacklist update is already in progress. Please wait for it to finish.');
+        if (res.status) setBlLiveStatus(res.status);
+      } else {
+        setSaveSuccess(res.message || 'Manual daily blacklist update started across enabled sources.');
+        const st = await EdithApi.fetchBlacklistLiveStatus().catch(() => null);
+        if (st) setBlLiveStatus(st);
+      }
+    } catch (e: any) {
+      setSaveError(e.message || 'Failed to start manual blacklist update.');
+    } finally {
+      setBlTriggering(false);
+    }
+  };
+
+  const handleOpenRunErrors = async (runId: string) => {
+    try {
+      const errs = await EdithApi.fetchBlacklistRunErrors(runId);
+      setBlInspectErrorsRun({ runId, errors: errs });
+    } catch (e: any) {
+      setSaveError(e.message || 'Failed to load run errors.');
+    }
+  };
 
   useEffect(() => {
     if (initialTab) {
@@ -508,6 +716,7 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
 
   // Unified Tabs
   const allMasterTabs: { id: SystemMastersTab; label: string; icon: any; category: string; route?: string }[] = [
+    { id: 'BLACKLIST_MANAGEMENT', label: 'Blacklist Data Management', icon: Database, category: 'ENGINE', route: '/settings/blacklist-management' },
     { id: 'COUNTRIES', label: 'Country Master', icon: Flag, category: 'REFERENCE', route: '/master/country' },
     { id: 'NATIONALITIES', label: 'Nationality Master', icon: Globe, category: 'REFERENCE', route: '/master/nationality' },
     { id: 'CURRENCIES', label: 'Currency & Reporting Limits', icon: Banknote, category: 'REFERENCE', route: '/settings/risk-rates' },
@@ -600,7 +809,7 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
           </button>
 
           {/* Save Settings Button */}
-          {activeTab !== 'CHANGE_PASSWORD' && (
+          {activeTab !== 'CHANGE_PASSWORD' && activeTab !== 'BLACKLIST_MANAGEMENT' && (
             <button 
               onClick={handleSaveAll}
               disabled={loadingMasters || isSaving}
@@ -670,6 +879,625 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
             );
           })}
         </div>
+
+        {/* Tab 0: Blacklist Data Management */}
+        {activeTab === 'BLACKLIST_MANAGEMENT' && (
+          <div className="space-y-6 font-mono text-xs">
+            {/* Info Banner */}
+            <div className="p-3.5 rounded-xl bg-surface-muted border border-border flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="font-bold text-ink flex items-center gap-2">
+                  <Database className="w-4 h-4 text-primary" />
+                  <span>Daily Blacklist Data Sources, Scheduler &amp; Execution Control</span>
+                </div>
+                <div className="text-[11px] text-muted">
+                  Manage official sanctions XML feeds (OFAC, UN, EU, UK), test connectivity, run manual updates, and control the daily 02:00 UTC schedule.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadBlacklistManagement()}
+                  className="px-3 py-1.5 rounded-lg border border-border bg-white hover:bg-slate-50 text-ink font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${blLoading ? 'animate-spin text-primary' : 'text-muted'}`} />
+                  <span>Refresh Status</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/reports/blacklist')}
+                  className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/25 font-bold flex items-center gap-1.5 hover:bg-primary/15 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Open Daily Blacklist Report →</span>
+                </button>
+              </div>
+            </div>
+
+            {/* SECTION A: BLACKLIST DATA SOURCES */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-primary" />
+                  <span>A. Blacklist Data Sources (OFAC, UN, EU, UK)</span>
+                </h2>
+                <span className="text-[10px] text-muted">
+                  {blSources.filter(s => s.isEnabled).length} of {blSources.length || 4} Sources Enabled
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {blSources.map(src => {
+                  const editedUrl = blUrlEdits[src.sourceType] ?? src.feedUrl;
+                  const validation = blUrlValidation[src.sourceType];
+                  const isTesting = blTestingSource === src.sourceType;
+                  const isSavingSrc = blSavingSource === src.sourceType;
+
+                  return (
+                    <div
+                      key={src.sourceType}
+                      className={`p-4 rounded-xl border space-y-3 transition ${
+                        src.isEnabled ? 'bg-white border-border shadow-2xs' : 'bg-slate-50/70 border-border/60 opacity-80'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-primary text-white font-bold text-[11px]">
+                              {src.sourceType}
+                            </span>
+                            <span className="font-bold text-ink text-xs">{src.displayName}</span>
+                            <span className="text-[10px] text-muted">(_id: {src.id})</span>
+                          </div>
+                          <div className="text-[10px] text-muted mt-1 flex flex-wrap items-center gap-3">
+                            <span>
+                              Active Records: <strong className="text-ink">{(src.activeRecordCount || 0).toLocaleString()}</strong>
+                            </span>
+                            <span>
+                              Last Retrieved:{' '}
+                              <strong className="text-ink">
+                                {src.lastSuccessfulSyncUtc
+                                  ? `${src.lastSuccessfulSyncUtc.slice(0, 19).replace('T', ' ')} UTC`
+                                  : 'Pending initial manual sync'}
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              src.lastUpdateStatus === 'SUCCESS'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : src.lastUpdateStatus === 'FAILED'
+                                ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                : 'bg-slate-100 text-slate-700 border border-slate-300'
+                            }`}
+                          >
+                            {src.lastUpdateStatus || 'NEVER_RUN'}
+                          </span>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer text-[11px] font-bold">
+                            <input
+                              type="checkbox"
+                              checked={!!src.isEnabled}
+                              onChange={e => handleSaveBlSource(src, e.target.checked)}
+                              className="w-4 h-4 accent-primary rounded cursor-pointer"
+                            />
+                            <span>{src.isEnabled ? 'Enabled' : 'Disabled'}</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Configurable URL Input */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold text-muted block">
+                          Official XML Feed URL
+                        </label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="url"
+                            value={editedUrl}
+                            onChange={e =>
+                              setBlUrlEdits(prev => ({
+                                ...prev,
+                                [src.sourceType]: e.target.value
+                              }))
+                            }
+                            className="flex-1 px-2.5 py-1.5 rounded-lg border border-border bg-surface-muted text-ink text-[11px] focus:outline-none focus:border-primary"
+                            placeholder="https://..."
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleValidateBlUrl(src.sourceType)}
+                            className="px-2.5 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-hover text-ink font-bold text-[11px] cursor-pointer"
+                          >
+                            Validate URL
+                          </button>
+                        </div>
+
+                        {validation && (
+                          <div
+                            className={`text-[10px] font-semibold flex items-center gap-1 ${
+                              validation.isValid ? 'text-emerald-700' : 'text-rose-700'
+                            }`}
+                          >
+                            {validation.isValid ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                            <span>{validation.message}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {src.lastErrorMessage && (
+                        <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[11px] flex items-start gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                          <span>{src.lastErrorMessage}</span>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/70">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={isTesting}
+                            onClick={() => handleTestBlSource(src.sourceType)}
+                            className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 font-bold text-[11px] cursor-pointer disabled:opacity-50"
+                          >
+                            {isTesting ? 'Testing Feed...' : 'Test Connectivity & Sample Data'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={blLiveStatus?.isRunning || blTriggering || !src.isEnabled}
+                            onClick={() => handleTriggerManualBlSync([src.sourceType])}
+                            className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-hover text-ink font-bold text-[11px] cursor-pointer disabled:opacity-50"
+                          >
+                            Sync {src.sourceType} Only
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isSavingSrc}
+                          onClick={() => handleSaveBlSource(src)}
+                          className="px-3 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <Save className="w-3 h-3" />
+                          <span>{isSavingSrc ? 'Saving...' : 'Save URL'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* SECTION B: UPDATE EXECUTION SETTINGS & LIVE STATUS */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              {/* Left 6 cols: Scheduler Configuration */}
+              <div className="lg:col-span-6 p-4 rounded-xl bg-white border border-border space-y-3 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-border pb-2">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-primary" />
+                    <span>B. Update Execution &amp; Daily Schedule Settings</span>
+                  </h2>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      blSchedule.isScheduleEnabled
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-amber-100 text-amber-900 border border-amber-300'
+                    }`}
+                  >
+                    {blSchedule.isScheduleEnabled ? 'SCHEDULE ACTIVE' : 'MANUAL VERIFICATION GATE (DISABLED)'}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-[11px] text-muted leading-relaxed">
+                  Automated updates run inside the application worker in <strong>UTC</strong>. Keep the automated schedule disabled until the first manual update across OFAC, UN, EU, and UK has been completed and verified.
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="p-2.5 rounded-lg border border-border bg-surface-muted/50 flex flex-col justify-between">
+                    <span className="text-[10px] uppercase text-muted font-bold">Automated Schedule</span>
+                    <label className="inline-flex items-center gap-2 mt-1.5 cursor-pointer font-bold text-ink">
+                      <input
+                        type="checkbox"
+                        checked={!!blSchedule.isScheduleEnabled}
+                        onChange={e => setBlSchedule(p => ({ ...p, isScheduleEnabled: e.target.checked }))}
+                        className="w-4 h-4 accent-primary rounded cursor-pointer"
+                      />
+                      <span>{blSchedule.isScheduleEnabled ? 'Enabled' : 'Disabled'}</span>
+                    </label>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg border border-border bg-surface-muted/50">
+                    <label className="text-[10px] uppercase text-muted font-bold block">Daily Time (UTC)</label>
+                    <input
+                      type="time"
+                      value={blSchedule.dailyRunTimeUtc || '02:00'}
+                      onChange={e => setBlSchedule(p => ({ ...p, dailyRunTimeUtc: e.target.value }))}
+                      className="w-full mt-1 px-2 py-1 rounded border border-border bg-white text-ink font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="p-2.5 rounded-lg border border-border bg-surface-muted/50">
+                    <label className="text-[10px] uppercase text-muted font-bold block">Skipped Retention (Days)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={blSchedule.retentionDays || 90}
+                      onChange={e => setBlSchedule(p => ({ ...p, retentionDays: Number(e.target.value) }))}
+                      className="w-full mt-1 px-2 py-1 rounded border border-border bg-white text-ink font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border text-[11px]">
+                  <div className="text-muted">
+                    <div>
+                      Last Scheduled Run:{' '}
+                      <strong className="text-ink">
+                        {blSchedule.lastScheduledRunUtc
+                          ? `${blSchedule.lastScheduledRunUtc.slice(0, 19).replace('T', ' ')} UTC`
+                          : 'Never'}
+                      </strong>
+                    </div>
+                    <div>
+                      Next Scheduled Run:{' '}
+                      <strong className="text-primary">
+                        {blSchedule.isScheduleEnabled && blSchedule.nextScheduledRunUtc
+                          ? `${blSchedule.nextScheduledRunUtc.slice(0, 19).replace('T', ' ')} UTC`
+                          : 'Not scheduled (Manual mode)'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={blScheduleSaving}
+                    onClick={handleSaveBlSchedule}
+                    className="px-3.5 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{blScheduleSaving ? 'Saving Schedule...' : 'Save Execution Settings'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Right 6 cols: Manual Execution & Live Progress Monitor */}
+              <div className="lg:col-span-6 p-4 rounded-xl bg-white border border-border space-y-3 shadow-2xs flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-border pb-2">
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2">
+                      <Activity className={`w-4 h-4 ${blLiveStatus?.isRunning ? 'text-accent animate-pulse' : 'text-primary'}`} />
+                      <span>Manual Execution &amp; Live Progress Monitor</span>
+                    </h2>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        blLiveStatus?.isRunning
+                          ? 'bg-primary text-white animate-pulse'
+                          : 'bg-slate-100 text-slate-700 border border-slate-300'
+                      }`}
+                    >
+                      {blLiveStatus?.isRunning ? `RUNNING: ${blLiveStatus.currentSource || blLiveStatus.currentStage}` : 'IDLE'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-[#faf8ff] border border-border space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-ink">{blLiveStatus?.userMessage || 'Ready to run daily blacklist update.'}</span>
+                      {blLiveStatus?.totalSources > 0 && (
+                        <span className="text-primary font-bold">
+                          {blLiveStatus.sourcesCompleted} / {blLiveStatus.totalSources} Sources
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center pt-1">
+                      <div className="p-1.5 rounded bg-white border border-border">
+                        <div className="text-[9px] text-muted uppercase">Retrieved</div>
+                        <div className="font-bold text-ink">{(blLiveStatus?.recordsRetrievedSoFar || 0).toLocaleString()}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-emerald-50 border border-emerald-200">
+                        <div className="text-[9px] text-emerald-700 uppercase font-bold">New</div>
+                        <div className="font-bold text-emerald-800">{(blLiveStatus?.newSoFar || 0).toLocaleString()}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-blue-50 border border-blue-200">
+                        <div className="text-[9px] text-blue-700 uppercase font-bold">Updated</div>
+                        <div className="font-bold text-blue-800">{(blLiveStatus?.updatedSoFar || 0).toLocaleString()}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-amber-50 border border-amber-200">
+                        <div className="text-[9px] text-amber-800 uppercase font-bold">Skipped</div>
+                        <div className="font-bold text-amber-900">{(blLiveStatus?.skippedSoFar || 0).toLocaleString()}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-purple-50 border border-purple-200">
+                        <div className="text-[9px] text-purple-800 uppercase font-bold">Removed</div>
+                        <div className="font-bold text-purple-900">{(blLiveStatus?.removedSoFar || 0).toLocaleString()}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-rose-50 border border-rose-200">
+                        <div className="text-[9px] text-rose-700 uppercase font-bold">Failed</div>
+                        <div className="font-bold text-rose-800">{(blLiveStatus?.failedSoFar || 0).toLocaleString()}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
+                  <span className="text-[10px] text-muted">
+                    Concurrency Lock: Simultaneous manual or scheduled runs are automatically blocked.
+                  </span>
+                  <button
+                    type="button"
+                    disabled={blLiveStatus?.isRunning || blTriggering}
+                    onClick={() => handleTriggerManualBlSync()}
+                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>
+                      {blLiveStatus?.isRunning
+                        ? 'Blacklist Update in Progress...'
+                        : blTriggering
+                        ? 'Starting Update...'
+                        : 'Run Daily Blacklist Update Now (All Enabled Sources)'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION C: UPDATE HISTORY */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2">
+                  <History className="w-4 h-4 text-primary" />
+                  <span>C. Blacklist Update History &amp; Execution Logs</span>
+                </h2>
+                <span className="text-[10px] text-muted">Showing latest {blRuns.length} update runs</span>
+              </div>
+
+              <div className="overflow-x-auto border border-border rounded-xl bg-white">
+                <table className="w-full text-left">
+                  <thead className="bg-surface-muted border-b border-border text-[10px] uppercase text-muted">
+                    <tr>
+                      <th className="py-2.5 px-3">Start / Completion (UTC)</th>
+                      <th className="py-2.5 px-3">Mode / Actor</th>
+                      <th className="py-2.5 px-3">Overall Status</th>
+                      <th className="py-2.5 px-3 text-right">Retrieved</th>
+                      <th className="py-2.5 px-3 text-right">New</th>
+                      <th className="py-2.5 px-3 text-right">Updated</th>
+                      <th className="py-2.5 px-3 text-right">Skipped</th>
+                      <th className="py-2.5 px-3 text-right">Removed</th>
+                      <th className="py-2.5 px-3 text-right">Failed</th>
+                      <th className="py-2.5 px-3">Summary / Error Info</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border text-[11px]">
+                    {blRuns.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="py-8 text-center text-muted">
+                          No daily blacklist update runs recorded yet. Click &ldquo;Run Daily Blacklist Update Now&rdquo; above to execute the first manual update.
+                        </td>
+                      </tr>
+                    ) : (
+                      blRuns.map(run => (
+                        <tr key={run.runId} className="hover:bg-surface-hover">
+                          <td className="py-2.5 px-3">
+                            <div className="font-bold text-ink">{run.startedAtUtc?.slice(0, 19).replace('T', ' ')}</div>
+                            <div className="text-[10px] text-muted">
+                              {run.completedAtUtc
+                                ? `Done ${run.completedAtUtc.slice(11, 19)} (${((run.durationMs || 0) / 1000).toFixed(1)}s)`
+                                : 'In progress...'}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold text-[10px]">
+                              {run.triggerMode}
+                            </span>
+                            <div className="text-[10px] text-muted mt-0.5">{run.triggeredBy}</div>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                run.overallStatus === 'SUCCESS'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : run.overallStatus === 'PARTIALLY_COMPLETED' || run.overallStatus === 'COMPLETED_WITH_WARNINGS'
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : run.overallStatus === 'RUNNING'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {run.overallStatus}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold text-ink">{(run.totalRetrieved || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-emerald-700">{(run.newCount || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-blue-700">{(run.updatedCount || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-amber-800">{(run.skippedCount || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-purple-800">{(run.removedCount || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-rose-700">{(run.failedCount || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-3 max-w-xs">
+                            <div className="truncate text-ink" title={run.userSummaryMessage}>
+                              {run.userSummaryMessage}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right space-x-1.5 whitespace-nowrap">
+                            {(run.failedCount > 0 || run.overallStatus !== 'SUCCESS') && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRunErrors(run.runId)}
+                                className="px-2 py-1 rounded border border-rose-300 bg-rose-50 text-rose-800 font-bold text-[10px] cursor-pointer"
+                              >
+                                Errors
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/reports/blacklist?runId=${run.runId}`)}
+                              className="px-2.5 py-1 rounded bg-primary text-white font-bold text-[10px] cursor-pointer hover:bg-primary-hover"
+                            >
+                              Daily Report →
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Connectivity & Sample Data Modal */}
+            {blTestModal && (
+              <div
+                className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+                onClick={() => setBlTestModal(null)}
+              >
+                <div
+                  className="w-full max-w-2xl bg-white rounded-2xl border border-border shadow-2xl p-5 space-y-4 font-mono text-xs"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-primary text-white font-bold">
+                        {blTestModal.sourceType}
+                      </span>
+                      <h3 className="font-bold text-ink text-sm">Connectivity &amp; Sample Data Verification</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBlTestModal(null)}
+                      className="p-1 rounded text-muted hover:text-ink cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div
+                    className={`p-3 rounded-xl border flex items-start gap-2 ${
+                      blTestModal.isReachable && blTestModal.isValidXml
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                        : 'bg-rose-50 border-rose-300 text-rose-900'
+                    }`}
+                  >
+                    {blTestModal.isReachable && blTestModal.isValidXml ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="font-bold">{blTestModal.userFriendlyMessage}</div>
+                      <div className="text-[10px] mt-1">
+                        URL: <code>{blTestModal.testedUrl}</code> • HTTP {blTestModal.httpStatusCode || 'N/A'} • Latency: {blTestModal.latencyMs}ms • Root XML: <code>{blTestModal.rootElement || 'N/A'}</code>
+                      </div>
+                    </div>
+                  </div>
+
+                  {Array.isArray(blTestModal.sampleRecords) && blTestModal.sampleRecords.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase font-bold text-muted">
+                        Sample Parsed Records ({blTestModal.sampleRecordsCount} parsed from live stream)
+                      </div>
+                      <div className="overflow-x-auto border border-border rounded-lg">
+                        <table className="w-full text-left text-[11px]">
+                          <thead className="bg-surface-muted border-b border-border text-[10px] uppercase text-muted">
+                            <tr>
+                              <th className="py-1.5 px-2.5">Source UID</th>
+                              <th className="py-1.5 px-2.5">Primary Name</th>
+                              <th className="py-1.5 px-2.5">Type</th>
+                              <th className="py-1.5 px-2.5">Nationalities / Programs</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {blTestModal.sampleRecords.map((rec: any, i: number) => (
+                              <tr key={i}>
+                                <td className="py-1.5 px-2.5 font-bold text-primary">{rec.externalId}</td>
+                                <td className="py-1.5 px-2.5 font-semibold text-ink">{rec.primaryName}</td>
+                                <td className="py-1.5 px-2.5">{rec.entityType}</td>
+                                <td className="py-1.5 px-2.5 text-muted">
+                                  {[...(rec.nationalities || []), ...(rec.programs || [])].slice(0, 3).join(', ') || '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-2 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setBlTestModal(null)}
+                      className="px-4 py-1.5 rounded-lg bg-primary text-white font-bold cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Run Error Inspector Modal */}
+            {blInspectErrorsRun && (
+              <div
+                className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+                onClick={() => setBlInspectErrorsRun(null)}
+              >
+                <div
+                  className="w-full max-w-2xl bg-white rounded-2xl border border-border shadow-2xl p-5 space-y-4 font-mono text-xs"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <h3 className="font-bold text-ink text-sm flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-600" />
+                      <span>Blacklist Sync Error Log ({blInspectErrorsRun.runId.slice(0, 8)})</span>
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setBlInspectErrorsRun(null)}
+                      className="p-1 rounded text-muted hover:text-ink cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {blInspectErrorsRun.errors.length === 0 ? (
+                    <div className="p-4 text-center text-muted">No structured error entries logged for this run.</div>
+                  ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {blInspectErrorsRun.errors.map((err: any) => (
+                        <div key={err.id} className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-rose-900">
+                              [{err.sourceType}] {err.stage} — {err.errorCode}
+                            </span>
+                            <span className="text-[10px] text-rose-700">{err.occurredAtUtc?.slice(0, 19).replace('T', ' ')} UTC</span>
+                          </div>
+                          <div className="text-rose-950 font-semibold">{err.userFriendlyMessage}</div>
+                          {err.recordKey && (
+                            <div className="text-[10px] text-rose-800">Affected Record ID: {err.recordKey}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-2 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setBlInspectErrorsRun(null)}
+                      className="px-4 py-1.5 rounded-lg bg-primary text-white font-bold cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tab 1: Country Master */}
         {activeTab === 'COUNTRIES' && (

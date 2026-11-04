@@ -138,6 +138,7 @@ export const AppContent: React.FC<AppContentProps> = ({ onLogout, session, onRol
             <Route path="/settings" element={<SystemMastersView initialTab="RISK_RATES" />} />
             <Route path="/settings/user-groups" element={<IamAccessView initialTab="GROUPS" />} />
             <Route path="/settings/users" element={<IamAccessView initialTab="USERS" />} />
+            <Route path="/settings/blacklist-management" element={<SystemMastersView initialTab="BLACKLIST_MANAGEMENT" />} />
             <Route path="/settings/menu-master" element={<IamAccessView initialTab="MENU_MASTER" />} />
             <Route path="/settings/menu-mappings" element={<IamAccessView initialTab="MENU_MAPPINGS" />} />
             <Route path="/settings/risk-rates" element={<SystemMastersView initialTab="RISK_RATES" />} />

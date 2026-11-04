@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Edith.Screening.Bulk.Feeds;
 using Edith.Screening.Bulk.Models;
 using Edith.Screening.Bulk.Notifications;
 using Edith.Screening.Bulk.Parsing;
@@ -122,6 +123,7 @@ public sealed class BulkIngestionPipeline : IBulkIngestionPipeline
         const int chunkSize = 250;
         var chunk = new List<AmlEntityRecord>(chunkSize);
         var skippedRecords = new List<AmlEntityRecord>();
+        var seenInCurrentBatch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         int totalProcessed = 0;
         int skippedCount = 0;
         int hitCount = 0;
@@ -129,8 +131,11 @@ public sealed class BulkIngestionPipeline : IBulkIngestionPipeline
 
         await foreach (var item in _parser.ParseStreamAsync(stream, format, ct))
         {
-            var isAlreadyInSystem = (totalProcessed + skippedCount) < 1000
-                && await _jobRepository.IsEntityAlreadyInSystemAsync(tenantId, item, ct);
+            var recordHash = BlacklistRecordComparer.ComputeBulkRecordHash(item);
+            var isDuplicateInBatch = !seenInCurrentBatch.Add(recordHash);
+            var isAlreadyInSystem = isDuplicateInBatch
+                || await _jobRepository.IsEntityAlreadyInSystemAsync(tenantId, item, ct);
+
             if (isAlreadyInSystem)
             {
                 skippedCount++;
