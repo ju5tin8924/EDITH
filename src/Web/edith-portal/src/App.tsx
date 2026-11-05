@@ -24,9 +24,12 @@ import { IamAccessView } from './components/IamAccessView';
 import { OnboardingView } from './components/OnboardingView';
 import { LoginView } from './components/LoginView';
 import { EdithErrorBoundary, GlobalErrorHost } from './components/ErrorEngineUi';
+import { RoleGuard } from './components/RoleGuard';
+import { SessionTimeoutModal } from './components/SessionTimeoutModal';
+import { useIdleTimer } from './hooks/useIdleTimer';
 
 import { UserRole, MenuItemEntitlement, UserSession } from './types';
-import { EdithApi, getSession, setSession, clearSession, isAuthenticated } from './services/api';
+import { EdithApi, getSession, setSession, isAuthenticated } from './services/api';
 
 const ScreeningPageWrapper: React.FC = () => {
   const navigate = useNavigate();
@@ -111,67 +114,67 @@ export const AppContent: React.FC<AppContentProps> = ({ onLogout, session, onRol
             <Route path="/whitelist" element={<WhitelistGovernanceView />} />
 
             {/* 4. AML */}
-            <Route path="/rules" element={<RuleBuilderView />} />
-            <Route path="/aml/rules" element={<RuleBuilderView />} />
-            <Route path="/sandbox" element={<RuleSandboxView />} />
-            <Route path="/aml/process" element={<RuleSandboxView />} />
-            <Route path="/aml/str-history" element={<ReportsAuditView />} />
-            <Route path="/aml/mlro-monitoring" element={<CaseWorkspace currentRole={session.role} />} />
+            <Route path="/rules" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="AML Rules Builder"><RuleBuilderView /></RoleGuard>} />
+            <Route path="/aml/rules" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="AML Rules Builder"><RuleBuilderView /></RoleGuard>} />
+            <Route path="/sandbox" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Rule Sandbox"><RuleSandboxView /></RoleGuard>} />
+            <Route path="/aml/process" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Process AML"><RuleSandboxView /></RoleGuard>} />
+            <Route path="/aml/str-history" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER', 'ISTR_MLRO']} currentRole={session.role} moduleName="STR History"><ReportsAuditView /></RoleGuard>} />
+            <Route path="/aml/mlro-monitoring" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'ISTR_MLRO']} currentRole={session.role} moduleName="MLRO Monitoring"><CaseWorkspace currentRole={session.role} /></RoleGuard>} />
 
             {/* 5. STR Process */}
             <Route path="/cases" element={<CaseWorkspace currentRole={session.role} />} />
             <Route path="/str-process/alerts" element={<CaseWorkspace currentRole={session.role} />} />
-            <Route path="/str-process/edd-analyst" element={<CustomerKyc360View />} />
-            <Route path="/str-process/istr-mlro" element={<CaseWorkspace currentRole={session.role} />} />
-            <Route path="/str-process/edd-monitoring" element={<CaseWorkspace currentRole={session.role} />} />
+            <Route path="/str-process/edd-analyst" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'EDD_ANALYST']} currentRole={session.role} moduleName="EDD Analyst & Branch KYC"><CustomerKyc360View /></RoleGuard>} />
+            <Route path="/str-process/istr-mlro" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'ISTR_MLRO']} currentRole={session.role} moduleName="ISTR MLRO Freeze Desk"><CaseWorkspace currentRole={session.role} /></RoleGuard>} />
+            <Route path="/str-process/edd-monitoring" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'EDD_ANALYST']} currentRole={session.role} moduleName="EDD Monitoring"><CaseWorkspace currentRole={session.role} /></RoleGuard>} />
 
             {/* 6. Reports */}
-            <Route path="/reports" element={<ReportsAuditView />} />
-            <Route path="/reports/*" element={<ReportsAuditView />} />
+            <Route path="/reports" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'ISTR_MLRO']} currentRole={session.role} moduleName="Audit Reports"><ReportsAuditView /></RoleGuard>} />
+            <Route path="/reports/*" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'ISTR_MLRO']} currentRole={session.role} moduleName="Audit Reports"><ReportsAuditView /></RoleGuard>} />
 
             {/* 7. Log Report */}
-            <Route path="/notifications" element={<NotificationAdminView />} />
-            <Route path="/log-report" element={<ReportsAuditView />} />
-            <Route path="/log-report/*" element={<ReportsAuditView />} />
+            <Route path="/notifications" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Notifications"><NotificationAdminView /></RoleGuard>} />
+            <Route path="/log-report" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'ISTR_MLRO']} currentRole={session.role} moduleName="Process Logs"><ReportsAuditView /></RoleGuard>} />
+            <Route path="/log-report/*" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'ISTR_MLRO']} currentRole={session.role} moduleName="Process Logs"><ReportsAuditView /></RoleGuard>} />
 
-            {/* 8. Settings */}
-            <Route path="/settings" element={<SystemMastersView initialTab="RISK_RATES" />} />
-            <Route path="/settings/user-groups" element={<IamAccessView initialTab="GROUPS" />} />
-            <Route path="/settings/users" element={<IamAccessView initialTab="USERS" />} />
-            <Route path="/settings/blacklist-management" element={<SystemMastersView initialTab="BLACKLIST_MANAGEMENT" />} />
-            <Route path="/settings/menu-master" element={<IamAccessView initialTab="MENU_MASTER" />} />
-            <Route path="/settings/menu-mappings" element={<IamAccessView initialTab="MENU_MAPPINGS" />} />
-            <Route path="/settings/risk-rates" element={<SystemMastersView initialTab="RISK_RATES" />} />
-            <Route path="/settings/screening-score" element={<SystemMastersView initialTab="SCREENING_SCORE" />} />
-            <Route path="/settings/setup-control" element={<SystemMastersView initialTab="SETUP_CONTROL" />} />
-            <Route path="/settings/risk-assessment" element={<SystemMastersView initialTab="RISK_ASSESSMENT" />} />
-            <Route path="/settings/currencies" element={<SystemMastersView initialTab="CURRENCIES" />} />
+            {/* 8. Settings (Restricted to Administrators) */}
+            <Route path="/settings" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Settings"><SystemMastersView initialTab="RISK_RATES" /></RoleGuard>} />
+            <Route path="/settings/user-groups" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="User Groups"><IamAccessView initialTab="GROUPS" /></RoleGuard>} />
+            <Route path="/settings/users" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="User Management"><IamAccessView initialTab="USERS" /></RoleGuard>} />
+            <Route path="/settings/blacklist-management" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Blacklist Settings"><SystemMastersView initialTab="BLACKLIST_MANAGEMENT" /></RoleGuard>} />
+            <Route path="/settings/menu-master" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Menu Master"><IamAccessView initialTab="MENU_MASTER" /></RoleGuard>} />
+            <Route path="/settings/menu-mappings" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Menu Permissions"><IamAccessView initialTab="MENU_MAPPINGS" /></RoleGuard>} />
+            <Route path="/settings/risk-rates" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Risk Rate Settings"><SystemMastersView initialTab="RISK_RATES" /></RoleGuard>} />
+            <Route path="/settings/screening-score" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Screening Scores"><SystemMastersView initialTab="SCREENING_SCORE" /></RoleGuard>} />
+            <Route path="/settings/setup-control" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Setup Control"><SystemMastersView initialTab="SETUP_CONTROL" /></RoleGuard>} />
+            <Route path="/settings/risk-assessment" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Risk Assessment Master"><SystemMastersView initialTab="RISK_ASSESSMENT" /></RoleGuard>} />
+            <Route path="/settings/currencies" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Currencies"><SystemMastersView initialTab="CURRENCIES" /></RoleGuard>} />
             <Route path="/settings/change-password" element={<SystemMastersView initialTab="CHANGE_PASSWORD" />} />
-            <Route path="/iam" element={<IamAccessView initialTab="USERS" />} />
+            <Route path="/iam" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="IAM Management"><IamAccessView initialTab="USERS" /></RoleGuard>} />
 
             {/* 9. Master */}
-            <Route path="/master" element={<SystemMastersView initialTab="COUNTRIES" />} />
-            <Route path="/master/country" element={<SystemMastersView initialTab="COUNTRIES" />} />
-            <Route path="/master/nationality" element={<SystemMastersView initialTab="NATIONALITIES" />} />
-            <Route path="/master/currencies" element={<SystemMastersView initialTab="CURRENCIES" />} />
-            <Route path="/master/unblock-customer" element={<SystemMastersView initialTab="UNBLOCK_CUSTOMER" />} />
+            <Route path="/master" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Master Registry"><SystemMastersView initialTab="COUNTRIES" /></RoleGuard>} />
+            <Route path="/master/country" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Country Master"><SystemMastersView initialTab="COUNTRIES" /></RoleGuard>} />
+            <Route path="/master/nationality" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Nationality Master"><SystemMastersView initialTab="NATIONALITIES" /></RoleGuard>} />
+            <Route path="/master/currencies" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Currencies"><SystemMastersView initialTab="CURRENCIES" /></RoleGuard>} />
+            <Route path="/master/unblock-customer" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} currentRole={session.role} moduleName="Unblock Customer"><SystemMastersView initialTab="UNBLOCK_CUSTOMER" /></RoleGuard>} />
 
             {/* 10. Authorization */}
-            <Route path="/goaml" element={<GoAmlReportingView />} />
-            <Route path="/authorization" element={<GoAmlReportingView />} />
-            <Route path="/authorization/sanction-alerts" element={<CaseWorkspace currentRole={session.role} />} />
-            <Route path="/authorization/risk-calculate" element={<GoAmlReportingView />} />
-            <Route path="/authorization/customer" element={<GoAmlReportingView />} />
+            <Route path="/goaml" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'ISTR_MLRO']} currentRole={session.role} moduleName="goAML Gateway"><GoAmlReportingView /></RoleGuard>} />
+            <Route path="/authorization" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Authorization Queue"><GoAmlReportingView /></RoleGuard>} />
+            <Route path="/authorization/sanction-alerts" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Sanction Authorization"><CaseWorkspace currentRole={session.role} /></RoleGuard>} />
+            <Route path="/authorization/risk-calculate" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Risk Calculation"><GoAmlReportingView /></RoleGuard>} />
+            <Route path="/authorization/customer" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Customer Authorization"><GoAmlReportingView /></RoleGuard>} />
 
             {/* 11. Customer */}
-            <Route path="/kyc360" element={<CustomerKyc360View />} />
-            <Route path="/customer/kyc" element={<CustomerKyc360View />} />
-            <Route path="/customer/screening-report" element={<ReportsAuditView />} />
+            <Route path="/kyc360" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'EDD_ANALYST', 'ISTR_MLRO']} currentRole={session.role} moduleName="Customer KYC 360"><CustomerKyc360View /></RoleGuard>} />
+            <Route path="/customer/kyc" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'EDD_ANALYST', 'ISTR_MLRO']} currentRole={session.role} moduleName="Customer KYC 360"><CustomerKyc360View /></RoleGuard>} />
+            <Route path="/customer/screening-report" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'EDD_ANALYST']} currentRole={session.role} moduleName="Customer Screening Report"><ReportsAuditView /></RoleGuard>} />
 
             {/* 12. Delta */}
-            <Route path="/delta" element={<DeltaRescreeningView />} />
-            <Route path="/delta/authorization" element={<DeltaRescreeningView />} />
-            <Route path="/delta/log-report" element={<DeltaRescreeningView />} />
+            <Route path="/delta" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Delta Rescreening"><DeltaRescreeningView /></RoleGuard>} />
+            <Route path="/delta/authorization" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Delta Authorization"><DeltaRescreeningView /></RoleGuard>} />
+            <Route path="/delta/log-report" element={<RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN', 'AML_OFFICER']} currentRole={session.role} moduleName="Delta Log Report"><DeltaRescreeningView /></RoleGuard>} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
@@ -200,8 +203,8 @@ export const App: React.FC = () => {
     setAuthed(true);
   };
 
-  const handleLogout = () => {
-    clearSession();
+  const handleLogout = async () => {
+    await EdithApi.logout();
     setSessionState(getSession());
     setAuthed(false);
   };
@@ -212,10 +215,33 @@ export const App: React.FC = () => {
     setSessionState(updated);
   };
 
+  // Inactivity tracking: 15-min idle timeout with 2-min warning
+  const { isWarning, remainingSeconds, extendSession } = useIdleTimer({
+    timeoutMs: 15 * 60 * 1000,
+    warningMs: 2 * 60 * 1000,
+    onTimeout: async () => {
+      await EdithApi.logout();
+      setSessionState(getSession());
+      setAuthed(false);
+      window.location.href = '/login?reason=inactivity';
+    },
+    onRefresh: EdithApi.refreshToken,
+    enabled: authed
+  });
+
   return (
     <EdithErrorBoundary>
       <BrowserRouter>
         <GlobalErrorHost />
+
+        {/* Compliance Inactivity Timeout Dialog */}
+        <SessionTimeoutModal
+          isOpen={isWarning}
+          remainingSeconds={remainingSeconds}
+          onExtend={extendSession}
+          onLogout={handleLogout}
+        />
+
         <Routes>
           {/* Public Onboarding Flow */}
           <Route path="/onboarding" element={<OnboardingView />} />

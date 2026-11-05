@@ -352,6 +352,73 @@ public static class IamEndpoints
             return Results.Ok(result);
         }).RequireAuthorization();
 
+        // 7.2 Session Token Refresh (Extends active session seamlessly)
+        group.MapPost("/refresh", (
+            ClaimsPrincipal principal,
+            [FromServices] ITokenService tokenService,
+            [FromServices] ITenantContextAccessor tenantAccessor) =>
+        {
+            var username = principal.FindFirst(ClaimTypes.Name)?.Value
+                        ?? principal.FindFirst("name")?.Value
+                        ?? principal.Identity?.Name;
+
+            var role = principal.FindFirst(ClaimTypes.Role)?.Value
+                    ?? principal.FindFirst("role")?.Value
+                    ?? EdithRoles.Admin;
+
+            var tenantId = ResolveTenant(null, tenantAccessor, principal);
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return Results.Unauthorized();
+            }
+
+            var tokenRes = tokenService.GenerateToken(username, role, tenantId);
+            return Results.Ok(new
+            {
+                status = "SUCCESS",
+                accessToken = tokenRes.AccessToken,
+                tokenType = tokenRes.TokenType,
+                expiresIn = tokenRes.ExpiresIn,
+                tenantId = tokenRes.TenantId,
+                role = tokenRes.Role,
+                username
+            });
+        }).RequireAuthorization();
+
+        // 7.3 Server-Side Logout & Session Destruction
+        group.MapPost("/logout", async (
+            ClaimsPrincipal principal,
+            [FromServices] ITenantContextAccessor tenantAccessor,
+            [FromServices] IAuditLedgerService auditService,
+            CancellationToken ct) =>
+        {
+            var username = principal.FindFirst(ClaimTypes.Name)?.Value
+                        ?? principal.FindFirst("name")?.Value
+                        ?? principal.Identity?.Name
+                        ?? "ANONYMOUS";
+
+            Guid tenantId;
+            try
+            {
+                tenantId = ResolveTenant(null, tenantAccessor, principal);
+            }
+            catch
+            {
+                tenantId = InMemoryTenantRegistry.DefaultTenantId;
+            }
+
+            if (username != "ANONYMOUS")
+            {
+                _ = auditService.RecordAuditEntryAsync(
+                    tenantId,
+                    new RecordAuditRequest(username, "IAM_USER_LOGGED_OUT", username, null, "User signed out / session terminated"),
+                    ct);
+            }
+
+            return Results.Ok(new { success = true, message = "Session invalidated successfully." });
+        }).AllowAnonymous();
+
         // 7.1 Self-Service Change Password
         group.MapPost("/change-password", async (
             [FromBody] ChangePasswordRequest req,

@@ -41,6 +41,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [totpCode, setTotpCode] = useState<string>('');
   const [useRecoveryCode, setUseRecoveryCode] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(300); // 5 minutes
+  const [inactivityNotice, setInactivityNotice] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('reason') === 'inactivity') {
+      setInactivityNotice(true);
+    }
+  }, []);
 
   // Countdown timer for MFA session
   useEffect(() => {
@@ -197,6 +205,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             dark
             onDismiss={() => setError(null)}
           />
+        )}
+
+        {inactivityNotice && !error && (
+          <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-mono flex items-center gap-2">
+            <Clock className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>Session expired due to inactivity. Please sign in again.</span>
+          </div>
         )}
 
         {/* Onboarding Required Notice Banner */}

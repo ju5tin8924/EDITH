@@ -1038,6 +1038,43 @@ export const EdithApi = {
     return [];
   },
 
+  async logout(): Promise<void> {
+    try {
+      await fetch(`${API_BASE}/iam/logout`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+    } catch {
+      // Best-effort server notification; always clear client state
+    } finally {
+      clearSession();
+    }
+  },
+
+  async refreshToken(): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/iam/refresh`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (data && data.accessToken) {
+        setSession({
+          token: data.accessToken,
+          expiresAtUtc: new Date(Date.now() + (data.expiresIn || 14400) * 1000).toISOString(),
+          username: data.username || currentSession.username,
+          role: data.role || currentSession.role,
+          tenantId: data.tenantId || currentSession.tenantId
+        });
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  },
+
   async login(payload: { username: string; password: string; tenantId?: string }): Promise<any> {
     const tid = payload.tenantId || currentSession.tenantId || '11111111-1111-1111-1111-111111111111';
     try {

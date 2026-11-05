@@ -331,6 +331,28 @@ public sealed class SecurityRemediationTests : IClassFixture<WebApplicationFacto
         Assert.Equal(HttpStatusCode.OK, casesRes.StatusCode);
     }
 
+    [Fact]
+    public async Task Req12_LogoutAndRefreshEndpoints_WorkCorrectly()
+    {
+        var client = CreateAuthenticatedClient(EdithRoles.AmlOfficer);
+
+        // 1. Silent Token Refresh
+        var refreshRes = await client.PostAsync("/api/v1/iam/refresh", null);
+        Assert.Equal(HttpStatusCode.OK, refreshRes.StatusCode);
+
+        var refreshBody = await refreshRes.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        var newAccessToken = refreshBody.GetProperty("accessToken").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(newAccessToken));
+        Assert.Equal("SUCCESS", refreshBody.GetProperty("status").GetString());
+
+        // 2. Server-Side Logout
+        var logoutRes = await client.PostAsync("/api/v1/iam/logout", null);
+        Assert.Equal(HttpStatusCode.OK, logoutRes.StatusCode);
+
+        var logoutBody = await logoutRes.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        Assert.True(logoutBody.GetProperty("success").GetBoolean());
+    }
+
     private sealed class TestHostEnvironment : Microsoft.AspNetCore.Hosting.IWebHostEnvironment
     {
         public string EnvironmentName { get; set; } = "Production";
