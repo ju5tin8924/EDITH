@@ -208,7 +208,7 @@ jobs:
           OPENSEARCH_URL: ${{ vars.OPENSEARCH_URL || 'https://127.0.0.1:9200' }}
           OPENSEARCH_USER: ${{ vars.OPENSEARCH_USER || 'admin' }}
           OPENSEARCH_PASSWORD: ${{ secrets.OPENSEARCH_PASSWORD }}
-          OPENSEARCH_SKIP_SSL_VALIDATION: ${{ vars.OPENSEARCH_SKIP_SSL_VALIDATION || 'false' }}
+          OPENSEARCH_SKIP_SSL_VALIDATION: ${{ vars.OPENSEARCH_SKIP_SSL_VALIDATION || 'true' }}
           EDITH_SMTP_USER: ${{ vars.EDITH_SMTP_USER || 'notifications@edith.aml.cloud' }}
           EDITH_SMTP_PASSWORD: ${{ secrets.EDITH_SMTP_PASSWORD }}
         run: |

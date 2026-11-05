@@ -138,14 +138,14 @@ public sealed class WatchlistOpenSearchSyncService : IWatchlistOpenSearchSyncSer
                             SELECT id, entity_external_id, entity_type, full_name, dob, nationality,
                                    source_list, category, id_details, alias_name, is_blocked, is_active
                             FROM screening.watchlist_entities
-                            WHERE (@last_id IS NULL OR id > @last_id) AND is_active = true
+                            WHERE ($1::uuid IS NULL OR id > $1::uuid) AND is_active = true
                             ORDER BY id ASC
-                            LIMIT @batch_size;
+                            LIMIT $2;
                             """;
 
                         await using var cmd = new NpgsqlCommand(sql, streamConn);
-                        cmd.Parameters.AddWithValue("last_id", (object?)lastId ?? DBNull.Value);
-                        cmd.Parameters.AddWithValue("batch_size", BatchSize);
+                        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)lastId ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
+                        cmd.Parameters.Add(new NpgsqlParameter { Value = BatchSize, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer });
 
                         var batch = new List<WatchlistEntity>(BatchSize);
                         await using (var reader = await cmd.ExecuteReaderAsync(CancellationToken.None))

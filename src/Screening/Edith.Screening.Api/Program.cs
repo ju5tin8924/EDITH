@@ -52,7 +52,7 @@ var osOpts = new OpenSearchOptions
     Password = openSearchConfig.GetValue<string>("Password") ?? "Tr@ns@ct10n$2026!#",
     WatchlistIndex = openSearchConfig.GetValue<string>("WatchlistIndex") ?? "edith_watchlist_v1",
     CustomersIndex = openSearchConfig.GetValue<string>("CustomersIndex") ?? "edith_customers_v1",
-    SkipSslValidation = openSearchConfig.GetValue<bool>("SkipSslValidation", !builder.Environment.IsProduction() && openSearchConfig.GetValue<bool>("SkipSslValidation", false))
+    SkipSslValidation = openSearchConfig.GetValue<bool>("SkipSslValidation", true)
 };
 
 builder.Services.AddSingleton(osOpts);
