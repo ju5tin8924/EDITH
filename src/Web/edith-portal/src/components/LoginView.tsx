@@ -96,7 +96,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         setError(null);
       } else if (res.status === 'SUCCESS' && res.accessToken) {
         // Direct issuance (if MFA bypassed/completed)
-        completeLogin(res.accessToken, res.role || 'ADMIN', res.tenantId);
+        completeLogin(res.accessToken, res.role || 'ADMIN', res.tenantId, res.expiresIn);
       } else {
         setError(res.message || 'Invalid username or password. Please verify your credentials.');
       }
@@ -126,7 +126,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       });
 
       if (res.accessToken) {
-        completeLogin(res.accessToken, res.role || userRole, res.tenantId);
+        completeLogin(res.accessToken, res.role || userRole, res.tenantId, res.expiresIn);
       } else {
         setError(res.message || 'Invalid verification code. Please check your authenticator and try again.');
       }
@@ -137,10 +137,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const completeLogin = (token: string, role: UserRole, tenantId?: string) => {
+  const completeLogin = (token: string, role: UserRole, tenantId?: string, expiresIn?: number) => {
+    const lifetimeMs = expiresIn && expiresIn > 0 ? expiresIn * 1000 : 14400 * 1000;
     setSession({
       token,
-      expiresAtUtc: new Date(Date.now() + 86400000).toISOString(),
+      expiresAtUtc: new Date(Date.now() + lifetimeMs).toISOString(),
       username,
       role,
       tenantId: tenantId || '11111111-1111-1111-1111-111111111111'

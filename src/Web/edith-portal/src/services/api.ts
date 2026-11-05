@@ -26,7 +26,7 @@ import {
   ShiftRosterScheduleDto,
   InAppNotificationItemDto
 } from '../types';
-import { reportOfflineFallback, toGeneralError } from './errorEngine';
+import { reportOfflineFallback, toGeneralError, reportError } from './errorEngine';
 import { REPORT_SUB_MENUS } from '../config/reportCategories';
 
 const API_BASE = '/api/v1';
@@ -55,18 +55,6 @@ let currentSession: UserSession = loadInitialSession();
 
 export const getSession = (): UserSession => currentSession;
 
-export const isAuthenticated = (): boolean => {
-  return !!(currentSession && currentSession.token && currentSession.token.trim().length > 0);
-};
-
-export const setSession = (session: UserSession) => {
-  currentSession = {
-    ...session,
-    token: session.token || currentSession.token
-  };
-  localStorage.setItem('edith_session', JSON.stringify(currentSession));
-};
-
 export const clearSession = () => {
   currentSession = {
     token: '',
@@ -78,11 +66,55 @@ export const clearSession = () => {
   localStorage.removeItem('edith_session');
 };
 
+export const notifySessionExpired = (customMessage?: string) => {
+  clearSession();
+  reportError(
+    customMessage || 'Your session has expired. Please sign in again to continue.',
+    { category: 'AUTH' }
+  );
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('edith:session-expired'));
+  }
+};
+
+export const isAuthenticated = (): boolean => {
+  if (!currentSession || !currentSession.token || currentSession.token.trim().length === 0) {
+    return false;
+  }
+  if (currentSession.expiresAtUtc) {
+    const expiry = new Date(currentSession.expiresAtUtc).getTime();
+    if (!isNaN(expiry) && expiry <= Date.now()) {
+      clearSession();
+      return false;
+    }
+  }
+  return true;
+};
+
+export const setSession = (session: UserSession) => {
+  currentSession = {
+    ...session,
+    token: session.token || currentSession.token
+  };
+  localStorage.setItem('edith_session', JSON.stringify(currentSession));
+};
+
 export const getAuthHeaders = (): Record<string, string> => ({
   'Authorization': `Bearer ${currentSession.token}`,
   'X-Tenant-ID': currentSession.tenantId,
   'Content-Type': 'application/json'
 });
+
+export const apiFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    const urlStr = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
+    if (!urlStr.includes('/iam/login') && !urlStr.includes('/iam/mfa/verify')) {
+      notifySessionExpired();
+    }
+  }
+  return res;
+};
 
 const DEFAULT_MENU_ITEMS: MenuItemEntitlement[] = [
   // Group 1: Screening
@@ -1678,7 +1710,7 @@ export const EdithApi = {
 
   // 14. Daily Blacklist Data Management, Scheduler & Reporting Endpoints
   async fetchBlacklistSources(): Promise<any[]> {
-    const res = await fetch(`${API_BASE}/blacklist/sources`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/blacklist/sources`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch blacklist sources: ${res.statusText}`);
     const list = await res.json();
     return (Array.isArray(list) ? list : []).map((s: any) => ({
@@ -1692,7 +1724,7 @@ export const EdithApi = {
   },
 
   async updateBlacklistSource(sourceType: string, payload: { feedUrl?: string; isEnabled?: boolean; displayName?: string }): Promise<any> {
-    const res = await fetch(`${API_BASE}/blacklist/sources/${encodeURIComponent(sourceType)}`, {
+    const res = await apiFetch(`${API_BASE}/blacklist/sources/${encodeURIComponent(sourceType)}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({
@@ -1716,7 +1748,7 @@ export const EdithApi = {
   },
 
   async validateBlacklistUrl(url: string): Promise<{ isValid: boolean; normalizedUrl?: string; message: string }> {
-    const res = await fetch(`${API_BASE}/blacklist/sources/validate-url`, {
+    const res = await apiFetch(`${API_BASE}/blacklist/sources/validate-url`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ url })
@@ -1731,7 +1763,7 @@ export const EdithApi = {
   },
 
   async testBlacklistSource(sourceType: string, url?: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/blacklist/sources/${encodeURIComponent(sourceType)}/test`, {
+    const res = await apiFetch(`${API_BASE}/blacklist/sources/${encodeURIComponent(sourceType)}/test`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ url })
@@ -1762,7 +1794,7 @@ export const EdithApi = {
     updatedBy?: string;
     updatedAtUtc: string;
   }> {
-    const res = await fetch(`${API_BASE}/blacklist/config`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/blacklist/config`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch blacklist schedule: ${res.statusText}`);
     const data = await res.json();
     return {
@@ -1782,7 +1814,7 @@ export const EdithApi = {
     dailyRunTimeUtc?: string;
     retentionDays?: number;
   }): Promise<any> {
-    const res = await fetch(`${API_BASE}/blacklist/config`, {
+    const res = await apiFetch(`${API_BASE}/blacklist/config`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({
@@ -1809,7 +1841,7 @@ export const EdithApi = {
   },
 
   async fetchBlacklistLiveStatus(): Promise<any> {
-    const res = await fetch(`${API_BASE}/blacklist/status`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/blacklist/status`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch live blacklist sync status: ${res.statusText}`);
     const data = await res.json();
     const run = data.activeOrLatestRun;
@@ -1832,7 +1864,7 @@ export const EdithApi = {
   },
 
   async triggerBlacklistSync(sources?: string[], waitForCompletion: boolean = false): Promise<any> {
-    const res = await fetch(`${API_BASE}/blacklist/sync`, {
+    const res = await apiFetch(`${API_BASE}/blacklist/sync`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ sources, waitForCompletion })
@@ -1849,7 +1881,7 @@ export const EdithApi = {
   },
 
   async fetchBlacklistRuns(limit: number = 30): Promise<any[]> {
-    const res = await fetch(`${API_BASE}/blacklist/runs?limit=${limit}`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/blacklist/runs?limit=${limit}`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch blacklist runs: ${res.statusText}`);
     const list = await res.json();
     return (Array.isArray(list) ? list : []).map((r: any) => ({
@@ -1874,7 +1906,7 @@ export const EdithApi = {
   },
 
   async fetchBlacklistRunById(runId: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch blacklist run ${runId}: ${res.statusText}`);
     const r = await res.json();
     return {
@@ -1935,7 +1967,7 @@ export const EdithApi = {
     if (params?.sortDir) qs.set('sortDir', params.sortDir.toLowerCase());
     if (params?.page) qs.set('page', String(params.page));
     if (params?.pageSize) qs.set('pageSize', String(params.pageSize));
-    const res = await fetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}/items?${qs.toString()}`, {
+    const res = await apiFetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}/items?${qs.toString()}`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error(`Failed to fetch blacklist run items: ${res.statusText}`);
@@ -1962,7 +1994,7 @@ export const EdithApi = {
   },
 
   async fetchBlacklistRunErrors(runId: string): Promise<any[]> {
-    const res = await fetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}/errors`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/blacklist/runs/${encodeURIComponent(runId)}/errors`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch blacklist run errors: ${res.statusText}`);
     const list = await res.json();
     return (Array.isArray(list) ? list : []).map((err: any) => ({
@@ -1988,7 +2020,7 @@ export const EdithApi = {
       lastStatus: string;
     }>;
   }> {
-    const res = await fetch(`${API_BASE}/blacklist/stats/distribution`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/blacklist/stats/distribution`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch blacklist distribution stats: ${res.statusText}`);
     const data = await res.json();
     return {

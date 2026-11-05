@@ -210,6 +210,25 @@ export const App: React.FC = () => {
   const [session, setSessionState] = useState<UserSession>(getSession());
   const [authed, setAuthed] = useState<boolean>(isAuthenticated());
 
+  useEffect(() => {
+    const handleExpired = () => {
+      setSessionState(getSession());
+      setAuthed(false);
+    };
+    const handleFocusCheck = () => {
+      if (!isAuthenticated() && authed) {
+        setSessionState(getSession());
+        setAuthed(false);
+      }
+    };
+    window.addEventListener('edith:session-expired', handleExpired);
+    window.addEventListener('focus', handleFocusCheck);
+    return () => {
+      window.removeEventListener('edith:session-expired', handleExpired);
+      window.removeEventListener('focus', handleFocusCheck);
+    };
+  }, [authed]);
+
   const handleLoginSuccess = () => {
     const active = getSession();
     setSessionState(active);

@@ -33,6 +33,7 @@ import {
 import { EdithApi } from '../services/api';
 import { EdithLoader } from './EdithLogo';
 import { GeneralErrorBanner } from './ErrorEngineUi';
+import { reportError } from '../services/errorEngine';
 
 export type SystemMastersTab = 
   | 'BLACKLIST_MANAGEMENT'
@@ -189,6 +190,7 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
   });
   const [blRuns, setBlRuns] = useState<any[]>([]);
   const [blLoading, setBlLoading] = useState(false);
+  const [blLoadError, setBlLoadError] = useState<string | null>(null);
   const [blTriggering, setBlTriggering] = useState(false);
   const [blScheduleSaving, setBlScheduleSaving] = useState(false);
   const [blInspectErrorsRun, setBlInspectErrorsRun] = useState<{ runId: string; errors: any[] } | null>(null);
@@ -196,11 +198,12 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
   const loadBlacklistManagement = async (silent: boolean = false) => {
     try {
       if (!silent) setBlLoading(true);
+      setBlLoadError(null);
       const [sourcesRes, schedRes, statusRes, runsRes] = await Promise.all([
-        EdithApi.fetchBlacklistSources().catch(() => []),
-        EdithApi.fetchBlacklistScheduleConfig().catch(() => null),
-        EdithApi.fetchBlacklistLiveStatus().catch(() => null),
-        EdithApi.fetchBlacklistRuns(20).catch(() => [])
+        EdithApi.fetchBlacklistSources(),
+        EdithApi.fetchBlacklistScheduleConfig(),
+        EdithApi.fetchBlacklistLiveStatus(),
+        EdithApi.fetchBlacklistRuns(20)
       ]);
       if (Array.isArray(sourcesRes)) {
         setBlSources(sourcesRes);
@@ -223,8 +226,16 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
       if (Array.isArray(runsRes)) {
         setBlRuns(runsRes);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load blacklist management data:', err);
+      const msg = err.message || 'Failed to load blacklist management data';
+      setBlLoadError(msg);
+      if (!silent) {
+        reportError(err, {
+          category: err.status === 401 ? 'AUTH' : 'SERVER',
+          onRetry: () => loadBlacklistManagement()
+        });
+      }
     } finally {
       if (!silent) setBlLoading(false);
     }
@@ -282,7 +293,12 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
       setSaveSuccess(`${sourceType} source configuration saved successfully.`);
       setTimeout(() => setSaveSuccess(null), 3500);
     } catch (e: any) {
-      setSaveError(e.message || `Unable to update ${sourceType} configuration.`);
+      const msg = e.message || `Unable to update ${sourceType} configuration.`;
+      setSaveError(msg);
+      reportError(e, {
+        category: 'SERVER',
+        onRetry: () => handleSaveBlSource(source, overrideEnabled)
+      });
     } finally {
       setBlSavingSource(null);
     }
@@ -296,7 +312,12 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
       const res = await EdithApi.testBlacklistSource(sourceType, url);
       setBlTestModal(res);
     } catch (e: any) {
-      setSaveError(e.message || `Connectivity test failed for ${sourceType}.`);
+      const msg = e.message || `Connectivity test failed for ${sourceType}.`;
+      setSaveError(msg);
+      reportError(e, {
+        category: 'SERVER',
+        onRetry: () => handleTestBlSource(sourceType)
+      });
     } finally {
       setBlTestingSource(null);
     }
@@ -319,7 +340,12 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
       );
       setTimeout(() => setSaveSuccess(null), 4000);
     } catch (e: any) {
-      setSaveError(e.message || 'Unable to save schedule settings.');
+      const msg = e.message || 'Unable to save schedule settings.';
+      setSaveError(msg);
+      reportError(e, {
+        category: 'SERVER',
+        onRetry: () => handleSaveBlSchedule()
+      });
     } finally {
       setBlScheduleSaving(false);
     }
@@ -331,15 +357,23 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
       setSaveError(null);
       const res = await EdithApi.triggerBlacklistSync(selectedSources, false);
       if (res.httpStatus === 409) {
-        setSaveError(res.userMessage || 'A blacklist update is already in progress. Please wait for it to finish.');
+        const conflictMsg = res.userMessage || 'A blacklist update is already in progress. Please wait for it to finish.';
+        setSaveError(conflictMsg);
+        reportError(conflictMsg, { category: 'CONFLICT' });
         if (res.status) setBlLiveStatus(res.status);
       } else {
         setSaveSuccess(res.message || 'Manual daily blacklist update started across enabled sources.');
         const st = await EdithApi.fetchBlacklistLiveStatus().catch(() => null);
         if (st) setBlLiveStatus(st);
+        setTimeout(() => setSaveSuccess(null), 4000);
       }
     } catch (e: any) {
-      setSaveError(e.message || 'Failed to start manual blacklist update.');
+      const msg = e.message || 'Failed to start manual blacklist update.';
+      setSaveError(msg);
+      reportError(e, {
+        category: 'SERVER',
+        onRetry: () => handleTriggerManualBlSync(selectedSources)
+      });
     } finally {
       setBlTriggering(false);
     }
@@ -350,7 +384,9 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
       const errs = await EdithApi.fetchBlacklistRunErrors(runId);
       setBlInspectErrorsRun({ runId, errors: errs });
     } catch (e: any) {
-      setSaveError(e.message || 'Failed to load run errors.');
+      const msg = e.message || 'Failed to load run errors.';
+      setSaveError(msg);
+      reportError(e, { category: 'SERVER' });
     }
   };
 
@@ -891,7 +927,7 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
                   <span>Daily Blacklist Data Sources, Scheduler &amp; Execution Control</span>
                 </div>
                 <div className="text-[11px] text-muted">
-                  Manage official sanctions XML feeds (OFAC, UN, EU, UK), test connectivity, run manual updates, and control the daily 02:00 UTC schedule.
+                  Manage official sanctions XML feeds (OFAC, UN, EU, UK, Refinitiv World-Check), test connectivity, run manual updates, and control the daily 02:00 UTC schedule.
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -914,17 +950,58 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
               </div>
             </div>
 
+            {/* In-View Notifications for Blacklist Management */}
+            {saveSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-lg text-xs font-mono flex items-center justify-between gap-2 animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{saveSuccess}</span>
+                </div>
+                <button onClick={() => setSaveSuccess(null)} className="text-emerald-700 hover:text-emerald-900">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {saveError && (
+              <div className="p-3 bg-rose-50 border border-rose-300 text-rose-900 rounded-lg text-xs font-mono flex items-center justify-between gap-2 animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{saveError}</span>
+                </div>
+                <button onClick={() => setSaveError(null)} className="text-rose-700 hover:text-rose-900">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* SECTION A: BLACKLIST DATA SOURCES */}
             <div className="space-y-3">
               <div className="flex items-center justify-between border-b border-border pb-2">
                 <h2 className="text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2">
                   <Globe className="w-4 h-4 text-primary" />
-                  <span>A. Blacklist Data Sources (OFAC, UN, EU, UK)</span>
+                  <span>A. Blacklist Data Sources (OFAC, UN, EU, UK, Refinitiv World-Check)</span>
                 </h2>
                 <span className="text-[10px] text-muted">
-                  {blSources.filter(s => s.isEnabled).length} of {blSources.length || 4} Sources Enabled
+                  {blSources.filter(s => s.isEnabled).length} of {blSources.length || 5} Sources Enabled
                 </span>
               </div>
+
+              {blSources.length === 0 && !blLoading && (
+                <div className="p-6 rounded-xl bg-surface-muted border border-border text-center space-y-3">
+                  <AlertTriangle className="w-6 h-6 text-amber-500 mx-auto" />
+                  <div className="text-xs font-mono font-bold text-ink">
+                    {blLoadError ? `Unable to load blacklist sources: ${blLoadError}` : 'No blacklist sources loaded.'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => loadBlacklistManagement()}
+                    className="px-3 py-1.5 rounded-lg bg-primary text-white font-mono text-xs font-bold hover:bg-primary-hover transition cursor-pointer"
+                  >
+                    Retry Loading Sources
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {blSources.map(src => {
@@ -1092,7 +1169,7 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-[11px] text-muted leading-relaxed">
-                  Automated updates run inside the application worker in <strong>UTC</strong>. Keep the automated schedule disabled until the first manual update across OFAC, UN, EU, and UK has been completed and verified.
+                  Automated updates run inside the application worker in <strong>UTC</strong>. Keep the automated schedule disabled until the first manual update across OFAC, UN, EU, UK, and World-Check has been completed and verified.
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
@@ -1162,6 +1239,18 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
                     <span>{blScheduleSaving ? 'Saving Schedule...' : 'Save Execution Settings'}</span>
                   </button>
                 </div>
+
+                {saveError && (
+                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-mono flex items-center justify-between gap-2 animate-in fade-in">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span className="truncate">{saveError}</span>
+                    </div>
+                    <button type="button" onClick={() => setSaveError(null)} className="text-rose-600 hover:text-rose-800 shrink-0">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Right 6 cols: Manual Execution & Live Progress Monitor */}
@@ -1242,6 +1331,18 @@ export const SystemMastersView: React.FC<SystemMastersViewProps> = ({ initialTab
                     </span>
                   </button>
                 </div>
+
+                {saveError && (
+                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-mono flex items-center justify-between gap-2 animate-in fade-in">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span className="truncate">{saveError}</span>
+                    </div>
+                    <button type="button" onClick={() => setSaveError(null)} className="text-rose-600 hover:text-rose-800 shrink-0">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
