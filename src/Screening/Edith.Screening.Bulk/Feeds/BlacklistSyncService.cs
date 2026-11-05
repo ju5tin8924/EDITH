@@ -839,6 +839,7 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
         var itemsToLog = new List<BlacklistSyncItem>(incomingByExternalId.Count + 64);
         var seenExternalIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var now = DateTimeOffset.UtcNow;
+        var skippedLoggedCount = 0;
 
         foreach (var (extId, incoming) in incomingByExternalId)
         {
@@ -877,20 +878,25 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
                 if (diff.IsExactMatch)
                 {
                     stat.SkippedCount++;
-                    itemsToLog.Add(new BlacklistSyncItem
+                    // shortcut: Retain first 100 SKIPPED entries per run in audit table to avoid inserting millions of unchanged rows into Postgres WAL, upgrade to partitioned archival if full skipped log is required
+                    if (skippedLoggedCount < 100)
                     {
-                        RunId = run.Id,
-                        SourceType = source.SourceType,
-                        SourceRefId = source.SourceRefId,
-                        EntityExternalId = extId,
-                        FullName = incoming.FullName,
-                        Action = "SKIPPED",
-                        Reason = diff.Reason,
-                        ComparisonResult = diff.ComparisonResult,
-                        PreviousDetailsJson = null,
-                        CurrentDetailsJson = null,
-                        ProcessedAt = now
-                    });
+                        skippedLoggedCount++;
+                        itemsToLog.Add(new BlacklistSyncItem
+                        {
+                            RunId = run.Id,
+                            SourceType = source.SourceType,
+                            SourceRefId = source.SourceRefId,
+                            EntityExternalId = extId,
+                            FullName = incoming.FullName,
+                            Action = "SKIPPED",
+                            Reason = diff.Reason,
+                            ComparisonResult = diff.ComparisonResult,
+                            PreviousDetailsJson = null,
+                            CurrentDetailsJson = null,
+                            ProcessedAt = now
+                        });
+                    }
                 }
                 else
                 {
@@ -1334,14 +1340,17 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
             await batch.ExecuteNonQueryAsync(ct);
         }
 
-        // 4. Touch last_seen_at for all seen active records of this source
-        if (seenExternalIds.Count > 0)
+        // 4. Touch last_seen_at for active records of this source (skip massive bulk feeds like WORLD_CHECK to avoid GIN index thrashing and WAL exhaustion)
+        // shortcut: Only touch last_seen_at for non-WORLD_CHECK sources older than 1 day, upgrade to background chunking if per-run last_seen_at is required for 2.5M records
+        if (seenExternalIds.Count > 0 && !string.Equals(source.SourceType, "WORLD_CHECK", StringComparison.OrdinalIgnoreCase))
         {
             await using var seenCmd = new NpgsqlCommand("""
                 UPDATE screening.watchlist_entities
                 SET last_seen_at = CURRENT_TIMESTAMP,
                     last_run_id = @run_id
-                WHERE source_type = @src AND is_active = true;
+                WHERE source_type = @src 
+                  AND is_active = true
+                  AND (last_seen_at IS NULL OR last_seen_at < CURRENT_TIMESTAMP - INTERVAL '1 day');
                 """, conn);
             seenCmd.Parameters.AddWithValue("run_id", runId);
             seenCmd.Parameters.AddWithValue("src", source.SourceType);

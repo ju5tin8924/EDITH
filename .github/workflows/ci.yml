@@ -170,10 +170,13 @@ jobs:
           install -d -m 0700 ~/.ssh
           printf '%s\n' "${OCI_SSH_KEY}" > ~/.ssh/id_oci
           chmod 0600 ~/.ssh/id_oci
+          touch ~/.ssh/known_hosts
           if [ -n "${OCI_KNOWN_HOSTS}" ]; then
             printf '%s\n' "${OCI_KNOWN_HOSTS}" > ~/.ssh/known_hosts
           else
-            ssh-keyscan -p "${SSH_PORT}" -H "${SERVER_IP}" >> ~/.ssh/known_hosts
+            for attempt in 1 2 3 4 5; do
+              ssh-keyscan -T 15 -p "${SSH_PORT}" -H "${SERVER_IP}" >> ~/.ssh/known_hosts && break || sleep 5
+            done
           fi
           chmod 0600 ~/.ssh/known_hosts
 
@@ -183,10 +186,15 @@ jobs:
           SSH_USER: ${{ secrets.OCI_SSH_USER || 'ubuntu' }}
           SSH_PORT: ${{ secrets.OCI_SSH_PORT || '22' }}
         run: |
-          ssh -i ~/.ssh/id_oci -p "${SSH_PORT}" "${SSH_USER}@${SERVER_IP}" "mkdir -p /tmp/edith-staging"
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/id_oci -p ${SSH_PORT} -o StrictHostKeyChecking=yes" \
-            staging/ "${SSH_USER}@${SERVER_IP}:/tmp/edith-staging/"
+          SSH_CMD="ssh -i ~/.ssh/id_oci -p ${SSH_PORT} -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=10"
+          for attempt in 1 2 3; do
+            ${SSH_CMD} "${SSH_USER}@${SERVER_IP}" "mkdir -p /tmp/edith-staging" && break || { echo "SSH connection attempt $attempt failed, retrying in 5s..."; sleep 5; }
+          done
+          for attempt in 1 2 3; do
+            rsync -avz --delete \
+              -e "${SSH_CMD}" \
+              staging/ "${SSH_USER}@${SERVER_IP}:/tmp/edith-staging/" && break || { echo "Rsync transfer attempt $attempt failed, retrying in 5s..."; sleep 5; }
+          done
 
       - name: Execute Server-Side Deployment & Health Checks
         env:
@@ -210,7 +218,7 @@ jobs:
                        OPENSEARCH_SKIP_SSL_VALIDATION EDITH_SMTP_USER EDITH_SMTP_PASSWORD; do
               printf 'export %s=%q\n' "${var}" "${!var}"
             done
-          } | ssh -i ~/.ssh/id_oci -p "${SSH_PORT}" "${SSH_USER}@${SERVER_IP}" \
+          } | ssh -i ~/.ssh/id_oci -p "${SSH_PORT}" -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=10 "${SSH_USER}@${SERVER_IP}" \
             "umask 077 && cat > /tmp/edith-staging/.deploy.env && bash /tmp/edith-staging/deploy/deploy.sh"
 
       - name: Cleanup Local SSH Key
