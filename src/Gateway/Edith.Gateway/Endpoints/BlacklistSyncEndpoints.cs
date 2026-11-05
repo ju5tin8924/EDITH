@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Edith.Gateway.Services;
 using Edith.Screening.Bulk.Feeds;
+using Edith.Screening.Bulk.Repository;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -273,6 +274,23 @@ public static class BlacklistSyncEndpoints
             DateOnly? end = DateOnly.TryParse(endDate, out var e) ? e : null;
             var trend = await syncService.GetDailyTrendStatsAsync(start, end, source, ct);
             return Results.Ok(trend);
+        }).RequireAuthorization("ComplianceDesk");
+
+        // 15. Trigger OpenSearch Streaming Ingestion / Re-index (2.6M records)
+        group.MapPost("/reindex-opensearch", async (
+            [FromServices] IWatchlistOpenSearchSyncService syncService,
+            CancellationToken ct) =>
+        {
+            var progress = await syncService.StartSyncAsync(forceReindex: true, ct);
+            return Results.Ok(progress);
+        }).RequireAuthorization("AdminOnly");
+
+        // 16. Get OpenSearch Re-index Progress Status
+        group.MapGet("/reindex-opensearch/status", (
+            [FromServices] IWatchlistOpenSearchSyncService syncService) =>
+        {
+            var progress = syncService.GetProgress();
+            return Results.Ok(progress);
         }).RequireAuthorization("ComplianceDesk");
 
         return app;

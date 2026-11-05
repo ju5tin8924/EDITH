@@ -1380,6 +1380,33 @@ public sealed class BlacklistSyncService : IBlacklistSyncService, IDisposable
             await batch.ExecuteNonQueryAsync(ct);
         }
 
+        // 5b. Propagate deactivated/removed entities to OpenSearch search engine
+        if (_searchEngine is not null && removedEntities.Count > 0)
+        {
+            try
+            {
+                var removedWatchlist = removedEntities.Select(r => new WatchlistEntity
+                {
+                    Id = r.Id,
+                    EntityExternalId = r.ExternalId,
+                    EntityType = "INDIVIDUAL",
+                    FullName = r.FullName,
+                    SourceList = source.SourceType,
+                    Category = "SANCTION",
+                    IsActive = false,
+                    IsBlocked = false
+                });
+                foreach (var chunk in removedWatchlist.Chunk(500))
+                {
+                    await _searchEngine.IndexBatchAsync(chunk, ct);
+                }
+            }
+            catch
+            {
+                // Non-fatal if search engine is temporarily unreachable
+            }
+        }
+
         // 6. Batch insert all audit items (NEW, UPDATED, SKIPPED, REMOVED) into screening.blacklist_sync_items
         foreach (var chunk in itemsToLog.Chunk(500))
         {

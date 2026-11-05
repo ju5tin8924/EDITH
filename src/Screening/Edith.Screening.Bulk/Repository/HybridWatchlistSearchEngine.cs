@@ -39,14 +39,12 @@ public sealed class HybridWatchlistSearchEngine : IWatchlistSearchEngine
         try
         {
             var osCandidates = await _openSearch.SearchCandidatesAsync(query, maxResults, ct);
-            if (osCandidates.Count > 0)
-            {
-                return osCandidates;
-            }
+            // OpenSearch is online and answered: return candidates immediately (0 candidates for clean transactions)
+            return osCandidates;
         }
         catch
         {
-            // OpenSearch unavailable or index not created; fall through to PostgreSQL
+            // OpenSearch unavailable or index not created; fall through to PostgreSQL circuit-breaker
         }
 
         // 2. Query live PostgreSQL watchlist repository (holds 2,570,410 World-Check + OFAC/UN/EU/UK records)
@@ -84,7 +82,11 @@ public sealed class HybridWatchlistSearchEngine : IWatchlistSearchEngine
 
     public async Task IndexBatchAsync(IEnumerable<WatchlistEntity> entities, CancellationToken ct = default)
     {
-        try { await _openSearch.IndexBatchAsync(entities, ct); } catch { }
-        await _inMemory.IndexBatchAsync(entities, ct);
+        var list = entities as IReadOnlyList<WatchlistEntity> ?? entities.ToList();
+        try { await _openSearch.IndexBatchAsync(list, ct); } catch { }
+        if (list.Count <= 1000)
+        {
+            await _inMemory.IndexBatchAsync(list, ct);
+        }
     }
 }

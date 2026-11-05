@@ -47,6 +47,7 @@ public sealed class InMemoryWhitelistService : IWhitelistService
 public sealed class PostgreSqlWhitelistService : IWhitelistService
 {
     private readonly string _connectionString;
+    private readonly ConcurrentDictionary<Guid, (DateTimeOffset CachedAt, IReadOnlyList<WhitelistEntry> Entries)> _cache = new();
 
     public PostgreSqlWhitelistService(string connectionString)
     {
@@ -55,6 +56,12 @@ public sealed class PostgreSqlWhitelistService : IWhitelistService
 
     public async Task<IReadOnlyList<WhitelistEntry>> GetActiveWhitelistsAsync(Guid tenantId, bool includeInactive = false, CancellationToken ct = default)
     {
+        if (!includeInactive && _cache.TryGetValue(tenantId, out var cached) && DateTimeOffset.UtcNow - cached.CachedAt < TimeSpan.FromSeconds(60))
+        {
+            var now = DateTimeOffset.UtcNow;
+            return cached.Entries.Where(w => w.ExpiresAt == null || w.ExpiresAt > now).ToList();
+        }
+
         await using var conn = new Npgsql.NpgsqlConnection(_connectionString);
         await conn.OpenAsync(ct);
 
@@ -83,6 +90,11 @@ public sealed class PostgreSqlWhitelistService : IWhitelistService
                 ExpiresAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                 IsActive = reader.GetBoolean(7)
             });
+        }
+
+        if (!includeInactive)
+        {
+            _cache[tenantId] = (DateTimeOffset.UtcNow, list);
         }
 
         return list;
@@ -115,6 +127,7 @@ public sealed class PostgreSqlWhitelistService : IWhitelistService
         cmd.Parameters.AddWithValue("is_active", entry.IsActive);
 
         await cmd.ExecuteNonQueryAsync(ct);
+        _cache.TryRemove(entry.TenantId, out _);
         return entry;
     }
 
@@ -127,6 +140,11 @@ public sealed class PostgreSqlWhitelistService : IWhitelistService
             "UPDATE screening.whitelists SET is_active = false WHERE id = @id AND tenant_id = @tenant_id;", conn);
         cmd.Parameters.AddWithValue("id", whitelistId);
         cmd.Parameters.AddWithValue("tenant_id", tenantId);
-        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+        var success = await cmd.ExecuteNonQueryAsync(ct) > 0;
+        if (success)
+        {
+            _cache.TryRemove(tenantId, out _);
+        }
+        return success;
     }
 }

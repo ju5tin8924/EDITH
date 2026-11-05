@@ -136,15 +136,27 @@ builder.Services.AddHttpClient("OpenSearch", client =>
     return handler;
 });
 
-builder.Services.AddSingleton<IWatchlistSearchEngine>(sp =>
+builder.Services.AddSingleton<OpenSearchWatchlistSearchEngine>(sp =>
 {
     var clientFactory = sp.GetRequiredService<IHttpClientFactory>();
     var httpClient = clientFactory.CreateClient("OpenSearch");
     var normalizer = sp.GetRequiredService<ITextNormalizer>();
     var memSearch = sp.GetRequiredService<InMemoryWatchlistSearchEngine>();
-    var openSearch = new OpenSearchWatchlistSearchEngine(httpClient, normalizer, osOpts, memSearch);
+    return new OpenSearchWatchlistSearchEngine(httpClient, normalizer, osOpts, memSearch);
+});
+
+builder.Services.AddSingleton<IWatchlistSearchEngine>(sp =>
+{
+    var openSearch = sp.GetRequiredService<OpenSearchWatchlistSearchEngine>();
+    var memSearch = sp.GetRequiredService<InMemoryWatchlistSearchEngine>();
     var jobRepo = sp.GetService<IBulkJobRepository>();
     return new HybridWatchlistSearchEngine(openSearch, jobRepo, memSearch);
+});
+
+builder.Services.AddSingleton<IWatchlistOpenSearchSyncService>(sp =>
+{
+    var openSearch = sp.GetRequiredService<OpenSearchWatchlistSearchEngine>();
+    return new WatchlistOpenSearchSyncService(pgConn, openSearch);
 });
 
 builder.Services.AddScoped<IScreeningEngine, ScreeningEngine>();
