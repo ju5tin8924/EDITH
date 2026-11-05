@@ -18,6 +18,9 @@ interface UserProfileDrawerProps {
   onShiftStatusToggle: () => void;
   onLogout?: () => void;
   username?: string;
+  timeoutSeconds?: number;
+  onUpdateTimeout?: (sec: number) => void;
+  onTestTimeout?: () => void;
 }
 
 export const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({
@@ -27,7 +30,10 @@ export const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({
   shiftStatus,
   onShiftStatusToggle,
   onLogout,
-  username = 'admin@edith.aml.cloud'
+  username = 'admin@edith.aml.cloud',
+  timeoutSeconds = 120,
+  onUpdateTimeout,
+  onTestTimeout
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -115,6 +121,55 @@ export const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({
           >
             {shiftStatus === 'ON_DUTY' ? '● ON-DUTY' : '○ OFF-DUTY'}
           </button>
+        </div>
+
+        {/* Inactivity Auto-Logout Timeout Setting */}
+        <div className="p-3 rounded-xl border border-border bg-white space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-ink flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-primary" /> Auto-Logout
+            </span>
+            <span className="text-[10px] text-muted font-mono font-bold">
+              {timeoutSeconds < 60 ? `${timeoutSeconds}s` : `${Math.floor(timeoutSeconds / 60)}m`} idle
+            </span>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1 pt-0.5">
+            {[
+              { label: '1m', sec: 60, sub: 'Test' },
+              { label: '2m', sec: 120, sub: 'Review' },
+              { label: '5m', sec: 300, sub: 'Standard' },
+              { label: '15m', sec: 900, sub: 'CBUAE' },
+            ].map(opt => (
+              <button
+                key={opt.sec}
+                type="button"
+                onClick={() => onUpdateTimeout && onUpdateTimeout(opt.sec)}
+                className={`py-1 px-1 rounded-lg text-[10px] font-bold border transition-all text-center cursor-pointer ${
+                  timeoutSeconds === opt.sec
+                    ? 'bg-primary text-white border-primary shadow-xs'
+                    : 'bg-slate-50 border-border text-muted hover:text-ink hover:bg-slate-100'
+                }`}
+              >
+                <div>{opt.label}</div>
+                <div className={`text-[8px] font-normal ${timeoutSeconds === opt.sec ? 'text-white/80' : 'text-muted'}`}>{opt.sub}</div>
+              </button>
+            ))}
+          </div>
+
+          {onTestTimeout && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onTestTimeout();
+              }}
+              className="w-full py-1.5 px-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 border border-amber-500/30 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Clock className="w-3 h-3" />
+              <span>Simulate Auto-Logout Warning</span>
+            </button>
+          )}
         </div>
 
         {/* Sign Out */}

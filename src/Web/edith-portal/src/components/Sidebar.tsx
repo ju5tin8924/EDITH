@@ -38,6 +38,9 @@ interface SidebarProps {
   onShiftStatusToggle: () => void;
   onLogout?: () => void;
   username?: string;
+  timeoutSeconds?: number;
+  onUpdateTimeout?: (sec: number) => void;
+  onTestTimeout?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -47,7 +50,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   shiftStatus,
   onShiftStatusToggle,
   onLogout,
-  username = 'admin@edith.aml.cloud'
+  username = 'admin@edith.aml.cloud',
+  timeoutSeconds,
+  onUpdateTimeout,
+  onTestTimeout
 }) => {
   const location = useLocation();
   const [isProfileDrawerOpen, setIsProfileDrawerOpen] = useState(false);
@@ -435,6 +441,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onShiftStatusToggle={onShiftStatusToggle}
           onLogout={onLogout}
           username={username}
+          timeoutSeconds={timeoutSeconds}
+          onUpdateTimeout={onUpdateTimeout}
+          onTestTimeout={onTestTimeout}
         />
       </div>
     </aside>

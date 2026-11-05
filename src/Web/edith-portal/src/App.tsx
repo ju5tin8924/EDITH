@@ -40,9 +40,19 @@ interface AppContentProps {
   onLogout: () => void;
   session: UserSession;
   onRoleChange: (role: UserRole) => void;
+  timeoutSeconds: number;
+  onUpdateTimeout: (sec: number) => void;
+  onTestTimeout: () => void;
 }
 
-export const AppContent: React.FC<AppContentProps> = ({ onLogout, session, onRoleChange }) => {
+export const AppContent: React.FC<AppContentProps> = ({ 
+  onLogout, 
+  session, 
+  onRoleChange,
+  timeoutSeconds,
+  onUpdateTimeout,
+  onTestTimeout
+}) => {
   const [shiftStatus, setShiftStatus] = useState<'ON_DUTY' | 'OFF_DUTY'>('ON_DUTY');
   const [menuItems, setMenuItems] = useState<MenuItemEntitlement[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -92,6 +102,9 @@ export const AppContent: React.FC<AppContentProps> = ({ onLogout, session, onRol
           onShiftStatusToggle={handleShiftToggle}
           onLogout={onLogout}
           username={session.username}
+          timeoutSeconds={timeoutSeconds}
+          onUpdateTimeout={onUpdateTimeout}
+          onTestTimeout={onTestTimeout}
         />
 
         {/* Routed Multi-Page Content Area */}
@@ -215,10 +228,15 @@ export const App: React.FC = () => {
     setSessionState(updated);
   };
 
-  // Inactivity tracking: 15-min idle timeout with 2-min warning
-  const { isWarning, remainingSeconds, extendSession } = useIdleTimer({
-    timeoutMs: 15 * 60 * 1000,
-    warningMs: 2 * 60 * 1000,
+  // Inactivity tracking: configurable timeout with 30s warning
+  const { 
+    isWarning, 
+    remainingSeconds, 
+    timeoutSeconds,
+    extendSession, 
+    updateTimeoutSeconds, 
+    triggerTestWarning 
+  } = useIdleTimer({
     onTimeout: async () => {
       await EdithApi.logout();
       setSessionState(getSession());
@@ -267,6 +285,9 @@ export const App: React.FC = () => {
                   onLogout={handleLogout} 
                   session={session} 
                   onRoleChange={handleRoleChange} 
+                  timeoutSeconds={timeoutSeconds}
+                  onUpdateTimeout={updateTimeoutSeconds}
+                  onTestTimeout={triggerTestWarning}
                 />
               ) : (
                 <Navigate to="/login" replace />

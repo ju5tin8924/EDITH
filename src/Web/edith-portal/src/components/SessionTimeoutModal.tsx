@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { ShieldAlert, Clock, LogOut, CheckCircle2 } from 'lucide-react';
 
 interface SessionTimeoutModalProps {
@@ -20,16 +21,16 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
   const seconds = remainingSeconds % 60;
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200 pointer-events-auto">
       <div 
-        className="w-full max-w-md bg-surface border border-amber-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
+        className="w-full max-w-md bg-surface border border-amber-500/40 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="session-timeout-title"
       >
         {/* Amber glowing accent line */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 animate-pulse" />
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 animate-pulse" />
 
         <div className="flex items-start gap-4">
           <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-500 shrink-0">
@@ -38,7 +39,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
           <div>
             <h3 id="session-timeout-title" className="text-base font-bold text-ink tracking-tight flex items-center gap-2">
               Inactivity Security Notice
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/15 text-amber-600 border border-amber-500/30">
                 COMPLIANCE
               </span>
             </h3>
@@ -80,6 +81,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
