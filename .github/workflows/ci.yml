@@ -212,14 +212,25 @@ jobs:
           EDITH_SMTP_USER: ${{ vars.EDITH_SMTP_USER || 'notifications@edith.aml.cloud' }}
           EDITH_SMTP_PASSWORD: ${{ secrets.EDITH_SMTP_PASSWORD }}
         run: |
-          {
+          ENV_PAYLOAD="$(
             for var in EDITH_PG_CONNECTION JWT_SECRET JWT_ISSUER JWT_AUDIENCE \
                        OPENSEARCH_URL OPENSEARCH_USER OPENSEARCH_PASSWORD \
                        OPENSEARCH_SKIP_SSL_VALIDATION EDITH_SMTP_USER EDITH_SMTP_PASSWORD; do
               printf 'export %s=%q\n' "${var}" "${!var}"
             done
-          } | ssh -i ~/.ssh/id_oci -p "${SSH_PORT}" -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=10 "${SSH_USER}@${SERVER_IP}" \
-            "umask 077 && cat > /tmp/edith-staging/.deploy.env && bash /tmp/edith-staging/deploy/deploy.sh"
+          )"
+          SSH_CMD="ssh -i ~/.ssh/id_oci -p ${SSH_PORT} -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=10"
+          for attempt in 1 2 3 4 5; do
+            printf '%s\n' "${ENV_PAYLOAD}" | ${SSH_CMD} "${SSH_USER}@${SERVER_IP}" \
+              "umask 077 && cat > /tmp/edith-staging/.deploy.env && bash /tmp/edith-staging/deploy/deploy.sh" && break || {
+                if [ "${attempt}" -eq 5 ]; then
+                  echo "::error::Deployment failed after 5 attempts."
+                  exit 1
+                fi
+                echo "Deployment attempt ${attempt} failed, retrying in 5s..."
+                sleep 5
+              }
+          done
 
       - name: Cleanup Local SSH Key
         if: always()
