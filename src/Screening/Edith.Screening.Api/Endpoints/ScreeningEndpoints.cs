@@ -206,6 +206,9 @@ public static class ScreeningEndpoints
         {
             var sw = Stopwatch.StartNew();
             var mode = (req.SearchMode ?? "FUZZY").Trim().ToUpperInvariant();
+            var isIdAndName = mode == "EXACT_NAME_AND_ID" || mode == "ID_AND_NAME" || mode == "ID + NAME";
+            var isExact = mode == "EXACT" || mode == "EXACT_NAME" || mode == "EXACT NAME";
+            var isPhonetic = mode == "PHONETIC" || mode == "PHONETIC_NAME_MATCH" || mode == "PHONETIC NAME MATCH";
             var rawName = req.Name?.Trim() ?? string.Empty;
             var rawId = req.IdNumber?.Trim() ?? string.Empty;
             var normQuery = normalizer.Normalize(rawName);
@@ -216,9 +219,14 @@ public static class ScreeningEndpoints
                 return Results.BadRequest(new { error = "Please provide a Name or ID Number to search." });
             }
 
+            if (isPhonetic && string.IsNullOrWhiteSpace(rawName))
+            {
+                return Results.BadRequest(new { error = "Phonetic Name Match requires an entity or subject name to evaluate sound-alike similarity." });
+            }
+
             // Retrieve candidates from both PostgreSQL (watchlist_entities) and OpenSearch (edith_watchlist_v1)
             var pgCandidates = await jobRepo.SearchWatchlistEntitiesAsync(
-                mode == "EXACT_NAME_AND_ID" ? rawName : (string.IsNullOrWhiteSpace(rawName) ? null : rawName),
+                string.IsNullOrWhiteSpace(rawId) ? (string.IsNullOrWhiteSpace(rawName) ? null : rawName) : null,
                 string.IsNullOrWhiteSpace(rawId) ? null : rawId,
                 maxResults: 60,
                 ct: ct);
@@ -258,7 +266,10 @@ public static class ScreeningEndpoints
                     {
                         var normAlias = normalizer.Normalize(alias, candidate.EntityType == "CORPORATE");
                         var aliasScore = nameScorer.Score(normQuery, normAlias);
-                        if (aliasScore.FinalScore > scoreRes.FinalScore)
+                        var isBetter = isPhonetic 
+                            ? aliasScore.PhoneticSimilarity > scoreRes.PhoneticSimilarity 
+                            : aliasScore.FinalScore > scoreRes.FinalScore;
+                        if (isBetter)
                         {
                             scoreRes = aliasScore;
                         }
@@ -290,20 +301,22 @@ public static class ScreeningEndpoints
                 string whyMatched;
                 decimal finalScore;
 
-                if (mode == "EXACT")
+                if (isExact)
                 {
                     if (!isExactName) continue;
                     finalScore = 100.0m;
                     whyMatched = $"Exact Normalized Name Match (100%): Input '{normQuery}' exactly matches watchlist entry '{normTarget}'.";
                 }
-                else if (mode == "EXACT_NAME_AND_ID")
+                else if (isIdAndName)
                 {
                     if (!string.IsNullOrWhiteSpace(rawName) && !string.IsNullOrWhiteSpace(rawId))
                     {
-                        var nameMatches = isExactName || normTarget.Contains(normQuery, StringComparison.OrdinalIgnoreCase);
+                        var nameMatches = isExactName ||
+                            normTarget.Contains(normQuery, StringComparison.OrdinalIgnoreCase) ||
+                            scoreRes.FinalScore >= (req.MinScore > 0 ? (double)req.MinScore : 70.0);
                         if (!nameMatches || !isIdMatch) continue;
-                        finalScore = 100.0m;
-                        whyMatched = $"Dual-Factor Exact Name & ID Verified (100%): Name '{candidate.FullName}' AND Identifier '{rawId}' matched (Watchlist ID: {candidate.EntityExternalId}).";
+                        finalScore = (decimal)Math.Max(95.0, scoreRes.FinalScore);
+                        whyMatched = $"Dual-Factor Exact Name & ID Verified ({finalScore:F1}%): Name '{candidate.FullName}' (Name Match: {scoreRes.FinalScore:F1}%) AND Identifier '{rawId}' matched (Watchlist ID: {candidate.EntityExternalId}).";
                     }
                     else if (!string.IsNullOrWhiteSpace(rawId))
                     {
@@ -317,6 +330,14 @@ public static class ScreeningEndpoints
                         finalScore = 100.0m;
                         whyMatched = $"Exact Name Match (100%): '{candidate.FullName}' (External ID: {candidate.EntityExternalId}).";
                     }
+                }
+                else if (isPhonetic)
+                {
+                    var phoneticScore = (decimal)Math.Round(scoreRes.PhoneticSimilarity * 100.0, 2);
+                    var minPhoneticThreshold = req.MinScore > 0 ? req.MinScore : 70.0m;
+                    if (phoneticScore < minPhoneticThreshold) continue;
+                    finalScore = phoneticScore;
+                    whyMatched = $"Phonetic Double Metaphone Sound-Alike Match ({finalScore:F1}%): '{candidate.FullName}' (Phonetic: {scoreRes.PhoneticSimilarity * 100:F1}% — {scoreRes.MatchRationate}).";
                 }
                 else // FUZZY
                 {

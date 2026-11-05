@@ -556,4 +556,49 @@ public sealed class ScreeningApiTests : IClassFixture<WebApplicationFactory<Prog
         var allGovernanceBody = await allGovernanceRes.Content.ReadAsStringAsync();
         Assert.Contains(wlId.ToString(), allGovernanceBody);
     }
+
+    [Fact]
+    public async Task NameSearch_AdvancedSearchModes_Work()
+    {
+        // 1. EXACT NAME mode: literal normalized exact match
+        var exactReq = new NameSearchRequest
+        {
+            Name = "VIKTOR ANATOLYEVICH BOUT",
+            SearchMode = "EXACT NAME"
+        };
+        var exactRes = await _client.PostAsJsonAsync("/api/v1/screen/name-search", exactReq);
+        Assert.Equal(HttpStatusCode.OK, exactRes.StatusCode);
+        var exactBody = await exactRes.Content.ReadFromJsonAsync<NameSearchResponse>(JsonOptions);
+        Assert.NotNull(exactBody);
+        Assert.NotEmpty(exactBody.Matches);
+        Assert.Contains(exactBody.Matches, m => m.ExternalId == "OFAC-9812");
+
+        // 2. ID + NAME mode: requires both or exact ID
+        var idAndNameReq = new NameSearchRequest
+        {
+            Name = "Viktor Bout",
+            IdNumber = "OFAC-9812",
+            SearchMode = "ID + NAME"
+        };
+        var idNameRes = await _client.PostAsJsonAsync("/api/v1/screen/name-search", idAndNameReq);
+        Assert.Equal(HttpStatusCode.OK, idNameRes.StatusCode);
+        var idNameBody = await idNameRes.Content.ReadFromJsonAsync<NameSearchResponse>(JsonOptions);
+        Assert.NotNull(idNameBody);
+        Assert.NotEmpty(idNameBody.Matches);
+        Assert.Equal("OFAC-9812", idNameBody.Matches[0].ExternalId);
+
+        // 3. PHONETIC NAME MATCH mode: matches sound-alike pronunciation via Double Metaphone
+        var phoneticReq = new NameSearchRequest
+        {
+            Name = "Victor Bout",
+            SearchMode = "PHONETIC NAME MATCH",
+            MinScore = 70m
+        };
+        var phoneticRes = await _client.PostAsJsonAsync("/api/v1/screen/name-search", phoneticReq);
+        Assert.Equal(HttpStatusCode.OK, phoneticRes.StatusCode);
+        var phoneticBody = await phoneticRes.Content.ReadFromJsonAsync<NameSearchResponse>(JsonOptions);
+        Assert.NotNull(phoneticBody);
+        Assert.NotEmpty(phoneticBody.Matches);
+        Assert.Contains(phoneticBody.Matches, m => m.ExternalId == "OFAC-9812");
+    }
 }

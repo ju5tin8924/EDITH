@@ -304,7 +304,7 @@ export interface SandboxSimulationResult {
   sampleImpactedEntities: SandboxImpactedEntity[];
 }
 
-export type NameSearchMode = 'EXACT' | 'FUZZY' | 'EXACT_NAME_AND_ID';
+export type NameSearchMode = 'EXACT' | 'FUZZY' | 'EXACT_NAME_AND_ID' | 'PHONETIC' | 'ID + NAME' | 'EXACT NAME' | 'PHONETIC NAME MATCH';
 
 export interface NameSearchRequest {
   name?: string;

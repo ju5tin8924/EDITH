@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   ShieldAlert, 
   CheckCircle2, 
@@ -22,14 +22,18 @@ import {
   PlusCircle, 
   Download, 
   X, 
-  Check 
+  Check,
+  Sparkles,
+  Layers
 } from 'lucide-react';
 import { 
   TransactionScreeningRequest, 
   ScreeningResult, 
   CandidateMatch, 
   ScreeningAuditCertificate,
-  PassLogDto
+  PassLogDto,
+  NameSearchMatch,
+  NameSearchResponse
 } from '../types';
 import { EdithApi } from '../services/api';
 import { ShimmerButton, GridPattern } from './magicui';
@@ -64,6 +68,21 @@ const DEFAULT_BLANK_PAYLOAD: TransactionScreeningRequest = {
 
 export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }) => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialMode = searchParams.get('mode') === 'advanced' ? 'ADVANCED' : 'TRANSACTION';
+  const [activeSearchTab, setActiveSearchTab] = useState<'TRANSACTION' | 'ADVANCED'>(initialMode);
+
+  // Advanced Search Feature States
+  const [advSearchType, setAdvSearchType] = useState<'ID + NAME' | 'EXACT NAME' | 'PHONETIC NAME MATCH'>('ID + NAME');
+  const [advName, setAdvName] = useState<string>('Viktor Anatolyevich Bout');
+  const [advIdNumber, setAdvIdNumber] = useState<string>('OFAC-9812');
+  const [advEntityType, setAdvEntityType] = useState<'ALL' | 'INDIVIDUAL' | 'CORPORATE' | 'VESSEL'>('ALL');
+  const [advNationality, setAdvNationality] = useState<string>('RU');
+  const [advMinScore, setAdvMinScore] = useState<number>(70);
+  const [advLoading, setAdvLoading] = useState<boolean>(false);
+  const [advResponse, setAdvResponse] = useState<NameSearchResponse | null>(null);
+  const [advError, setAdvError] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<TransactionScreeningRequest>({
     sourceAccount: 'AE820330000001234567890',
@@ -311,6 +330,72 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
     }
   };
 
+  // Advanced Search Execution
+  const handleExecuteAdvancedSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!advName.trim() && !advIdNumber.trim()) {
+      setAdvError('Please provide a Name or ID Number to search.');
+      return;
+    }
+    setAdvLoading(true);
+    setAdvError(null);
+    try {
+      const res = await EdithApi.searchNameAndId({
+        name: advName.trim() || undefined,
+        idNumber: advIdNumber.trim() || undefined,
+        searchMode: advSearchType,
+        nationality: advNationality.trim().toUpperCase() || undefined,
+        minScore: advMinScore,
+        maxResults: 25
+      });
+      setAdvResponse(res);
+    } catch (err: any) {
+      setAdvError(err?.message || 'Failed to execute advanced search.');
+    } finally {
+      setAdvLoading(false);
+    }
+  };
+
+  const handleAdvancedInterceptCase = async (match: NameSearchMatch) => {
+    try {
+      const created = await EdithApi.createInterceptCase({
+        beneficiaryName: match.fullName,
+        riskScore: match.score || 95,
+        triggeredList: match.sanctionsList || 'OFAC / UN Watchlist',
+        holdReason: `1-Click Direct Intercept from Advanced Search (${match.category || 'SANCTIONS'} - ${match.matchModeUsed})`
+      });
+      if (created) {
+        setStatusMessage(`Provisioned Case ${created.caseNumber} in 3-Pane Investigation Workspace.`);
+        setTimeout(() => {
+          if (onOpenCase) onOpenCase(created.caseId);
+        }, 1200);
+      }
+    } catch {
+      setStatusMessage('Case intercept failed. Please check backend connection.');
+    }
+  };
+
+  const handleExportAdvancedCertificate = async (match: NameSearchMatch) => {
+    setCertifying(true);
+    try {
+      const cert = await EdithApi.generateScreeningAuditCertificate({
+        subjectName: match.fullName,
+        subjectId: match.externalId,
+        screeningType: 'SINGLE_ENTITY',
+        decision: match.score >= 80 ? 'HELD' : 'ALERT',
+        overallScore: match.score,
+        latencyMs: advResponse?.latencyMs || 12.5,
+        caseNumber: `ADV-${match.externalId}`,
+        matchCount: 1
+      });
+      setCertificateData(cert);
+    } catch {
+      setStatusMessage('Failed to generate audit certificate.');
+    } finally {
+      setCertifying(false);
+    }
+  };
+
   const getDecisionBadge = (decision: string) => {
     switch (decision) {
       case 'BLOCKED':
@@ -372,25 +457,73 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
         </div>
 
         <div className="relative z-10 flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted font-medium">Quick Test Scenarios:</span>
-          <button
-            onClick={() => applyPreset('sanction')}
-            className="px-2.5 py-1 text-xs rounded bg-critical/15 text-critical border border-critical/30 hover:bg-critical/25 transition font-medium"
-          >
-            Sanctions Hit (Victor Bout)
-          </button>
-          <button
-            onClick={() => applyPreset('clean')}
-            className="px-2.5 py-1 text-xs rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition font-medium"
-          >
-            Clean Domestic Wire
-          </button>
-          <button
-            onClick={() => applyPreset('high_amount')}
-            className="px-2.5 py-1 text-xs rounded bg-warning/15 text-warning border border-warning/30 hover:bg-warning/25 transition font-medium"
-          >
-            High Risk Corridor
-          </button>
+          {activeSearchTab === 'TRANSACTION' ? (
+            <>
+              <span className="text-xs text-muted font-medium">Quick Test Scenarios:</span>
+              <button
+                type="button"
+                onClick={() => applyPreset('sanction')}
+                className="px-2.5 py-1 text-xs rounded bg-critical/15 text-critical border border-critical/30 hover:bg-critical/25 transition font-medium cursor-pointer"
+              >
+                Sanctions Hit (Victor Bout)
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('clean')}
+                className="px-2.5 py-1 text-xs rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition font-medium cursor-pointer"
+              >
+                Clean Domestic Wire
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('high_amount')}
+                className="px-2.5 py-1 text-xs rounded bg-warning/15 text-warning border border-warning/30 hover:bg-warning/25 transition font-medium cursor-pointer"
+              >
+                High Risk Corridor
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-xs text-muted font-medium">Advanced Presets:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdvSearchType('ID + NAME');
+                  setAdvName('Viktor Anatolyevich Bout');
+                  setAdvIdNumber('OFAC-9812');
+                  setAdvNationality('RU');
+                }}
+                className="px-2.5 py-1 text-xs rounded bg-critical/15 text-critical border border-critical/30 hover:bg-critical/25 transition font-medium cursor-pointer"
+              >
+                ID + Name (OFAC-9812)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdvSearchType('EXACT NAME');
+                  setAdvName('VIKTOR ANATOLYEVICH BOUT');
+                  setAdvIdNumber('');
+                  setAdvNationality('RU');
+                }}
+                className="px-2.5 py-1 text-xs rounded bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 transition font-medium cursor-pointer"
+              >
+                Exact Name
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdvSearchType('PHONETIC NAME MATCH');
+                  setAdvName('Victor Bout');
+                  setAdvIdNumber('');
+                  setAdvNationality('RU');
+                  setAdvMinScore(70);
+                }}
+                className="px-2.5 py-1 text-xs rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition font-medium cursor-pointer"
+              >
+                Phonetic Match
+              </button>
+            </>
+          )}
           <button
             onClick={() => setIsConfigDrawerOpen(prev => !prev)}
             className={`px-2.5 py-1 text-xs rounded border transition font-medium flex items-center gap-1.5 ${
@@ -554,175 +687,430 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Screening Input Form (Left 5 cols) */}
+        {/* Screening Input Card (Left 5 cols) */}
         <div className="lg:col-span-5 bg-surface rounded-xl border border-border p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-border">
-            <h2 className="text-sm font-semibold text-ink uppercase tracking-wider font-mono flex items-center gap-2">
-              <Zap className="w-4 h-4 text-primary" />
-              Transaction Payload
-            </h2>
-            <span className="text-[11px] font-mono text-muted">Idempotency Key Auto-Generated</span>
+          {/* Card Header & Segmented Tab Switcher */}
+          <div className="pb-3 border-b border-border space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-ink uppercase tracking-wider font-mono flex items-center gap-2">
+                {activeSearchTab === 'TRANSACTION' ? (
+                  <>
+                    <Zap className="w-4 h-4 text-primary" />
+                    <span>Transaction Payload</span>
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-4 h-4 text-primary" />
+                    <span>Advanced Watchlist Search</span>
+                  </>
+                )}
+              </h2>
+              <span className="text-[11px] font-mono text-muted">
+                {activeSearchTab === 'TRANSACTION' ? 'Idempotency Key Auto-Generated' : 'Multi-Algorithm Engine'}
+              </span>
+            </div>
+
+            {/* Segmented Mode Selector Tabs */}
+            <div className="grid grid-cols-2 p-1 bg-surface-muted rounded-lg border border-border font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSearchTab('TRANSACTION');
+                  setSearchParams(prev => {
+                    prev.delete('mode');
+                    return prev;
+                  }, { replace: true });
+                }}
+                className={`py-1.5 px-3 rounded-md font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeSearchTab === 'TRANSACTION'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-muted hover:text-ink'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Transaction Payload</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSearchTab('ADVANCED');
+                  setSearchParams(prev => {
+                    prev.set('mode', 'advanced');
+                    return prev;
+                  }, { replace: true });
+                }}
+                className={`py-1.5 px-3 rounded-md font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeSearchTab === 'ADVANCED'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-muted hover:text-ink'
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Advanced Search</span>
+              </button>
+            </div>
           </div>
 
-          <form onSubmit={handleScreen} className="space-y-4 text-xs">
-            {/* Beneficiary Details */}
-            <div className="p-3 bg-surface-muted/60 rounded-lg border border-border/80 space-y-3">
-              <div className="font-semibold text-ink flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4 text-primary" />
-                Primary Beneficiary (Screening Target)
-              </div>
-              <div>
-                <label className="text-muted block mb-1">Full Name / Legal Entity</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.parties[0]?.fullName || ''}
-                  onChange={(e) => {
-                    const newParties = [...formData.parties];
-                    newParties[0].fullName = e.target.value;
-                    updateFormData(prev => ({ ...prev, parties: newParties }));
-                  }}
-                  className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-muted block mb-1">Country (ISO-2)</label>
-                  <input
-                    type="text"
-                    maxLength={2}
-                    value={formData.parties[0]?.country || 'AE'}
-                    onChange={(e) => {
-                      const newParties = [...formData.parties];
-                      newParties[0].country = e.target.value.toUpperCase();
-                      updateFormData(prev => ({ ...prev, parties: newParties }));
-                    }}
-                    className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono uppercase focus:border-primary focus:outline-none"
-                  />
+          {/* Mode 1: Transaction Screening Form (Kept exactly as it is) */}
+          {activeSearchTab === 'TRANSACTION' ? (
+            <form onSubmit={handleScreen} className="space-y-4 text-xs transition-opacity duration-150">
+              {/* Beneficiary Details */}
+              <div className="p-3 bg-surface-muted/60 rounded-lg border border-border/80 space-y-3">
+                <div className="font-semibold text-ink flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 text-primary" />
+                  Primary Beneficiary (Screening Target)
                 </div>
                 <div>
-                  <label className="text-muted block mb-1">Date of Birth</label>
+                  <label className="text-muted block mb-1">Full Name / Legal Entity</label>
                   <input
-                    type="date"
-                    value={formData.parties[0]?.dateOfBirth || ''}
+                    type="text"
+                    required
+                    value={formData.parties[0]?.fullName || ''}
                     onChange={(e) => {
                       const newParties = [...formData.parties];
-                      newParties[0].dateOfBirth = e.target.value;
+                      newParties[0].fullName = e.target.value;
+                      updateFormData(prev => ({ ...prev, parties: newParties }));
+                    }}
+                    className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-muted block mb-1">Country (ISO-2)</label>
+                    <input
+                      type="text"
+                      maxLength={2}
+                      value={formData.parties[0]?.country || 'AE'}
+                      onChange={(e) => {
+                        const newParties = [...formData.parties];
+                        newParties[0].country = e.target.value.toUpperCase();
+                        updateFormData(prev => ({ ...prev, parties: newParties }));
+                      }}
+                      className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono uppercase focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted block mb-1">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={formData.parties[0]?.dateOfBirth || ''}
+                      onChange={(e) => {
+                        const newParties = [...formData.parties];
+                        newParties[0].dateOfBirth = e.target.value;
+                        updateFormData(prev => ({ ...prev, parties: newParties }));
+                      }}
+                      className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sender Details */}
+              <div className="p-3 bg-surface-muted/60 rounded-lg border border-border/80 space-y-3">
+                <div className="font-semibold text-ink flex items-center gap-1.5">
+                  <Building className="w-4 h-4 text-muted" />
+                  Originating Counterparty (Sender)
+                </div>
+                <div>
+                  <label className="text-muted block mb-1">Sender Name</label>
+                  <input
+                    type="text"
+                    value={formData.parties[1]?.fullName || ''}
+                    onChange={(e) => {
+                      const newParties = [...formData.parties];
+                      newParties[1].fullName = e.target.value;
                       updateFormData(prev => ({ ...prev, parties: newParties }));
                     }}
                     className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
                   />
                 </div>
               </div>
-            </div>
 
-            {/* Sender Details */}
-            <div className="p-3 bg-surface-muted/60 rounded-lg border border-border/80 space-y-3">
-              <div className="font-semibold text-ink flex items-center gap-1.5">
-                <Building className="w-4 h-4 text-muted" />
-                Originating Counterparty (Sender)
+              {/* Financial Details */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="text-muted block mb-1">Transfer Amount</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={formData.amount}
+                    onChange={(e) => updateFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-muted block mb-1">Currency</label>
+                  <select
+                    value={formData.currency}
+                    onChange={(e) => updateFormData(prev => ({ ...prev, currency: e.target.value }))}
+                    className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
+                  >
+                    <option value="AED">AED</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                    <option value="SAR">SAR</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="text-muted block mb-1">Sender Name</label>
-                <input
-                  type="text"
-                  value={formData.parties[1]?.fullName || ''}
-                  onChange={(e) => {
-                    const newParties = [...formData.parties];
-                    newParties[1].fullName = e.target.value;
-                    updateFormData(prev => ({ ...prev, parties: newParties }));
-                  }}
-                  className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
-                />
-              </div>
-            </div>
 
-            {/* Financial Details */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <label className="text-muted block mb-1">Transfer Amount</label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  value={formData.amount}
-                  onChange={(e) => updateFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
-                  className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none font-semibold"
-                />
+              {/* Account IBANs */}
+              <div className="space-y-2">
+                <div>
+                  <label className="text-muted block mb-1 font-mono text-[11px]">Debtor IBAN (Source)</label>
+                  <input
+                    type="text"
+                    value={formData.sourceAccount}
+                    onChange={(e) => updateFormData(prev => ({ ...prev, sourceAccount: e.target.value }))}
+                    className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono text-[11px] focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-muted block mb-1 font-mono text-[11px]">Creditor IBAN (Destination)</label>
+                  <input
+                    type="text"
+                    value={formData.destinationAccount}
+                    onChange={(e) => updateFormData(prev => ({ ...prev, destinationAccount: e.target.value }))}
+                    className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono text-[11px] focus:border-primary focus:outline-none"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-muted block mb-1">Currency</label>
-                <select
-                  value={formData.currency}
-                  onChange={(e) => updateFormData(prev => ({ ...prev, currency: e.target.value }))}
-                  className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="py-2.5 px-3 rounded-lg bg-surface-muted hover:bg-border text-ink font-semibold font-mono text-xs flex items-center justify-center gap-1.5 transition-all border border-border shrink-0 cursor-pointer"
+                  title="Clear transaction payload"
                 >
-                  <option value="AED">AED</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                  <option value="SAR">SAR</option>
+                  <RotateCcw className="w-3.5 h-3.5 text-muted" />
+                  Clear
+                </button>
+                <ShimmerButton
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2.5 rounded-xl shadow-md cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <Clock className="w-4 h-4 animate-spin" />
+                      <span>Running 5-Pass Pipeline...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 fill-white" />
+                      <span>Execute Real-Time Screening (Pass 1-5)</span>
+                    </>
+                  )}
+                </ShimmerButton>
+              </div>
+            </form>
+          ) : (
+            /* Mode 2: Advanced Search Configuration Form */
+            <form onSubmit={handleExecuteAdvancedSearch} className="space-y-4 text-xs transition-opacity duration-150">
+              {/* Search Type Dropdown */}
+              <div className="p-3 bg-surface-muted/60 rounded-lg border border-border/80 space-y-2">
+                <label className="text-ink font-semibold flex items-center gap-1.5 font-mono text-xs">
+                  <Sliders className="w-4 h-4 text-primary" />
+                  Search Type Configuration
+                </label>
+                <select
+                  value={advSearchType}
+                  onChange={e => setAdvSearchType(e.target.value as 'ID + NAME' | 'EXACT NAME' | 'PHONETIC NAME MATCH')}
+                  className="w-full bg-canvas-subtle border border-border rounded px-3 py-2 text-ink font-mono font-semibold focus:border-primary focus:outline-none cursor-pointer"
+                >
+                  <option value="ID + NAME">ID + NAME</option>
+                  <option value="EXACT NAME">EXACT NAME</option>
+                  <option value="PHONETIC NAME MATCH">PHONETIC NAME MATCH</option>
                 </select>
+                <div className="text-[11px] text-muted font-mono leading-relaxed">
+                  {advSearchType === 'ID + NAME' && 'Dual-factor verification matching both legal name and statutory document/sanctions identifier.'}
+                  {advSearchType === 'EXACT NAME' && 'Strict 100% normalized literal string equality against consolidated watchlists.'}
+                  {advSearchType === 'PHONETIC NAME MATCH' && 'Double Metaphone sound-alike indexing matching spelling variants and Arabic/Cyrillic transliterations.'}
+                </div>
               </div>
-            </div>
 
-            {/* Account IBANs */}
-            <div className="space-y-2">
-              <div>
-                <label className="text-muted block mb-1 font-mono text-[11px]">Debtor IBAN (Source)</label>
-                <input
-                  type="text"
-                  value={formData.sourceAccount}
-                  onChange={(e) => updateFormData(prev => ({ ...prev, sourceAccount: e.target.value }))}
-                  className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono text-[11px] focus:border-primary focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-muted block mb-1 font-mono text-[11px]">Creditor IBAN (Destination)</label>
-                <input
-                  type="text"
-                  value={formData.destinationAccount}
-                  onChange={(e) => updateFormData(prev => ({ ...prev, destinationAccount: e.target.value }))}
-                  className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono text-[11px] focus:border-primary focus:outline-none"
-                />
-              </div>
-            </div>
+              {/* Subject Full Name Input */}
+              <div className="p-3 bg-surface-muted/60 rounded-lg border border-border/80 space-y-3">
+                <div className="font-semibold text-ink flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 text-primary" />
+                  Subject / Entity Identification
+                </div>
+                <div>
+                  <label className="text-muted block mb-1">
+                    Full Name / Commercial Entity <span className="text-critical">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Viktor Bout, Al-Baraka Trading, BELLA 1"
+                    value={advName}
+                    onChange={e => setAdvName(e.target.value)}
+                    className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
+                  />
+                </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleReset}
-                className="py-2.5 px-3 rounded-lg bg-surface-muted hover:bg-border text-ink font-semibold font-mono text-xs flex items-center justify-center gap-1.5 transition-all border border-border shrink-0"
-                title="Clear transaction payload"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-muted" />
-                Clear
-              </button>
-              <ShimmerButton
-                type="submit"
-                disabled={loading}
-                className="flex-1 py-2.5 rounded-xl shadow-md"
-              >
-                {loading ? (
-                  <>
-                    <Clock className="w-4 h-4 animate-spin" />
-                    <span>Running 5-Pass Pipeline...</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-4 h-4 fill-white" />
-                    <span>Execute Real-Time Screening (Pass 1-5)</span>
-                  </>
+                {/* ID Number input: Required for ID + NAME */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-muted block">
+                      Identifier / Document Number {advSearchType === 'ID + NAME' && <span className="text-critical">*</span>}
+                    </label>
+                    <span className="text-[10px] text-muted">Passport, National ID, IMO, UID</span>
+                  </div>
+                  <input
+                    type="text"
+                    required={advSearchType === 'ID + NAME'}
+                    placeholder={advSearchType === 'ID + NAME' ? 'e.g. OFAC-9812, PASSPORT-RU-882190, IMO-9234567' : 'Optional secondary identifier...'}
+                    value={advIdNumber}
+                    onChange={e => setAdvIdNumber(e.target.value)}
+                    className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono focus:border-primary focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-muted block mb-1">Entity Type</label>
+                    <select
+                      value={advEntityType}
+                      onChange={e => setAdvEntityType(e.target.value as any)}
+                      className="w-full bg-canvas-subtle border border-border rounded px-2.5 py-1.5 text-ink font-mono focus:border-primary focus:outline-none cursor-pointer"
+                    >
+                      <option value="ALL">All Types</option>
+                      <option value="INDIVIDUAL">Individual</option>
+                      <option value="CORPORATE">Corporate</option>
+                      <option value="VESSEL">Vessel / Aircraft</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-muted block mb-1">Country (ISO-2)</label>
+                    <input
+                      type="text"
+                      maxLength={2}
+                      placeholder="e.g. AE, RU, IR"
+                      value={advNationality}
+                      onChange={e => setAdvNationality(e.target.value.toUpperCase())}
+                      className="w-full bg-canvas-subtle border border-border rounded px-3 py-1.5 text-ink font-mono uppercase focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {advSearchType === 'PHONETIC NAME MATCH' && (
+                  <div className="pt-2 border-t border-border space-y-1.5">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="text-muted font-bold">Minimum Phonetic Score:</span>
+                      <span className="font-bold text-ink">{advMinScore}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50}
+                      max={95}
+                      step={5}
+                      value={advMinScore}
+                      onChange={e => setAdvMinScore(parseInt(e.target.value, 10))}
+                      className="w-full accent-primary cursor-pointer"
+                    />
+                    <div className="text-[10px] text-muted">Lower threshold captures wider transliterations & dialect variations</div>
+                  </div>
                 )}
-              </ShimmerButton>
-            </div>
-          </form>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+                <span className="text-muted font-bold mr-1 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-accent" /> Presets:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdvSearchType('ID + NAME');
+                    setAdvName('Viktor Anatolyevich Bout');
+                    setAdvIdNumber('OFAC-9812');
+                    setAdvNationality('RU');
+                  }}
+                  className="px-2 py-0.5 rounded bg-surface-muted hover:bg-border text-ink border border-border transition cursor-pointer"
+                >
+                  Bout (ID+Name)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdvSearchType('EXACT NAME');
+                    setAdvName('VIKTOR ANATOLYEVICH BOUT');
+                    setAdvIdNumber('');
+                    setAdvNationality('RU');
+                  }}
+                  className="px-2 py-0.5 rounded bg-surface-muted hover:bg-border text-ink border border-border transition cursor-pointer"
+                >
+                  Bout (Exact)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdvSearchType('PHONETIC NAME MATCH');
+                    setAdvName('Victor Bout');
+                    setAdvIdNumber('');
+                    setAdvNationality('RU');
+                    setAdvMinScore(70);
+                  }}
+                  className="px-2 py-0.5 rounded bg-surface-muted hover:bg-border text-ink border border-border transition cursor-pointer"
+                >
+                  Victor (Phonetic)
+                </button>
+              </div>
+
+              {advError && (
+                <div className="p-2.5 rounded bg-critical/10 border border-critical/30 text-critical text-xs font-mono flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{advError}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdvName('');
+                    setAdvIdNumber('');
+                    setAdvNationality('');
+                    setAdvResponse(null);
+                    setAdvError(null);
+                  }}
+                  className="py-2.5 px-3 rounded-lg bg-surface-muted hover:bg-border text-ink font-semibold font-mono text-xs flex items-center justify-center gap-1.5 transition-all border border-border shrink-0 cursor-pointer"
+                  title="Clear inputs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-muted" />
+                  Clear
+                </button>
+                <ShimmerButton
+                  type="submit"
+                  disabled={advLoading}
+                  className="flex-1 py-2.5 rounded-xl shadow-md cursor-pointer"
+                >
+                  {advLoading ? (
+                    <>
+                      <Clock className="w-4 h-4 animate-spin" />
+                      <span>Querying Watchlist Registries...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4 fill-white" />
+                      <span>Execute Advanced Search ({advSearchType})</span>
+                    </>
+                  )}
+                </ShimmerButton>
+              </div>
+            </form>
+          )}
         </div>
 
         {/* Screening Results & Diagnostics (Right 7 cols) */}
         <div className="lg:col-span-7 space-y-4">
-          {result ? (
+          {activeSearchTab === 'TRANSACTION' ? (
+            result ? (
             <div className="bg-surface rounded-xl border border-border p-5 space-y-5">
               {/* Verdict Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border">
@@ -1114,6 +1502,225 @@ export const ScreeningConsole: React.FC<ScreeningConsoleProps> = ({ onOpenCase }
                 Provide transaction details on the left and trigger 5-Pass screening to view instant scoring diagnostics, token comparisons, and sanctions resolutions.
               </p>
             </div>
+          )) : (
+            /* Mode 2: Advanced Search Results */
+            advLoading ? (
+              <div className="h-full min-h-[400px] flex flex-col items-center justify-center bg-surface rounded-xl border border-border p-8">
+                <EdithLoader
+                  size="md"
+                  label="EVALUATING ADVANCED SEARCH..."
+                  sublabel={`Running ${advSearchType} across consolidated watchlists`}
+                />
+              </div>
+            ) : advResponse ? (
+              <div className="bg-surface rounded-xl border border-border p-5 space-y-5 animate-in fade-in duration-150">
+                {/* Advanced Verdict Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border">
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-muted">Advanced Search Mode</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-1 rounded bg-primary/10 border border-primary/30 text-primary font-mono font-bold text-xs">
+                        {advResponse.searchMode}
+                      </span>
+                      <span className="text-xs font-mono text-muted">
+                        Query: <strong className="text-ink">"{advResponse.queryName || advResponse.queryId}"</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 font-mono text-xs flex-wrap">
+                    <div className="px-3 py-1.5 rounded bg-surface-muted border border-border">
+                      <span className="text-muted">Matches:</span>{' '}
+                      <span className={`font-bold ${advResponse.totalMatches > 0 ? 'text-critical' : 'text-accent'}`}>
+                        {advResponse.totalMatches} Found
+                      </span>
+                    </div>
+
+                    <div className="px-3 py-1.5 rounded bg-surface-muted border border-border flex items-center gap-1.5 text-ink">
+                      <Clock className="w-3.5 h-3.5 text-primary" />
+                      <span>Latency:</span>{' '}
+                      <span className="text-primary font-bold">{advResponse.latencyMs}ms</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdvResponse(null);
+                        setAdvName('');
+                        setAdvIdNumber('');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-surface-muted text-ink border border-border hover:bg-border/30 transition flex items-center gap-1.5 font-semibold cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>New Query</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Matches List */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-ink flex items-center gap-2">
+                      {advResponse.matches.length > 0 ? (
+                        <span className="text-critical flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4" />
+                          Watchlist Designations ({advResponse.matches.length})
+                        </span>
+                      ) : (
+                        <span className="text-accent flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4" />
+                          Zero Adverse Hits (0)
+                        </span>
+                      )}
+                    </h3>
+                    <span className="text-[11px] font-mono text-muted">
+                      Evaluated at {new Date(advResponse.evaluatedAt).toLocaleTimeString()}
+                    </span>
+                  </div>
+
+                  {advResponse.matches.length === 0 ? (
+                    <div className="p-6 rounded-lg bg-accent/5 border border-accent/30 text-center text-xs space-y-1.5">
+                      <div className="font-bold text-accent flex items-center justify-center gap-1.5 text-sm">
+                        <ShieldCheck className="w-5 h-5" />
+                        No Watchlist Hits Detected
+                      </div>
+                      <p className="text-[11px] text-muted max-w-md mx-auto">
+                        No adverse records matched query "{advResponse.queryName || advResponse.queryId}" under {advResponse.searchMode} search algorithm.
+                      </p>
+                    </div>
+                  ) : (
+                    advResponse.matches.map((match) => (
+                      <div
+                        key={match.entityId}
+                        className="p-4 rounded-lg bg-surface-muted border border-border hover:border-primary/40 transition space-y-3"
+                      >
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-ink text-sm">{match.fullName}</span>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-critical/20 text-critical border border-critical/40 uppercase font-bold">
+                                {match.category}
+                              </span>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30 uppercase font-semibold">
+                                {match.entityType}
+                              </span>
+                              {match.nationality && (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface border border-border text-ink font-bold">
+                                  {match.nationality}
+                                </span>
+                              )}
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface border border-border text-muted">
+                                UID: {match.externalId}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-muted font-mono mt-1">
+                              Registry: <strong className="text-ink">{match.sanctionsList}</strong>
+                              {match.idDetails ? ` • ID: ${match.idDetails}` : ''}
+                              {match.aliasName ? ` • AKA: ${match.aliasName}` : ''}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                            <div className="text-right font-mono mr-2">
+                              <div className={`text-lg font-bold ${match.score >= 80 ? 'text-critical' : match.score >= 60 ? 'text-warning' : 'text-accent'}`}>
+                                {match.score.toFixed(1)}%
+                              </div>
+                              <div className="text-[10px] text-muted">Match Score</div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAdvancedInterceptCase(match)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-critical/15 text-critical border border-critical/30 hover:bg-critical/25 transition flex items-center gap-1.5 cursor-pointer"
+                              title="Direct 1-Click Intercept & Persistent Case Creation"
+                            >
+                              <FileWarning className="w-3.5 h-3.5" />
+                              <span>Intercept Case</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                navigate(
+                                  `/blacklist/watchlist?action=add-blacklist&name=${encodeURIComponent(match.fullName)}&id=${encodeURIComponent(match.externalId)}&country=${encodeURIComponent(match.nationality || 'AE')}&category=${encodeURIComponent(match.category || 'INTERNAL_BLACKLIST')}&reason=${encodeURIComponent(`Escalated from Advanced Search (${match.sanctionsList || 'WATCHLIST'})`)}`
+                                )
+                              }
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-surface text-ink border border-border hover:border-primary/40 transition flex items-center gap-1.5 cursor-pointer"
+                              title="Add or update entity on Internal Blacklist / Watchlist"
+                            >
+                              <ShieldAlert className="w-3.5 h-3.5 text-critical" />
+                              <span>Watchlist</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleExportAdvancedCertificate(match)}
+                              disabled={certifying}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-surface text-ink border border-border hover:bg-border/30 transition flex items-center gap-1.5 cursor-pointer"
+                              title="Generate cryptographically signed audit certificate"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-primary" />
+                              <span>Proof</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Match Rationale / Why Matched */}
+                        <div className="p-2.5 rounded bg-canvas-subtle border border-border/80 text-[11px] font-mono text-ink space-y-1">
+                          <div className="text-muted text-[10px] uppercase font-bold tracking-wider">Evaluation Diagnostic:</div>
+                          <p>{match.whyMatched}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Informational / Onboarding Guide Card when no search has been run */
+              <div className="h-full min-h-[460px] flex flex-col justify-center bg-surface rounded-xl border border-border p-6 space-y-5 animate-in fade-in duration-150">
+                <div className="text-center space-y-2 max-w-md mx-auto">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mx-auto">
+                    <Search className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-ink font-semibold text-sm">Advanced Multi-Algorithm Search Ready</h3>
+                  <p className="text-xs text-muted">
+                    Select a search algorithm configuration on the left and enter an entity name or document number to screen across consolidated watchlists.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs pt-2">
+                  <div className="p-3.5 rounded-xl bg-surface-muted border border-border space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-primary">
+                      <Layers className="w-4 h-4" />
+                      <span>ID + NAME</span>
+                    </div>
+                    <p className="text-[11px] text-muted leading-relaxed">
+                      Dual-factor verification matching both legal entity name and statutory document/sanction ID (Passport, Trade License, IMO, or UID).
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-surface-muted border border-border space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-accent">
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>EXACT NAME</span>
+                    </div>
+                    <p className="text-[11px] text-muted leading-relaxed">
+                      Strict 100% normalized literal string equality against global sanctions (OFAC SDN, UN, EU, UK HMT, and CBUAE).
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-surface-muted border border-border space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-warning">
+                      <Sparkles className="w-4 h-4" />
+                      <span>PHONETIC</span>
+                    </div>
+                    <p className="text-[11px] text-muted leading-relaxed">
+                      Double Metaphone sound-alike indexing matching spelling variations, pronunciation patterns, and Arabic transliterations.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )
           )}
         </div>
       </div>
