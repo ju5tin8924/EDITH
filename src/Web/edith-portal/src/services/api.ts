@@ -106,7 +106,7 @@ export const getAuthHeaders = (): Record<string, string> => ({
 });
 
 export const apiFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const res = await fetch(input, init);
+  const res = await globalThis.fetch(input, init);
   if (res.status === 401) {
     const urlStr = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
     if (!urlStr.includes('/iam/login') && !urlStr.includes('/iam/mfa/verify')) {
@@ -242,7 +242,7 @@ const DEFAULT_MENU_ITEMS: MenuItemEntitlement[] = [
 async function ensureJwtToken(): Promise<void> {
   if (!currentSession.token || !currentSession.token.startsWith('mock-')) return;
   try {
-    const res = await fetch(`${API_BASE}/iam/token`, {
+    const res = await apiFetch(`${API_BASE}/iam/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': currentSession.tenantId },
       body: JSON.stringify({
@@ -273,7 +273,7 @@ export const EdithApi = {
   async fetchEntitlements(): Promise<EntitlementsResponse> {
     await ensureJwtToken();
     try {
-      const res = await fetch(`${API_BASE}/iam/entitlements`, {
+      const res = await apiFetch(`${API_BASE}/iam/entitlements`, {
         headers: getAuthHeaders()
       });
       if (res.ok) {
@@ -356,7 +356,7 @@ export const EdithApi = {
       idWeightage: request.idWeightage
     };
 
-    const res = await fetch(`${API_BASE}/screen/transaction`, {
+    const res = await apiFetch(`${API_BASE}/screen/transaction`, {
       method: 'POST',
       headers: {
         ...getAuthHeaders(),
@@ -422,7 +422,7 @@ export const EdithApi = {
 
   // Cases (Live PostgreSQL Core)
   async fetchCases(): Promise<CaseSummary[]> {
-    const res = await fetch(`${API_BASE}/cases`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/cases`, { headers: getAuthHeaders() });
     if (!res.ok) {
       throw new Error(`Failed to fetch cases: ${res.statusText}`);
     }
@@ -430,7 +430,7 @@ export const EdithApi = {
   },
 
   async fetchCaseDetail(caseId: string): Promise<CaseDetail> {
-    const res = await fetch(`${API_BASE}/cases/${caseId}`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/cases/${caseId}`, { headers: getAuthHeaders() });
     if (!res.ok) {
       throw new Error(`Failed to fetch case detail for ${caseId}: ${res.statusText}`);
     }
@@ -439,70 +439,70 @@ export const EdithApi = {
 
   async acquireLock(caseId: string, durationMinutes: number = 15): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/cases/${caseId}/acquire-lock?durationMinutes=${durationMinutes}`, {
+      const res = await apiFetch(`${API_BASE}/cases/${caseId}/acquire-lock?durationMinutes=${durationMinutes}`, {
         method: 'POST',
         headers: getAuthHeaders()
       });
       return res.ok;
     } catch {
-      return true;
+      return false;
     }
   },
 
   async releaseLock(caseId: string): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/cases/${caseId}/release-lock`, {
+      const res = await apiFetch(`${API_BASE}/cases/${caseId}/release-lock`, {
         method: 'POST',
         headers: getAuthHeaders()
       });
       return res.ok;
     } catch {
-      return true;
+      return false;
     }
   },
 
   async resolveCase(caseId: string, resolution: CaseResolution, rationale: string): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/cases/${caseId}/resolve`, {
+      const res = await apiFetch(`${API_BASE}/cases/${caseId}/resolve`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ resolution, rationale })
       });
       return res.ok;
     } catch {
-      return true;
+      return false;
     }
   },
 
   async transitionCase(caseId: string, newStatus: string, reason?: string): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/cases/${caseId}/transition`, {
+      const res = await apiFetch(`${API_BASE}/cases/${caseId}/transition`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ newStatus, userRole: currentSession.role, reason })
       });
       return res.ok;
     } catch {
-      return true;
+      return false;
     }
   },
 
   async addComment(caseId: string, content: string, noteType: string = 'INVESTIGATION'): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/cases/${caseId}/comments`, {
+      const res = await apiFetch(`${API_BASE}/cases/${caseId}/comments`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ content, noteType })
       });
       return res.ok;
     } catch {
-      return true;
+      return false;
     }
   },
 
   // Bulk screening
   async submitBulkJob(fileName: string, totalRows: number): Promise<BulkJobSummary> {
-    const res = await fetch(`${API_BASE}/bulk/jobs`, {
+    const res = await apiFetch(`${API_BASE}/bulk/jobs`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ fileName, totalRows })
@@ -528,7 +528,7 @@ export const EdithApi = {
       keepSkipped: String(keepSkipped),
       skippedFormat: skippedFormat.toLowerCase()
     });
-    const res = await fetch(`${API_BASE}/bulk/upload?${params.toString()}`, {
+    const res = await apiFetch(`${API_BASE}/bulk/upload?${params.toString()}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${currentSession.token}`,
@@ -552,7 +552,7 @@ export const EdithApi = {
     skippedDownloadUrl?: string;
   } | null> {
     try {
-      const res = await fetch(`${API_BASE}/bulk/jobs/${jobId}`, {
+      const res = await apiFetch(`${API_BASE}/bulk/jobs/${jobId}`, {
         headers: getAuthHeaders()
       });
       if (res.ok) return await res.json();
@@ -564,7 +564,7 @@ export const EdithApi = {
 
   // Rules (Live PostgreSQL Repository)
   async fetchRules(): Promise<RuleDefinition[]> {
-    const res = await fetch(`${API_BASE}/rules`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/rules`, { headers: getAuthHeaders() });
     if (!res.ok) {
       throw new Error(`Failed to fetch rules: ${res.statusText}`);
     }
@@ -587,7 +587,7 @@ export const EdithApi = {
     structuringMinAmount?: number | null;
     structuringMaxAmount?: number | null;
   }): Promise<RuleDefinition> {
-    const res = await fetch(`${API_BASE}/rules`, {
+    const res = await apiFetch(`${API_BASE}/rules`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -614,7 +614,7 @@ export const EdithApi = {
     structuringMinAmount?: number | null;
     structuringMaxAmount?: number | null;
   }): Promise<RuleDefinition> {
-    const res = await fetch(`${API_BASE}/rules/${ruleId}`, {
+    const res = await apiFetch(`${API_BASE}/rules/${ruleId}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -626,7 +626,7 @@ export const EdithApi = {
   },
 
   async deleteRule(ruleId: string): Promise<boolean> {
-    const res = await fetch(`${API_BASE}/rules/${ruleId}`, {
+    const res = await apiFetch(`${API_BASE}/rules/${ruleId}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
@@ -703,7 +703,7 @@ export const EdithApi = {
       };
     };
 
-    const res = await fetch(`${API_BASE}/rules/backtest`, {
+    const res = await apiFetch(`${API_BASE}/rules/backtest`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ ruleCode, ...draftOverrides })
@@ -730,7 +730,7 @@ export const EdithApi = {
       defaultThreshold: number;
     };
   }): Promise<SandboxSimulationResult> {
-    const res = await fetch(`${API_BASE}/rules/sandbox/simulate`, {
+    const res = await apiFetch(`${API_BASE}/rules/sandbox/simulate`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -743,7 +743,7 @@ export const EdithApi = {
 
   // Addons
   async generateGoAmlXml(caseId: string): Promise<string> {
-    const res = await fetch(`${API_BASE}/addons/goaml/export`, {
+    const res = await apiFetch(`${API_BASE}/addons/goaml/export`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ caseId })
@@ -755,7 +755,7 @@ export const EdithApi = {
   },
 
   async generateAiNarrative(caseId: string): Promise<string> {
-    const res = await fetch(`${API_BASE}/addons/ai/narrative`, {
+    const res = await apiFetch(`${API_BASE}/addons/ai/narrative`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ caseId })
@@ -768,7 +768,7 @@ export const EdithApi = {
   },
 
   async searchNameAndId(request: NameSearchRequest): Promise<NameSearchResponse> {
-    const res = await fetch(`${API_BASE}/screen/name-search`, {
+    const res = await apiFetch(`${API_BASE}/screen/name-search`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(request)
@@ -790,7 +790,7 @@ export const EdithApi = {
     skippedDownloadUrl?: string;
   }>> {
     try {
-      const res = await fetch(`${API_BASE}/bulk/jobs`, { headers: getAuthHeaders() });
+      const res = await apiFetch(`${API_BASE}/bulk/jobs`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // ignore
@@ -814,7 +814,7 @@ export const EdithApi = {
     }>;
   } | null> {
     try {
-      const res = await fetch(`${API_BASE}/delta/sync`, {
+      const res = await apiFetch(`${API_BASE}/delta/sync`, {
         method: 'POST',
         headers: getAuthHeaders()
       });
@@ -833,7 +833,7 @@ export const EdithApi = {
     reasonCode?: string
   ): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/delta/authorize`, {
+      const res = await apiFetch(`${API_BASE}/delta/authorize`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ batchId, approvedCustomerCodes, action, rationale, reasonCode })
@@ -853,7 +853,7 @@ export const EdithApi = {
     batchId?: string;
   }): Promise<{ status: string; hitId: string; customerCode: string; decision: string; authorizedBy: string } | null> {
     try {
-      const res = await fetch(`${API_BASE}/delta/adjudicate`, {
+      const res = await apiFetch(`${API_BASE}/delta/adjudicate`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(req)
@@ -874,7 +874,7 @@ export const EdithApi = {
     batchId?: string;
   }): Promise<{ caseId: string; caseNumber: string; status: string; priority: string } | null> {
     try {
-      const res = await fetch(`${API_BASE}/delta/escalate-case`, {
+      const res = await apiFetch(`${API_BASE}/delta/escalate-case`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(req)
@@ -894,7 +894,7 @@ export const EdithApi = {
     entityCount: number;
     status: 'HEALTHY' | 'SYNCING' | 'STALE';
   }>> {
-    const res = await fetch(`${API_BASE}/delta/sources`, {
+    const res = await apiFetch(`${API_BASE}/delta/sources`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) {
@@ -919,7 +919,7 @@ export const EdithApi = {
     if (params?.customerCode) query.append('customerCode', params.customerCode);
     if (params?.startDate) query.append('startDate', params.startDate);
     if (params?.endDate) query.append('endDate', params.endDate);
-    const res = await fetch(`${API_BASE}/delta/log-report?${query.toString()}`, {
+    const res = await apiFetch(`${API_BASE}/delta/log-report?${query.toString()}`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) {
@@ -939,7 +939,7 @@ export const EdithApi = {
     isActive: boolean;
   }>> {
     try {
-      const res = await fetch(`${API_BASE}/whitelists?includeInactive=${includeInactive}`, { headers: getAuthHeaders() });
+      const res = await apiFetch(`${API_BASE}/whitelists?includeInactive=${includeInactive}`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // ignore
@@ -950,7 +950,7 @@ export const EdithApi = {
   async fetchWatchlistEntities(search?: string): Promise<WatchlistEntityDto[]> {
     try {
       const qs = search ? `?search=${encodeURIComponent(search)}` : '';
-      const res = await fetch(`${API_BASE}/watchlist${qs}`, { headers: getAuthHeaders() });
+      const res = await apiFetch(`${API_BASE}/watchlist${qs}`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // ignore
@@ -965,7 +965,7 @@ export const EdithApi = {
     entities?: WatchlistEntityDto[];
   } | null> {
     try {
-      const res = await fetch(`${API_BASE}/watchlist/sync`, {
+      const res = await apiFetch(`${API_BASE}/watchlist/sync`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ entities })
@@ -992,7 +992,7 @@ export const EdithApi = {
     isActive: boolean;
   } | null> {
     try {
-      const res = await fetch(`${API_BASE}/whitelists`, {
+      const res = await apiFetch(`${API_BASE}/whitelists`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload)
@@ -1006,7 +1006,7 @@ export const EdithApi = {
 
   async deleteWhitelist(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/whitelists/${id}`, {
+      const res = await apiFetch(`${API_BASE}/whitelists/${id}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
@@ -1026,7 +1026,7 @@ export const EdithApi = {
     triggeredList: string;
     holdReason: string;
   }): Promise<{ caseId: string; caseNumber: string; priority: string; status: string } | null> {
-    const res = await fetch(`${API_BASE}/screen/intercept-case`, {
+    const res = await apiFetch(`${API_BASE}/screen/intercept-case`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -1048,7 +1048,7 @@ export const EdithApi = {
     matchCount: number;
     passLogs?: Array<{ passNumber: number; score: number; matchType: string; details: string }>;
   }): Promise<ScreeningAuditCertificate> {
-    const res = await fetch(`${API_BASE}/screen/audit-certificate`, {
+    const res = await apiFetch(`${API_BASE}/screen/audit-certificate`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -1062,7 +1062,7 @@ export const EdithApi = {
   // IAM Users & Groups CRUD
   async fetchIamUsers(): Promise<IamUserRecord[]> {
     try {
-      const res = await fetch(`${API_BASE}/iam/users`, { headers: getAuthHeaders() });
+      const res = await apiFetch(`${API_BASE}/iam/users`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // Fallback
@@ -1072,7 +1072,7 @@ export const EdithApi = {
 
   async logout(): Promise<void> {
     try {
-      await fetch(`${API_BASE}/iam/logout`, {
+      await apiFetch(`${API_BASE}/iam/logout`, {
         method: 'POST',
         headers: getAuthHeaders()
       });
@@ -1085,7 +1085,7 @@ export const EdithApi = {
 
   async refreshToken(): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/iam/refresh`, {
+      const res = await apiFetch(`${API_BASE}/iam/refresh`, {
         method: 'POST',
         headers: getAuthHeaders()
       });
@@ -1110,7 +1110,7 @@ export const EdithApi = {
   async login(payload: { username: string; password: string; tenantId?: string }): Promise<any> {
     const tid = payload.tenantId || currentSession.tenantId || '11111111-1111-1111-1111-111111111111';
     try {
-      const res = await fetch(`${API_BASE}/iam/login`, {
+      const res = await apiFetch(`${API_BASE}/iam/login`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -1127,7 +1127,7 @@ export const EdithApi = {
   async verifyMfa(payload: { mfaSessionToken: string; code: string }): Promise<any> {
     const tid = currentSession.tenantId || '11111111-1111-1111-1111-111111111111';
     try {
-      const res = await fetch(`${API_BASE}/iam/mfa/verify`, {
+      const res = await apiFetch(`${API_BASE}/iam/mfa/verify`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -1143,7 +1143,7 @@ export const EdithApi = {
 
   async validateOnboardingToken(token: string): Promise<any> {
     try {
-      const res = await fetch(`${API_BASE}/iam/onboard/validate?token=${encodeURIComponent(token)}`);
+      const res = await apiFetch(`${API_BASE}/iam/onboard/validate?token=${encodeURIComponent(token)}`);
       return await res.json();
     } catch (err) {
       return { valid: false, error: toGeneralError(err, 'NETWORK').message };
@@ -1152,7 +1152,7 @@ export const EdithApi = {
 
   async getMfaSetup(token: string): Promise<any> {
     try {
-      const res = await fetch(`${API_BASE}/iam/mfa/setup?token=${encodeURIComponent(token)}`, {
+      const res = await apiFetch(`${API_BASE}/iam/mfa/setup?token=${encodeURIComponent(token)}`, {
         method: 'POST'
       });
       return await res.json();
@@ -1169,7 +1169,7 @@ export const EdithApi = {
     mfaSecret: string;
   }): Promise<any> {
     try {
-      const res = await fetch(`${API_BASE}/iam/onboard/complete?mfaSecret=${encodeURIComponent(payload.mfaSecret)}`, {
+      const res = await apiFetch(`${API_BASE}/iam/onboard/complete?mfaSecret=${encodeURIComponent(payload.mfaSecret)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1187,7 +1187,7 @@ export const EdithApi = {
 
   async resendUserInvite(userId: string): Promise<any> {
     try {
-      const res = await fetch(`${API_BASE}/iam/users/${userId}/resend-invite`, {
+      const res = await apiFetch(`${API_BASE}/iam/users/${userId}/resend-invite`, {
         method: 'POST',
         headers: getAuthHeaders()
       });
@@ -1205,7 +1205,7 @@ export const EdithApi = {
 
   async changePassword(payload: { currentPassword: string; newPassword: string }): Promise<any> {
     try {
-      const res = await fetch(`${API_BASE}/iam/change-password`, {
+      const res = await apiFetch(`${API_BASE}/iam/change-password`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload)
@@ -1218,7 +1218,7 @@ export const EdithApi = {
 
   async fetchMenus(): Promise<any[]> {
     try {
-      const res = await fetch(`${API_BASE}/iam/menus`, { headers: getAuthHeaders() });
+      const res = await apiFetch(`${API_BASE}/iam/menus`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // ignore
@@ -1228,7 +1228,7 @@ export const EdithApi = {
 
   async fetchGroupMappings(groupId: string): Promise<any[]> {
     try {
-      const res = await fetch(`${API_BASE}/iam/groups/${groupId}/mappings`, { headers: getAuthHeaders() });
+      const res = await apiFetch(`${API_BASE}/iam/groups/${groupId}/mappings`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // ignore
@@ -1245,7 +1245,7 @@ export const EdithApi = {
     department?: string;
     shiftStatus?: string;
   }): Promise<any> {
-    const res = await fetch(`${API_BASE}/iam/users`, {
+    const res = await apiFetch(`${API_BASE}/iam/users`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -1269,7 +1269,7 @@ export const EdithApi = {
     mustChangePassword?: boolean;
   }): Promise<IamUserRecord | null> {
     try {
-      const res = await fetch(`${API_BASE}/iam/users/${id}`, {
+      const res = await apiFetch(`${API_BASE}/iam/users/${id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload)
@@ -1283,7 +1283,7 @@ export const EdithApi = {
 
   async deleteIamUser(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/iam/users/${id}`, {
+      const res = await apiFetch(`${API_BASE}/iam/users/${id}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
@@ -1295,7 +1295,7 @@ export const EdithApi = {
 
   async fetchIamGroups(): Promise<IamGroupRecord[]> {
     try {
-      const res = await fetch(`${API_BASE}/iam/groups`, { headers: getAuthHeaders() });
+      const res = await apiFetch(`${API_BASE}/iam/groups`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // ignore
@@ -1305,7 +1305,7 @@ export const EdithApi = {
 
   async updateIamGroupPermissions(groupId: string, permissions: IamGroupPermission[]): Promise<IamGroupRecord | null> {
     try {
-      const res = await fetch(`${API_BASE}/iam/groups/${groupId}/permissions`, {
+      const res = await apiFetch(`${API_BASE}/iam/groups/${groupId}/permissions`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({ permissions })
@@ -1323,7 +1323,7 @@ export const EdithApi = {
       if (search) params.set('search', search);
       if (blockedOnly) params.set('blockedOnly', 'true');
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`${API_BASE}/kyc${qs}`, {
+      const res = await apiFetch(`${API_BASE}/kyc${qs}`, {
         headers: getAuthHeaders()
       });
       if (res.ok) {
@@ -1337,7 +1337,7 @@ export const EdithApi = {
 
   async fetchCustomerDossier(customerIdOrCode: string): Promise<KycDossierDto | null> {
     try {
-      const res = await fetch(`${API_BASE}/kyc/${encodeURIComponent(customerIdOrCode)}`, {
+      const res = await apiFetch(`${API_BASE}/kyc/${encodeURIComponent(customerIdOrCode)}`, {
         headers: getAuthHeaders()
       });
       if (res.ok) {
@@ -1362,7 +1362,7 @@ export const EdithApi = {
     notes?: string;
   }): Promise<KycDossierDto | null> {
     try {
-      const res = await fetch(`${API_BASE}/kyc/${encodeURIComponent(customerIdOrCode)}/edd`, {
+      const res = await apiFetch(`${API_BASE}/kyc/${encodeURIComponent(customerIdOrCode)}/edd`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload)
@@ -1377,7 +1377,7 @@ export const EdithApi = {
   },
 
   async fetchAuditLogs(limit: number = 100): Promise<AuditLogRecord[]> {
-    const res = await fetch(`${API_BASE}/reports/audit?limit=${limit}`, {
+    const res = await apiFetch(`${API_BASE}/reports/audit?limit=${limit}`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) {
@@ -1394,7 +1394,7 @@ export const EdithApi = {
     details: string;
   }): Promise<AuditLogRecord> {
     const actor = payload.actor || currentSession.username || 'Compliance Officer';
-    const res = await fetch(`${API_BASE}/reports/audit`, {
+    const res = await apiFetch(`${API_BASE}/reports/audit`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({
@@ -1443,7 +1443,7 @@ export const EdithApi = {
       productWeight: number;
     };
   }> {
-    const res = await fetch(`${API_BASE}/settings/masters`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/settings/masters`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Failed to load system masters: ${res.statusText}`);
     return await res.json();
   },
@@ -1455,7 +1455,7 @@ export const EdithApi = {
     idWeightage: number;
     defaultThreshold: number;
   }): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/settings/scoring-weights`, {
+    const res = await apiFetch(`${API_BASE}/settings/scoring-weights`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(weights)
@@ -1470,7 +1470,7 @@ export const EdithApi = {
     isHighRisk: boolean;
     riskScore: number;
   }): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/settings/countries`, {
+    const res = await apiFetch(`${API_BASE}/settings/countries`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(country)
@@ -1486,7 +1486,7 @@ export const EdithApi = {
     isHighRisk: boolean;
     riskLevel: string;
   }): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/settings/nationalities`, {
+    const res = await apiFetch(`${API_BASE}/settings/nationalities`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(nationality)
@@ -1501,7 +1501,7 @@ export const EdithApi = {
     txHighRisk: number;
     txMedRisk: number;
   }): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/settings/risk-rates`, {
+    const res = await apiFetch(`${API_BASE}/settings/risk-rates`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(rates)
@@ -1517,7 +1517,7 @@ export const EdithApi = {
     partnerUboScreening: boolean;
     realtimeHoldInterceptor: boolean;
   }): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/settings/setup-controls`, {
+    const res = await apiFetch(`${API_BASE}/settings/setup-controls`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(controls)
@@ -1531,7 +1531,7 @@ export const EdithApi = {
     clientTypeWeight: number;
     productWeight: number;
   }): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/settings/risk-assessment`, {
+    const res = await apiFetch(`${API_BASE}/settings/risk-assessment`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(weights)
@@ -1545,7 +1545,7 @@ export const EdithApi = {
     mandatoryReportingThreshold: number;
     highRiskApprovalThreshold: number;
   }>): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/settings/currency-thresholds`, {
+    const res = await apiFetch(`${API_BASE}/settings/currency-thresholds`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ thresholds })
@@ -1556,7 +1556,7 @@ export const EdithApi = {
 
   // 13. Notification & Webhook Admin Endpoints
   async fetchNotificationRules(): Promise<NotificationRuleDto[]> {
-    const res = await fetch(`${API_BASE}/notifications/rules`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/notifications/rules`, { headers: getAuthHeaders() });
     if (!res.ok) {
       throw new Error(`Failed to fetch notification rules: ${res.statusText}`);
     }
@@ -1564,7 +1564,7 @@ export const EdithApi = {
   },
 
   async createNotificationRule(payload: Partial<NotificationRuleDto>): Promise<NotificationRuleDto> {
-    const res = await fetch(`${API_BASE}/notifications/rules`, {
+    const res = await apiFetch(`${API_BASE}/notifications/rules`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -1576,7 +1576,7 @@ export const EdithApi = {
   },
 
   async updateNotificationRule(id: string, payload: Partial<NotificationRuleDto>): Promise<NotificationRuleDto> {
-    const res = await fetch(`${API_BASE}/notifications/rules/${id}`, {
+    const res = await apiFetch(`${API_BASE}/notifications/rules/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -1588,7 +1588,7 @@ export const EdithApi = {
   },
 
   async toggleNotificationRule(id: string): Promise<{ id: string; active: boolean }> {
-    const res = await fetch(`${API_BASE}/notifications/rules/${id}/toggle`, {
+    const res = await apiFetch(`${API_BASE}/notifications/rules/${id}/toggle`, {
       method: 'PATCH',
       headers: getAuthHeaders()
     });
@@ -1599,7 +1599,7 @@ export const EdithApi = {
   },
 
   async deleteNotificationRule(id: string): Promise<boolean> {
-    const res = await fetch(`${API_BASE}/notifications/rules/${id}`, {
+    const res = await apiFetch(`${API_BASE}/notifications/rules/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
@@ -1610,7 +1610,7 @@ export const EdithApi = {
     const qs = new URLSearchParams();
     if (params?.status) qs.append('status', params.status);
     if (params?.search) qs.append('search', params.search);
-    const res = await fetch(`${API_BASE}/notifications/ledgers?${qs.toString()}`, {
+    const res = await apiFetch(`${API_BASE}/notifications/ledgers?${qs.toString()}`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) {
@@ -1620,7 +1620,7 @@ export const EdithApi = {
   },
 
   async replayDeliveryLedger(id: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/notifications/ledgers/${id}/replay`, {
+    const res = await apiFetch(`${API_BASE}/notifications/ledgers/${id}/replay`, {
       method: 'POST',
       headers: getAuthHeaders()
     });
@@ -1631,7 +1631,7 @@ export const EdithApi = {
   },
 
   async bulkReplayDeadLetters(): Promise<{ replayedCount: number; message: string }> {
-    const res = await fetch(`${API_BASE}/notifications/ledgers/bulk-replay`, {
+    const res = await apiFetch(`${API_BASE}/notifications/ledgers/bulk-replay`, {
       method: 'POST',
       headers: getAuthHeaders()
     });
@@ -1642,7 +1642,7 @@ export const EdithApi = {
   },
 
   async fetchShiftRosters(): Promise<ShiftRosterScheduleDto[]> {
-    const res = await fetch(`${API_BASE}/notifications/shifts`, { headers: getAuthHeaders() });
+    const res = await apiFetch(`${API_BASE}/notifications/shifts`, { headers: getAuthHeaders() });
     if (!res.ok) {
       throw new Error(`Failed to fetch shift rosters: ${res.statusText}`);
     }
@@ -1650,7 +1650,7 @@ export const EdithApi = {
   },
 
   async updateShiftRoster(id: string, payload: Partial<ShiftRosterScheduleDto>): Promise<ShiftRosterScheduleDto> {
-    const res = await fetch(`${API_BASE}/notifications/shifts/${id}`, {
+    const res = await apiFetch(`${API_BASE}/notifications/shifts/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -1662,7 +1662,7 @@ export const EdithApi = {
   },
 
   async testFireNotification(payload: { ruleId?: string; channel: string; customEndpoint?: string }): Promise<any> {
-    const res = await fetch(`${API_BASE}/notifications/test-fire`, {
+    const res = await apiFetch(`${API_BASE}/notifications/test-fire`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
@@ -1675,7 +1675,7 @@ export const EdithApi = {
 
   async fetchInAppNotifications(): Promise<{ unreadCount: number; items: InAppNotificationItemDto[] }> {
     try {
-      const res = await fetch(`${API_BASE}/notifications/inbox`, { headers: getAuthHeaders() });
+      const res = await apiFetch(`${API_BASE}/notifications/inbox`, { headers: getAuthHeaders() });
       if (res.ok) return await res.json();
     } catch {
       // offline/empty fallback
@@ -1687,7 +1687,7 @@ export const EdithApi = {
   },
 
   async markNotificationAsRead(id: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/notifications/inbox/${id}/read`, {
+    const res = await apiFetch(`${API_BASE}/notifications/inbox/${id}/read`, {
       method: 'PATCH',
       headers: getAuthHeaders()
     });
@@ -1698,7 +1698,7 @@ export const EdithApi = {
   },
 
   async markAllNotificationsAsRead(): Promise<any> {
-    const res = await fetch(`${API_BASE}/notifications/inbox/mark-all-read`, {
+    const res = await apiFetch(`${API_BASE}/notifications/inbox/mark-all-read`, {
       method: 'POST',
       headers: getAuthHeaders()
     });
@@ -2066,7 +2066,7 @@ export const EdithApi = {
     }
     if (params?.startDate) qs.set('startDate', params.startDate);
     if (params?.endDate) qs.set('endDate', params.endDate);
-    const res = await fetch(`${API_BASE}/blacklist/stats/daily?${qs.toString()}`, {
+    const res = await apiFetch(`${API_BASE}/blacklist/stats/daily?${qs.toString()}`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error(`Failed to fetch blacklist daily trend stats: ${res.statusText}`);

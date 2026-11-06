@@ -29,14 +29,23 @@ if (!string.IsNullOrWhiteSpace(pgConn))
 {
     try
     {
-        using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=1");
+        using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=2");
         probeConn.Open();
         usePostgres = true;
     }
-    catch
+    catch (Exception ex)
     {
+        if (builder.Environment.IsProduction())
+        {
+            throw new InvalidOperationException(
+                "CRITICAL: Failed to connect to PostgreSQL in Production environment. In-memory fallback is disabled in Production to prevent silent data divergence and unpersisted state.", ex);
+        }
         usePostgres = false;
     }
+}
+else if (builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException("CRITICAL: PostgreSQL connection string must be configured in Production environment.");
 }
 
 // Core Screening Services

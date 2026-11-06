@@ -15,42 +15,53 @@ public static class IamEndpoints
     private static readonly ConcurrentDictionary<string, (Guid UserId, Guid TenantId, string Username, string Role, DateTimeOffset Expiry)>
         MfaSessions = new();
 
+    public static IResult IssueToken(
+        TokenRequest req,
+        ITokenService tokenService,
+        ITenantRegistry tenantRegistry,
+        IWebHostEnvironment env)
+    {
+        if (env.IsProduction())
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Endpoint Disabled in Production",
+                detail: "Direct unauthenticated token minting is disabled in production environments. Please authenticate using /api/v1/iam/login.");
+        }
+
+        var targetTenantId = req.TenantId ?? InMemoryTenantRegistry.DefaultTenantId;
+        var tenant = tenantRegistry.FindTenant(targetTenantId);
+
+        if (tenant == null || !tenant.IsActive)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Unknown Tenant",
+                detail: $"Tenant '{targetTenantId}' is not registered or is deactivated.");
+        }
+
+        var role = !string.IsNullOrWhiteSpace(req.Role)
+            ? req.Role.ToUpperInvariant()
+            : EdithRoles.AmlOfficer;
+
+        if (!EdithRoles.All.Contains(role, StringComparer.OrdinalIgnoreCase))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid Role",
+                detail: $"Role '{role}' is not a valid EDITH platform role.");
+        }
+
+        var tokenResponse = tokenService.GenerateToken(req.Username, role, tenant.TenantId);
+        return Results.Ok(tokenResponse);
+    }
+
     public static IEndpointRouteBuilder MapIamEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/iam");
 
-        // 1. Issue Dev / S2S JWT Token (Public endpoint with strict tenant registry validation)
-        group.MapPost("/token", (
-            [FromBody] TokenRequest req,
-            [FromServices] ITokenService tokenService,
-            [FromServices] ITenantRegistry tenantRegistry) =>
-        {
-            var targetTenantId = req.TenantId ?? InMemoryTenantRegistry.DefaultTenantId;
-            var tenant = tenantRegistry.FindTenant(targetTenantId);
-
-            if (tenant == null || !tenant.IsActive)
-            {
-                return Results.Problem(
-                    statusCode: StatusCodes.Status400BadRequest,
-                    title: "Unknown Tenant",
-                    detail: $"Tenant '{targetTenantId}' is not registered or is deactivated.");
-            }
-
-            var role = !string.IsNullOrWhiteSpace(req.Role)
-                ? req.Role.ToUpperInvariant()
-                : EdithRoles.AmlOfficer;
-
-            if (!EdithRoles.All.Contains(role, StringComparer.OrdinalIgnoreCase))
-            {
-                return Results.Problem(
-                    statusCode: StatusCodes.Status400BadRequest,
-                    title: "Invalid Role",
-                    detail: $"Role '{role}' is not a valid EDITH platform role.");
-            }
-
-            var tokenResponse = tokenService.GenerateToken(req.Username, role, tenant.TenantId);
-            return Results.Ok(tokenResponse);
-        }).AllowAnonymous();
+        // 1. Issue Dev / S2S JWT Token (Public endpoint with strict tenant registry validation, disabled in Production)
+        group.MapPost("/token", IssueToken).AllowAnonymous();
 
         // 2. Production User Login Flow (Password check + 2FA challenge / Onboarding challenge)
         group.MapPost("/login", async (

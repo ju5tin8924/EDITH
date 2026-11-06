@@ -2,9 +2,12 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Edith.Gateway.Endpoints;
 using Edith.Gateway.Models;
 using Edith.Gateway.Services;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 
 namespace Edith.Gateway.Tests;
 
@@ -677,5 +680,65 @@ public sealed class GatewayTests : IClassFixture<WebApplicationFactory<Edith.Gat
             riskScore = 88.5m
         });
         Assert.Equal(HttpStatusCode.OK, countryRes.StatusCode);
+    }
+
+    private sealed class MockHostEnvironment : IWebHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Production";
+        public string ApplicationName { get; set; } = "Edith.Gateway";
+        public string WebRootPath { get; set; } = string.Empty;
+        public Microsoft.Extensions.FileProviders.IFileProvider WebRootFileProvider { get; set; } = null!;
+        public string ContentRootPath { get; set; } = string.Empty;
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = null!;
+    }
+
+    [Fact]
+    public void TokenEndpoint_In_Production_Mode_Returns_403_Forbidden()
+    {
+        var mockEnv = new MockHostEnvironment { EnvironmentName = "Production" };
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Secret"] = "ProductionSecretKey_MustBeAtLeast32CharsLong!"
+            })
+            .Build();
+        var tokenService = new JwtTokenService(config, mockEnv);
+        var tenantRegistry = new InMemoryTenantRegistry();
+        var request = new TokenRequest
+        {
+            Username = "attacker",
+            Password = "AttackPassword123!",
+            Role = EdithRoles.SuperAdmin,
+            TenantId = InMemoryTenantRegistry.DefaultTenantId
+        };
+
+        var result = IamEndpoints.IssueToken(request, tokenService, tenantRegistry, mockEnv);
+        var problem = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult>(result);
+        Assert.Equal((int)HttpStatusCode.Forbidden, problem.StatusCode);
+    }
+
+    [Fact]
+    public async Task AcquireLock_When_Contended_By_Another_User_Returns_409_Conflict()
+    {
+        var analystClient = await CreateAuthenticatedClientAsync(EdithRoles.Analyst);
+        var mlroClient = await CreateAuthenticatedClientAsync(EdithRoles.Mlro);
+
+        // Fetch existing open cases
+        var casesRes = await analystClient.GetAsync("/api/v1/cases");
+        Assert.Equal(HttpStatusCode.OK, casesRes.StatusCode);
+        var casesJson = await casesRes.Content.ReadAsStringAsync();
+        using var casesDoc = JsonDocument.Parse(casesJson);
+        var caseId = Guid.Parse(casesDoc.RootElement.EnumerateArray().First().GetProperty("id").GetString()!);
+
+        // 1. Analyst acquires lock first
+        var firstLock = await analystClient.PostAsync($"/api/v1/cases/{caseId}/acquire-lock?durationMinutes=15", null);
+        Assert.Equal(HttpStatusCode.OK, firstLock.StatusCode);
+
+        // 2. MLRO attempts to acquire the same active case lock
+        var secondLock = await mlroClient.PostAsync($"/api/v1/cases/{caseId}/acquire-lock?durationMinutes=15", null);
+        Assert.Equal(HttpStatusCode.Conflict, secondLock.StatusCode);
+
+        var conflictJson = await secondLock.Content.ReadAsStringAsync();
+        Assert.Contains("error", conflictJson);
     }
 }

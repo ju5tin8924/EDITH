@@ -1,0 +1,110 @@
+﻿{
+    "version":  "10.4",
+    "release_date":  "2026-11-06T10:11:00Z",
+    "status":  "Validated",
+    "total_files":  17,
+    "manifest":  [
+                     {
+                         "relative_path":  "EDITH_Documentation_Library_v10.4.zip",
+                         "file_name":  "EDITH_Documentation_Library_v10.4.zip",
+                         "size_bytes":  362630,
+                         "sha256":  "47A87E205276730BA71EA3F36B3F198785E39F61F9250D958B9E8C93B7BC170D"
+                     },
+                     {
+                         "relative_path":  "README.md",
+                         "file_name":  "README.md",
+                         "size_bytes":  10597,
+                         "sha256":  "1505A125C15ECC03ECE8DF3239F421D652A9B14A971549AE4458B5EA879357DB"
+                     },
+                     {
+                         "relative_path":  "README_v10.4.md",
+                         "file_name":  "README_v10.4.md",
+                         "size_bytes":  10597,
+                         "sha256":  "1505A125C15ECC03ECE8DF3239F421D652A9B14A971549AE4458B5EA879357DB"
+                     },
+                     {
+                         "relative_path":  "sync_to_gdrive.ps1",
+                         "file_name":  "sync_to_gdrive.ps1",
+                         "size_bytes":  3026,
+                         "sha256":  "B4E5FB2F7F18465C83D7C2533289B218C2FDCA3398F4F788CE813A3F1C0513B9"
+                     },
+                     {
+                         "relative_path":  "sync_to_gdrive_v10.4.ps1",
+                         "file_name":  "sync_to_gdrive_v10.4.ps1",
+                         "size_bytes":  3026,
+                         "sha256":  "B4E5FB2F7F18465C83D7C2533289B218C2FDCA3398F4F788CE813A3F1C0513B9"
+                     },
+                     {
+                         "relative_path":  "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.4.html",
+                         "file_name":  "EDITH_Client_Architecture_Pitch_v10.4.html",
+                         "size_bytes":  54885,
+                         "sha256":  "5A0BCB534D4E019B40BCE8781FCF7FF58C547BFAA48BE20B0C33574D3499EACE"
+                     },
+                     {
+                         "relative_path":  "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.4.md",
+                         "file_name":  "EDITH_Client_Architecture_Pitch_v10.4.md",
+                         "size_bytes":  31767,
+                         "sha256":  "6C8662ED7ADB8CA2F3FD3FB6F614FBB64757570A750167A56946CA99DAD1122B"
+                     },
+                     {
+                         "relative_path":  "01_Executive_and_Pitch/EDITH_Client_Architecture_Pitch_v10.4.pdf",
+                         "file_name":  "EDITH_Client_Architecture_Pitch_v10.4.pdf",
+                         "size_bytes":  442074,
+                         "sha256":  "35E6556BCC3AD3778ED7FDD556DAB293807C001A9FED282D7B096843866FFBD0"
+                     },
+                     {
+                         "relative_path":  "02_Product_and_Requirements/EDITH_END_TO_END_WORKPLAN_v10.4.md",
+                         "file_name":  "EDITH_END_TO_END_WORKPLAN_v10.4.md",
+                         "size_bytes":  13944,
+                         "sha256":  "5C6A5DD56BA35A12F634DCA83CDB79BB27D65F91BCD92CE26D6062ACC1CED2A3"
+                     },
+                     {
+                         "relative_path":  "02_Product_and_Requirements/EDITH_Master_PRD_v10.4.md",
+                         "file_name":  "EDITH_Master_PRD_v10.4.md",
+                         "size_bytes":  12914,
+                         "sha256":  "8E6B75DEF14618E5111B6256527482A702450B6F0E0E0CEDE1767989E95D820F"
+                     },
+                     {
+                         "relative_path":  "02_Product_and_Requirements/EDITH_Modules_Workflows_and_Pages_v10.4.md",
+                         "file_name":  "EDITH_Modules_Workflows_and_Pages_v10.4.md",
+                         "size_bytes":  26787,
+                         "sha256":  "7DFA2B2F8D3DB7395CB03F813487E989C0519935A6E691DD2281B79041D7646F"
+                     },
+                     {
+                         "relative_path":  "03_Technical_Architecture_and_Database/database_v10.4.md",
+                         "file_name":  "database_v10.4.md",
+                         "size_bytes":  28002,
+                         "sha256":  "1B9BE5644D8864CC05578F531FA4481A1A625C37ED8E429324902BB89D72D4DF"
+                     },
+                     {
+                         "relative_path":  "03_Technical_Architecture_and_Database/EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.4.md",
+                         "file_name":  "EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.4.md",
+                         "size_bytes":  77289,
+                         "sha256":  "7F4D92CF25D1F005AF2EFDACF3AA219E1F4B2388A2D015F91F87BA507A52B3C6"
+                     },
+                     {
+                         "relative_path":  "03_Technical_Architecture_and_Database/EDITH_Master_Specification_v10.4.md",
+                         "file_name":  "EDITH_Master_Specification_v10.4.md",
+                         "size_bytes":  19038,
+                         "sha256":  "C87711F811BF422137234CBD90A2AD1A11E535099B89671097604CF2007FB21C"
+                     },
+                     {
+                         "relative_path":  "04_Operations_and_Deployment/CREDENTIALS_v10.4.md",
+                         "file_name":  "CREDENTIALS_v10.4.md",
+                         "size_bytes":  5565,
+                         "sha256":  "6FB6B37A1E491BCCD44810B2383B529F8B25941ABE56C03B1CAAA8C84741758B"
+                     },
+                     {
+                         "relative_path":  "04_Operations_and_Deployment/HOW_TO_RUN_v10.4.md",
+                         "file_name":  "HOW_TO_RUN_v10.4.md",
+                         "size_bytes":  5057,
+                         "sha256":  "881CD625DFC36D4BD7284CABECCFCBD3D212805680BE0D48EDC8EF09F1A78889"
+                     },
+                     {
+                         "relative_path":  "04_Operations_and_Deployment/TODO_v10.4.md",
+                         "file_name":  "TODO_v10.4.md",
+                         "size_bytes":  43657,
+                         "sha256":  "166EC5BDBD37071C6665E14C17A7B65A6B7C95D0E0FFB56AA43D06CE1B8257DC"
+                     }
+                 ]
+}

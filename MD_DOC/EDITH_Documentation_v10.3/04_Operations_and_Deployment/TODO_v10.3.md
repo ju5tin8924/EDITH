@@ -32,6 +32,8 @@
 | **Phase 20** | System Masters & Calibration Hub Workflow, UX/UI & Feature Modernization (Full PostgreSQL CRUD Wiring, Auto-Balancing Sliders, Domain Separation, Currency Master, Real-Time Impact Calculator, Version History & 4-Eyes Staging) | `COMPLETED` |
 | **Phase 21** | Delta Rescreening Workflow, UX/UI & System Modernization (Filter Bar Wiring, Closed-Loop Escalation, Token Diff Drawer & Delta Tests) | `COMPLETED` |
 | **Phase 22** | Blacklist / Watchlist & Whitelist Governance Modernization ("Authorize New Blacklist/Watchlist" Workflow, Live `watchlist/sync` CRUD, 4-Eyes Maker-Checker, Blast-Radius Simulator, Soft Revocation & Cross-Module Escalation) | `COMPLETED` |
+| **Phase 23** | Architecture Hardening, Security Perimeter, Concurrency & Frontend Resilience (Disabled Anonymous Token Minting in Prod, Fail-Fast DB Persistence, Route-Based Code Splitting, Concurrency Conflict Handling, Active Lock Heartbeat & Expiration Warning) | `COMPLETED` |
+| **Phase 24** | Enterprise Error Handling Engine, General-Terms Messaging System & EdithLoader Modernization (RFC 7807/9457 ProblemDetails, End-to-End Correlation Tracking, Anti-Leak Redaction, Zero Blocking Alerts, Actionable Toasts & EdithLoader Telemetry) | `COMPLETED` |
 
 ---
 
@@ -332,5 +334,61 @@
   - Replace blocking browser `alert()` in `BulkScreeningView.tsx` with an inline status banner and direct link to `/delta/authorization`.
   - Verified with integration test `WatchlistAndWhitelistGovernance_CrudAndSoftRevocation_Works` in `ScreeningApiTests.cs` (all 15 Screening API tests passing, 20 Bulk tests passing, 101 offline tests total) and frontend production build (`tsc -b && vite build` passing with 0 errors).
 
+### [x] Phase 23: Architecture Hardening, Security Perimeter, Concurrency & Frontend Resilience (v2.7.0 Target)
+- [x] **1. Gated Anonymous Token Minting (`POST /api/v1/iam/token`)**:
+  - Gated direct token minting behind `env.IsProduction()`, returning HTTP 403 Forbidden with clear RFC 7807 problem details in production.
+  - Enforced authentication through `/api/v1/iam/login` with real salted PBKDF2 credential verification and TOTP 2FA.
+  - Added unit test `TokenEndpoint_In_Production_Mode_Returns_403_Forbidden` verifying RFC 7807 problem details rejection in production.
+- [x] **2. Fail-Fast Production Persistence (Prevent Silent In-Memory State Loss)**:
+  - Eliminated silent fallback to in-memory dictionaries during database probe/connect failures when running in Production.
+  - Gateway (`Program.cs`) and Screening API explicitly throw a startup exception if PostgreSQL connection fails in Production, preventing silent data loss and split-brain states.
+  - Added production-mode fail-fast runtime guards across `PostgreSqlKycService` and `PostgreSqlSystemMastersService` (`catch when (!_isProduction)`).
+- [x] **3. Centralized API Fetch & Frontend Concurrency / Error Integrity (`api.ts`)**:
+  - Converted `api.ts` to route 100% of network requests (77 endpoints) through `apiFetch()`, centralizing authorization headers and unified 401 session expiry handling.
+  - Replaced error masking in `src/Web/edith-portal/src/services/api.ts` (eliminated `catch { return true; }` across `acquireLock`, `releaseLock`, `resolveCase`, `transitionCase`, and `addComment`).
+  - Added test `AcquireLock_When_Contended_By_Another_User_Returns_409_Conflict` verifying HTTP 409 Conflict propagation when another investigator holds the lease.
+- [x] **4. Database Indexing & Performance Migrations**:
+  - Added `0003_cases_performance_indexes.sql` targeting `cases.aml_cases(tenant_id, status, created_at DESC)`, `cases.aml_cases(tenant_id, assigned_analyst_id)`, `cases.aml_cases(locked_by_user_id, lock_expires_at)`, `case_notes`, and `case_activities`.
+  - Added `0003_audit_ledgers_indexes.sql` targeting `core.audit_ledgers(tenant_id, action_type, created_at DESC)` and `core.audit_ledgers(created_at DESC)`.
+  - Verified with `Edith.Database.Migrator.Tests` (6/6 passed).
+- [x] **5. Dynamic Route-Based Code Splitting in Frontend (`App.tsx`)**:
+  - Converted all 17 top-level master views to dynamic `React.lazy()` imports with high-fidelity `ViewLoadingFallback` skeletons.
+  - Initial bundle size reduced from 617+ KB to 399 KB (119 KB gzip), with dedicated sub-chunking per route view.
+- [x] **6. Active Case Lock Heartbeat & Expiration Warning System (`CaseWorkspace.tsx`)**:
+  - Background lock heartbeat periodically refreshes lease every 4 minutes while investigator is on tab and holding lock.
+  - Added visual countdown warning banner when lease has $\le 120$ seconds remaining, providing 1-click renewal buttons (`Extend 15m`).
+  - Added lease expired notice when lease reaches 0 seconds, disabling action buttons and notes submission until lock is refreshed.
+  - Handled 409 Conflict rejection in `handleRenewLock` with explicit error notifications if a case is claimed by another investigator.
+- [x] **7. Verification & Build Validation**:
+  - All 130 backend unit/integration tests passing green across 10 test projects (`dotnet test`).
+  - Frontend production build (`tsc -b && vite build`) passing with 0 errors and optimal chunk splitting.
+
+### [x] Phase 24: Enterprise Error Handling Engine, General-Terms Messaging System & EdithLoader Modernization (v2.8.0 Target)
+- [x] **1. Unified Notification & Feedback Engine (`errorEngine.ts`)**:
+  - Implemented multi-channel feedback engine supporting `notify.success()`, `notify.info()`, `notify.warning()`, and `notify.error()`.
+  - Maintained 100% backward compatibility for existing `reportError()`, `toGeneralError()`, and `subscribeErrorEngine()` consumers.
+  - Added configurable auto-dismiss durations (4s for success, 4.5s for info, 6s for warning, persistent for errors).
+- [x] **2. End-to-End Correlation Tracking (`EDITH-ERR-XXXXXX`)**:
+  - Preserved backend gateway correlation IDs (`referenceCode` / `correlationId`) across API client responses.
+  - Aligned client incident tickets with backend `ILogger` entries for zero-mismatch regulatory and compliance auditability.
+- [x] **3. ProblemDetails (RFC 7807 / RFC 9457) & Anti-Leak Redaction**:
+  - Added support for ASP.NET Core `ProblemDetails` (`title`, `detail`, `status`, `instance`).
+  - Added regex-based anti-leak shield redacting SQL queries, table names, DB connection strings, internal IP addresses, and stack traces.
+  - Provided human-centered, actionable translations answering *What happened*, *Why*, and *What to do next*.
+- [x] **4. Elimination of Native Browser `alert()` and Disruptive Blocking Dialogs**:
+  - Replaced native tab-freezing browser `alert()` in `CaseWorkspace.tsx` with non-blocking `notify.warning()` and `notify.success()`.
+  - Integrated unified notifications across `BulkScreeningView.tsx`, `DeltaRescreeningView.tsx`, `SystemMastersView.tsx`, and `WhitelistGovernanceView.tsx`.
+- [x] **5. Global Feedback Toast Stack & Action Buttons (`ErrorEngineUi.tsx`)**:
+  - Enhanced `GlobalErrorHost` to render stacked, accessible toasts (`role="alert"` / `role="status"`) with distinct theme accents (emerald, amber, blue, ruby red).
+  - Supported inline action callbacks (e.g. `Retry`, `Refresh`, `Undo`, `View Case`).
+  - Integrated `EdithLoader` during automated retry cycles and retained `EdithErrorBoundary` for crash protection.
+- [x] **6. Backend Gateway Global Exception Middleware (`GlobalErrorHandlingMiddleware.cs`)**:
+  - Registered middleware at the top of the ASP.NET Core pipeline in `Edith.Gateway`.
+  - Used source-generated high-performance `LoggerMessage` (event ID 5001) avoiding string allocations.
+  - Returned standardized, sanitized JSON error envelopes with HTTP status codes and `EDITH-ERR-` correlation codes.
+- [x] **7. Full Verification & Test Validation**:
+  - Frontend production build (`tsc -b && vite build`) passing with 0 errors.
+  - Backend integration test suite (`dotnet test tests/Edith.Gateway.Tests/Edith.Gateway.Tests.csproj -c Release`) passing 9/9 integration tests.
+
 ---
-*Maintained by the EDITH Architecture & Compliance Engineering Team (v10.3).*
+*Maintained by the EDITH Architecture & Compliance Engineering Team (v10.4).*

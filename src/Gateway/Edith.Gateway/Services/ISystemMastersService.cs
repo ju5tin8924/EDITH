@@ -60,9 +60,12 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
         new("GBP", 10000m, 100000m)
     };
 
-    public PostgreSqlSystemMastersService(string connectionString)
+    private readonly bool _isProduction;
+
+    public PostgreSqlSystemMastersService(string connectionString, bool isProduction = false)
     {
         _connectionString = connectionString;
+        _isProduction = isProduction;
     }
 
     public async Task<SystemMastersResponseDto> GetMastersAsync(Guid tenantId, CancellationToken ct = default)
@@ -160,7 +163,7 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
                 nationalities.Add(new NationalityMasterDto(code, demonym, country, isHigh, level));
             }
         }
-        catch
+        catch when (!_isProduction)
         {
             // fallback handled below
         }
@@ -212,7 +215,7 @@ public sealed class PostgreSqlSystemMastersService : ISystemMastersService
                 );
             }
         }
-        catch
+        catch when (!_isProduction)
         {
             // use fallback
         }

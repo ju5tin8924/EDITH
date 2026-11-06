@@ -16,7 +16,7 @@ import { BulkJobSummary } from '../types';
 import { EdithApi, getAuthHeaders } from '../services/api';
 import { GridPattern, ShimmerButton, BorderBeam } from './magicui';
 import { EdithLoader } from './EdithLogo';
-import { reportError } from '../services/errorEngine';
+import { reportError, notify } from '../services/errorEngine';
 import { usePageMeta } from '../config/pageMeta';
 
 interface ExtendedBulkJob extends BulkJobSummary {
@@ -144,8 +144,9 @@ export const BulkScreeningView: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        setDeltaBanner(
-          `Delta Rescreening Completed (${data.syncBatchId}): Evaluated ${data.scannedCustomers} customers against UN Sanctions Update. ${data.newDeltaHits} new match(es) identified.`
+        notify.success(
+          `Evaluated ${data.scannedCustomers} customers against UN Sanctions. ${data.newDeltaHits} new matches identified.`,
+          { title: 'Delta Rescreening Completed' }
         );
         return;
       }
@@ -154,8 +155,9 @@ export const BulkScreeningView: React.FC = () => {
     } finally {
       setDeltaSyncRunning(false);
     }
-    setDeltaBanner(
-      'Delta Rescreening Completed: Evaluated 175,000 customers against UN Sanctions Update 2026-Q1. 3 new potential matches identified.'
+    notify.info(
+      'Evaluated 175,000 customers against UN Sanctions Update 2026-Q1. 3 new potential matches identified.',
+      { title: 'Delta Rescreening Completed' }
     );
   };
 

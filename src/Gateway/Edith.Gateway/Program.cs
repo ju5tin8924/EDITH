@@ -90,14 +90,23 @@ if (!string.IsNullOrWhiteSpace(pgConn))
 {
     try
     {
-        using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=1");
+        using var probeConn = new Npgsql.NpgsqlConnection(pgConn + ";Timeout=2");
         probeConn.Open();
         usePostgres = true;
     }
-    catch
+    catch (Exception ex)
     {
+        if (builder.Environment.IsProduction())
+        {
+            throw new InvalidOperationException(
+                "CRITICAL: Failed to connect to PostgreSQL in Production environment. In-memory fallback is disabled in Production to prevent silent data divergence and unpersisted state.", ex);
+        }
         usePostgres = false;
     }
+}
+else if (builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException("CRITICAL: PostgreSQL connection string must be configured in Production environment.");
 }
 
 // 5. IAM & Tenant Resolution Services
@@ -177,8 +186,8 @@ if (usePostgres && !string.IsNullOrWhiteSpace(pgConn))
     builder.Services.AddSingleton<IRuleRepository>(new PostgreSqlRuleRepository(pgConn));
     builder.Services.AddSingleton<IBulkJobRepository>(new PostgreSqlBulkJobRepository(pgConn));
 
-    builder.Services.AddSingleton<IKycService>(new PostgreSqlKycService(pgConn));
-    builder.Services.AddSingleton<ISystemMastersService>(new PostgreSqlSystemMastersService(pgConn));
+    builder.Services.AddSingleton<IKycService>(new PostgreSqlKycService(pgConn, isProduction: builder.Environment.IsProduction()));
+    builder.Services.AddSingleton<ISystemMastersService>(new PostgreSqlSystemMastersService(pgConn, isProduction: builder.Environment.IsProduction()));
     builder.Services.AddSingleton<IAuditLedgerService>(new PostgreSqlAuditLedgerService(pgConn));
 }
 else

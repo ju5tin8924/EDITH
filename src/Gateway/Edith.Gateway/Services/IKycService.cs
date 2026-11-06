@@ -102,10 +102,12 @@ public sealed class PostgreSqlKycService : IKycService
 {
     private readonly string _connectionString;
     private readonly InMemoryKycService _fallback = new();
+    private readonly bool _isProduction;
 
-    public PostgreSqlKycService(string connectionString)
+    public PostgreSqlKycService(string connectionString, bool isProduction = false)
     {
         _connectionString = connectionString;
+        _isProduction = isProduction;
     }
 
     public async Task<IReadOnlyList<KycDossierDto>> ListCustomersAsync(string? search = null, bool blockedOnly = false, CancellationToken ct = default)
@@ -156,7 +158,7 @@ public sealed class PostgreSqlKycService : IKycService
 
             return results.Count > 0 ? results : await _fallback.ListCustomersAsync(search, blockedOnly, ct);
         }
-        catch
+        catch when (!_isProduction)
         {
             return await _fallback.ListCustomersAsync(search, blockedOnly, ct);
         }
@@ -176,7 +178,7 @@ public sealed class PostgreSqlKycService : IKycService
             var dossier = await GetCustomerDossierInternalAsync(conn, customerIdOrCode, ct);
             return dossier ?? await _fallback.GetCustomerDossierAsync(customerIdOrCode, ct);
         }
-        catch
+        catch when (!_isProduction)
         {
             return await _fallback.GetCustomerDossierAsync(customerIdOrCode, ct);
         }
@@ -266,7 +268,7 @@ public sealed class PostgreSqlKycService : IKycService
 
             return await GetCustomerDossierInternalAsync(conn, current.CustomerCode, ct);
         }
-        catch
+        catch when (!_isProduction)
         {
             return await _fallback.GetCustomerDossierAsync(customerIdOrCode, ct);
         }

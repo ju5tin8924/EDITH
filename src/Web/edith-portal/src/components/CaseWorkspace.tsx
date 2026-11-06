@@ -36,6 +36,7 @@ import {
 } from '../types';
 import { EdithApi, getSession } from '../services/api';
 import { EdithLoader } from './EdithLogo';
+import { notify } from '../services/errorEngine';
 import { usePageMeta } from '../config/pageMeta';
 
 interface CaseWorkspaceProps {
@@ -173,6 +174,18 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
     return !!(caseDetail?.isLocked && !isLockedByMe);
   }, [caseDetail, isLockedByMe]);
 
+  // Background lock heartbeat: renew every 4 minutes while investigator is on tab and holds lock
+  useEffect(() => {
+    if (!selectedCaseId || !isLockedByMe) return;
+    const heartbeat = setInterval(async () => {
+      const ok = await EdithApi.acquireLock(selectedCaseId, 15);
+      if (ok) {
+        setLockRemainingSeconds(prev => Math.max(prev, 900));
+      }
+    }, 4 * 60 * 1000);
+    return () => clearInterval(heartbeat);
+  }, [selectedCaseId, isLockedByMe]);
+
   const toggleLock = async () => {
     if (!selectedCaseId) return;
     if (isLockedByMe) {
@@ -189,7 +202,17 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
   const handleRenewLock = async (durationMinutes: number) => {
     if (!selectedCaseId) return;
     setShowDurationPicker(false);
-    await EdithApi.acquireLock(selectedCaseId, durationMinutes);
+    const success = await EdithApi.acquireLock(selectedCaseId, durationMinutes);
+    if (!success) {
+      notify.warning(
+        'Unable to acquire case lock. The case may be locked by another analyst or your session has expired.',
+        { title: 'Lock Unavailable' }
+      );
+      const refreshedDetail = await EdithApi.fetchCaseDetail(selectedCaseId);
+      setCaseDetail(refreshedDetail);
+      return;
+    }
+    notify.success(`Investigation lease active for ${durationMinutes} minutes.`, { title: 'Lock Acquired' });
     setLocallyLockedIds(prev => Array.from(new Set([...prev, selectedCaseId])));
     setLockRemainingSeconds(durationMinutes * 60);
 
@@ -1017,9 +1040,21 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                   )}
                 </div>
 
+                {isLockedByMe && lockRemainingSeconds <= 120 && lockRemainingSeconds > 0 && (
+                  <div className="p-2 mb-2 rounded bg-warning/15 border border-warning/40 text-ink text-xs font-mono flex items-center justify-between animate-pulse">
+                    <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-warning" /> Lease expires in <strong>{lockRemainingSeconds}s</strong></span>
+                    <button onClick={() => handleRenewLock(15)} className="px-2 py-0.5 bg-warning text-black rounded text-[10px] font-bold hover:opacity-90">Extend 15m</button>
+                  </div>
+                )}
+
                 {isLockedByOther ? (
                   <div className="p-2.5 rounded bg-critical/10 border border-critical/30 text-critical text-xs font-mono text-center">
                     Case is locked by {caseDetail.lockedByUserName}. Action buttons disabled.
+                  </div>
+                ) : isLockedByMe && lockRemainingSeconds === 0 ? (
+                  <div className="p-2.5 rounded bg-critical/10 border border-critical/30 text-critical text-xs font-mono text-center flex items-center justify-between">
+                    <span>Lease expired. Re-acquire lock to act.</span>
+                    <button onClick={() => handleRenewLock(15)} className="px-2 py-0.5 bg-critical text-white rounded text-[10px] font-bold">Re-acquire</button>
                   </div>
                 ) : currentRole === 'MLRO' || currentRole === 'SUPER_ADMIN' ? (
                   <div className="grid grid-cols-2 gap-2">
@@ -1143,15 +1178,15 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ currentRole }) => 
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    disabled={isLockedByOther}
-                    placeholder={isLockedByOther ? "Case locked by another user" : `Add ${selectedNoteCategory.toLowerCase()} note...`}
+                    disabled={isLockedByOther || (isLockedByMe && lockRemainingSeconds === 0)}
+                    placeholder={isLockedByOther ? "Case locked by another user" : (isLockedByMe && lockRemainingSeconds === 0) ? "Lock lease expired - renew to post notes" : `Add ${selectedNoteCategory.toLowerCase()} note...`}
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     className="flex-1 bg-canvas-subtle border border-border rounded px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none disabled:opacity-50"
                   />
                   <button
                     type="submit"
-                    disabled={isLockedByOther || !newComment.trim()}
+                    disabled={isLockedByOther || (isLockedByMe && lockRemainingSeconds === 0) || !newComment.trim()}
                     className="px-3 py-1.5 rounded bg-primary text-white hover:bg-primary-hover transition text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
                   >
                     <Send className="w-3.5 h-3.5" />
