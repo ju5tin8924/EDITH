@@ -1,12 +1,12 @@
-﻿# EDITH — Enterprise Anti-Money Laundering & Sanctions Screening Platform
+# EDITH — Enterprise Anti-Money Laundering & Sanctions Screening Platform
 
-[![Build & Test](https://img.shields.io/badge/tests-100%2F100%20passing-10B981.svg?style=flat-square)](tests/)
+[![Build & Test](https://img.shields.io/badge/tests-101%2F101%20passing-10B981.svg?style=flat-square)](tests/)
 [![Architecture](https://img.shields.io/badge/.NET-10.0%20LTS-512BD4.svg?style=flat-square)](Edith.slnx)
 [![Database](https://img.shields.io/badge/PostgreSQL-17%20Enterprise-336791.svg?style=flat-square)](src/Database/Edith.Database.Migrator/)
 [![Search](https://img.shields.io/badge/OpenSearch-2.12%20Phonetic%20Index-005EB8.svg?style=flat-square)](src/Screening/Edith.Screening.Core/)
 [![Frontend](https://img.shields.io/badge/React-19%20%7C%20Vite%20%7C%20Tailwind-06B6D4.svg?style=flat-square)](src/Web/edith-portal/)
-[![Documentation](https://img.shields.io/badge/Documentation-v10.2%20Promoted-blue.svg?style=flat-square)](MD_DOC/EDITH_Documentation_v10.2/)
-[![Dual-Database Architecture](https://img.shields.io/badge/Architecture-PostgreSQL%2017%20%2B%20OpenSearch%202.12-brightgreen.svg?style=flat-square)](MD_DOC/EDITH_Documentation_v10.2/03_Technical_Architecture_and_Database/EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.2.md)
+[![Documentation](https://img.shields.io/badge/Documentation-v10.3%20Promoted-blue.svg?style=flat-square)](MD_DOC/EDITH_Documentation_v10.3/)
+[![Dual-Database Architecture](https://img.shields.io/badge/Architecture-PostgreSQL%2017%20%2B%20OpenSearch%202.12-brightgreen.svg?style=flat-square)](MD_DOC/EDITH_Documentation_v10.3/03_Technical_Architecture_and_Database/EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.3.md)
 [![Screening Latency](https://img.shields.io/badge/Screening%20P99-8.4ms-06B6D4.svg?style=flat-square)](tests/Edith.Performance.Benchmark/)
 
 EDITH is a high-velocity, cloud-native Anti-Money Laundering (AML) and Counter-Terrorist Financing (CTF) intelligence platform engineered for Tier-1 financial institutions, digital banks, exchange houses, and international payment networks.
@@ -119,25 +119,26 @@ EDITH/
 │   ├── opensearch/                  # OpenSearch 2.12 phonetic & n-gram index mappings
 │   └── vault/                       # HashiCorp Vault agent configuration
 ├── docker/                           # Local Dual-DB Docker Compose (PostgreSQL 17 + OpenSearch 2.12)
-├── MD_DOC/                           # Unified v10.2 Architecture, PRD, Database, Pitch & Operations Documentation
-│   ├── README.md                    # Master Documentation Catalog, Category Index & Sync Guide (v10.2)
-│   ├── EDITH_Documentation_Library_v10.2.zip # Pre-packaged archive ready for 1-click Google Drive sync
+├── MD_DOC/                           # Unified v10.3 Architecture, PRD, Database, Pitch & Operations Documentation
+│   ├── README.md                    # Master Documentation Catalog, Category Index & Sync Guide (v10.3)
+│   ├── EDITH_Documentation_Library_v10.3.zip # Pre-packaged archive ready for 1-click Google Drive sync
 │   ├── sync_to_gdrive.ps1           # PowerShell automation script for Google Drive sync
 │   ├── 01_Executive_and_Pitch/      # Client Pitches, Executive Architecture Deck & Presentation Assets
-│   │   ├── EDITH_Client_Architecture_Pitch_v10.2.pdf # Executive-Ready Client Pitch Deck (PDF, Publication Grade)
-│   │   ├── EDITH_Client_Architecture_Pitch_v10.2.md  # Client Pitch & Architecture Master (Markdown + Mermaid, v10.2)
-│   │   └── EDITH_Client_Architecture_Pitch_v10.2.html # Print-Ready Styled HTML Master Template (v10.2)
+│   │   ├── EDITH_Client_Architecture_Pitch_v10.3.pdf # Executive-Ready Client Pitch Deck (PDF, Publication Grade)
+│   │   ├── EDITH_Client_Architecture_Pitch_v10.3.md  # Client Pitch & Architecture Master (Markdown + Mermaid, v10.3)
+│   │   └── EDITH_Client_Architecture_Pitch_v10.3.html # Print-Ready Styled HTML Master Template (v10.3)
 │   ├── 02_Product_and_Requirements/ # Functional PRDs, Modules/Pages Catalog & Executive Workplans
-│   │   ├── EDITH_Master_PRD_v10.2.md           # Master PRD (v10.2)
-│   │   ├── EDITH_Modules_Workflows_and_Pages_v10.2.md # Master Catalog of 10 Modules, 17 Pages & 22 Workflows (v10.2)
-│   │   └── EDITH_END_TO_END_WORKPLAN_v10.2.md  # Workplan Execution Ledger (v10.2, Phases 1–17 Complete)
+│   │   ├── EDITH_Master_PRD_v10.3.md           # Master PRD (v10.3)
+│   │   ├── EDITH_Modules_Workflows_and_Pages_v10.3.md # Master Catalog of 10 Modules, 17 Pages & 24 Workflows (v10.3)
+│   │   └── EDITH_END_TO_END_WORKPLAN_v10.3.md  # Workplan Execution Ledger (v10.3, Phases 1–22 Complete)
 │   ├── 03_Technical_Architecture_and_Database/ # Technical Specifications & Database DDL
-│   │   ├── EDITH_Master_Specification_v10.2.md # Master Technical Architecture Spec (v10.2)
-│   │   └── database_v10.2.md                   # Database Architecture & PostgreSQL 17 DDL (v10.2)
+│   │   ├── EDITH_Comprehensive_Platform_Architecture_and_Workflows_v10.3.md # Comprehensive All-in-One Master Reference (v10.3)
+│   │   ├── EDITH_Master_Specification_v10.3.md # Master Technical Architecture Spec (v10.3)
+│   │   └── database_v10.3.md                   # Database Architecture & PostgreSQL 17 DDL (v10.3)
 │   └── 04_Operations_and_Deployment/ # Operational Runbooks, Credentials & Task Ledgers
-│       ├── HOW_TO_RUN_v10.2.md                 # Visual Studio & Web Portal Run Guide (v10.2)
-│       ├── CREDENTIALS_v10.2.md                # Infrastructure & Service Credentials (v10.2)
-│       └── TODO_v10.2.md                       # Live Engineering Roadmap (v10.2: Phases 1–17 Complete)
+│       ├── HOW_TO_RUN_v10.3.md                 # Visual Studio & Web Portal Run Guide (v10.3)
+│       ├── CREDENTIALS_v10.3.md                # Infrastructure & Service Credentials (v10.3)
+│       └── TODO_v10.3.md                       # Live Engineering Roadmap (v10.3: Phases 1–22 Complete)
 ├── src/
 │   ├── Addons/                      # goAML XML exporter, AI STR copilot, graph visualizer
 │   ├── Cases/                       # Case state machine, lease locking, SignalR hub
@@ -147,7 +148,7 @@ EDITH/
 │   ├── Rules/                       # AML rule engine, DSL evaluator, backtesting & calibration sandbox
 │   ├── Screening/                   # 5-pass OpenSearch engine, streaming CSV/XML/JSON bulk pipeline
 │   └── Web/edith-portal/            # React 19 compliance operator workstation (17 views)
-├── tests/                            # Automated test suite (100 passing tests across 10 projects)
+├── tests/                            # Automated test suite (112 test cases across 10 projects, 101 passing offline)
 │   ├── Edith.Addons.Tests/          # goAML XML schema, copilot & graph tests (6)
 │   ├── Edith.Cases.Tests/           # State machine, 4-Eyes RBAC & locking tests (10)
 │   ├── Edith.Database.Migrator.Tests/# Multi-schema DDL migration & seed tests (6)
@@ -155,8 +156,8 @@ EDITH/
 │   ├── Edith.Gateway.Tests/         # JWT IAM, tenant isolation & E2E workflow tests (11)
 │   ├── Edith.Performance.Benchmark/ # High-load 5-pass screening latency benchmark (1)
 │   ├── Edith.Rules.Tests/           # Rule evaluator & sandbox backtester tests (7)
-│   ├── Edith.Screening.Api.Tests/   # Screening API, idempotency & bulk upload endpoint tests (13)
-│   ├── Edith.Screening.Bulk.Tests/  # Streaming CSV/XML/JSON parser & skipped export tests (10)
+│   ├── Edith.Screening.Api.Tests/   # Screening API, idempotency & bulk upload endpoint tests (15)
+│   ├── Edith.Screening.Bulk.Tests/  # Streaming parser, skipped export & delta rescreening tests (20)
 │   └── Edith.Screening.Tests/       # 5-pass engine, OpenSearch & phonetic algorithm tests (26)
 ├── upload_doc/                       # Sample CSV & JSON bulk ingestion datasets
 └── brag-output/                      # Launch video (brag.mp4), poster frame, composition
