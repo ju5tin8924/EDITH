@@ -4,11 +4,17 @@ using Edith.Screening.Core.Scoring;
 
 namespace Edith.Screening.Core.Search;
 
+public sealed record CandidateSearchResult(IReadOnlyList<WatchlistEntity> Candidates, string Backend);
+
 public interface IWatchlistSearchEngine
 {
     Task<IReadOnlyList<WatchlistEntity>> SearchCandidatesAsync(string query, int maxResults = 500, CancellationToken ct = default);
     Task IndexEntityAsync(WatchlistEntity entity, CancellationToken ct = default);
     Task IndexBatchAsync(IEnumerable<WatchlistEntity> entities, CancellationToken ct = default);
+
+    /// <summary>Name and/or identifier candidate retrieval, reporting which backend answered.</summary>
+    async Task<CandidateSearchResult> SearchAsync(string? name, string? id, int maxResults = 500, CancellationToken ct = default)
+        => new(string.IsNullOrWhiteSpace(name) ? [] : await SearchCandidatesAsync(name, maxResults, ct), GetType().Name);
 }
 
 /// <summary>
@@ -181,6 +187,36 @@ public sealed class InMemoryWatchlistSearchEngine : IWatchlistSearchEngine, IDis
         {
             _lock.ExitReadLock();
         }
+    }
+
+    public async Task<CandidateSearchResult> SearchAsync(string? name, string? id, int maxResults = 500, CancellationToken ct = default)
+    {
+        var results = new Dictionary<Guid, WatchlistEntity>();
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            _lock.EnterReadLock();
+            try
+            {
+                foreach (var item in _items.Where(x =>
+                    x.Entity.EntityExternalId.Contains(id, StringComparison.OrdinalIgnoreCase) ||
+                    (x.Entity.IdDetails?.Contains(id, StringComparison.OrdinalIgnoreCase) ?? false)).Take(maxResults))
+                {
+                    results[item.Entity.Id] = item.Entity;
+                }
+            }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            foreach (var e in await SearchCandidatesAsync(name, maxResults, ct))
+            {
+                results.TryAdd(e.Id, e);
+            }
+        }
+        return new CandidateSearchResult(results.Values.ToList(), "IN_MEMORY_FALLBACK");
     }
 
     public void Dispose()

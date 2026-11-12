@@ -19,6 +19,8 @@ public sealed record OpenSearchOptions
     public string WhitelistAlias { get; init; } = "edith_whitelist";
     public string CustomersIndex { get; init; } = "edith_customers_v1";
     public bool SkipSslValidation { get; init; } = true;
+    /// <summary>Per-search timeout so a hung cluster fails over to PostgreSQL quickly (HttpClient default is 100s).</summary>
+    public TimeSpan SearchTimeout { get; init; } = TimeSpan.FromSeconds(3);
 }
 
 /// <summary>
@@ -56,59 +58,103 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
         int maxResults = 500,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return [];
-        }
+        return string.IsNullOrWhiteSpace(query) ? [] : await QueryAsync(query, null, maxResults, ct);
+    }
 
-        var normalizedQuery = _normalizer.Normalize(query);
-        var tokens = normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+    public async Task<CandidateSearchResult> SearchAsync(string? name, string? id, int maxResults = 500, CancellationToken ct = default)
+    {
+        var candidates = string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(id)
+            ? []
+            : await QueryAsync(name, id, maxResults, ct);
+        return new CandidateSearchResult(candidates, "OPENSEARCH");
+    }
 
-        var phoneticTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var t in tokens)
-        {
-            var meta = DoubleMetaphone.Encode(t);
-            if (!string.IsNullOrEmpty(meta.Primary)) phoneticTokens.Add(meta.Primary);
-            if (!string.IsNullOrEmpty(meta.Alternate)) phoneticTokens.Add(meta.Alternate);
-        }
+    /// <summary>
+    /// Builds the candidate retrieval query. Works on both the intended explicit mapping
+    /// (phonetic_tokens/entity_external_id as keyword) and the auto-mapped live index
+    /// (text fields with an exact-case ".keyword" sub-field).
+    /// </summary>
+    public static JsonObject BuildSearchBody(string? name, string? id, int maxResults, ITextNormalizer normalizer)
+    {
+        var shouldClauses = new JsonArray();
 
-        // Build OpenSearch DisMax query targeting full name, ngrams, aliases and phonetic tokens
-        var shouldClauses = new JsonArray
+        if (!string.IsNullOrWhiteSpace(name))
         {
-            new JsonObject
+            var normalizedQuery = normalizer.Normalize(name);
+            JsonObject Match(string field, double boost, bool fuzzy = false)
+            {
+                var opts = new JsonObject { ["query"] = normalizedQuery, ["boost"] = boost };
+                if (fuzzy)
+                {
+                    opts["fuzziness"] = "AUTO";
+                    opts["operator"] = "and";
+                }
+                return new JsonObject { ["match"] = new JsonObject { [field] = opts } };
+            }
+
+            shouldClauses.Add(new JsonObject
             {
                 ["dis_max"] = new JsonObject
                 {
                     ["queries"] = new JsonArray
                     {
-                        new JsonObject { ["match"] = new JsonObject { ["full_name"] = new JsonObject { ["query"] = query, ["boost"] = 3.0 } } },
-                        new JsonObject { ["match"] = new JsonObject { ["full_name.ngram"] = new JsonObject { ["query"] = query, ["boost"] = 2.0 } } },
-                        new JsonObject { ["match"] = new JsonObject { ["aliases"] = new JsonObject { ["query"] = query, ["boost"] = 2.0 } } },
-                        new JsonObject { ["match"] = new JsonObject { ["aliases.ngram"] = new JsonObject { ["query"] = query, ["boost"] = 1.5 } } }
+                        Match("full_name", 3.0),
+                        Match("full_name", 2.5, fuzzy: true),
+                        Match("full_name.ngram", 2.0),
+                        Match("aliases", 2.0),
+                        Match("aliases", 1.8, fuzzy: true),
+                        Match("aliases.ngram", 1.5)
                     }
                 }
-            }
-        };
-
-        if (phoneticTokens.Count > 0)
-        {
-            var phoneticArray = new JsonArray();
-            foreach (var pt in phoneticTokens)
-            {
-                phoneticArray.Add(pt);
-            }
-
-            shouldClauses.Add(new JsonObject
-            {
-                ["terms"] = new JsonObject
-                {
-                    ["phonetic_tokens"] = phoneticArray,
-                    ["boost"] = 1.5
-                }
             });
+
+            // One clause per query token (primary OR alternate Metaphone key). Requiring all tokens
+            // (n-1 for 3+) stops a common first name such as "VIKTOR" flooding the top-N candidates.
+            var perToken = new JsonArray();
+            foreach (var t in normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var meta = DoubleMetaphone.Encode(t);
+                var codes = new[] { meta.Primary, meta.Alternate }.Where(c => !string.IsNullOrEmpty(c)).Distinct().ToArray();
+                if (codes.Length == 0) continue;
+                JsonArray Codes() => new(codes.Select(c => (JsonNode)JsonValue.Create(c)!).ToArray());
+                perToken.Add(new JsonObject
+                {
+                    ["bool"] = new JsonObject
+                    {
+                        ["should"] = new JsonArray
+                        {
+                            new JsonObject { ["terms"] = new JsonObject { ["phonetic_tokens.keyword"] = Codes() } },
+                            new JsonObject { ["terms"] = new JsonObject { ["phonetic_tokens"] = Codes() } }
+                        },
+                        ["minimum_should_match"] = 1
+                    }
+                });
+            }
+
+            if (perToken.Count > 0)
+            {
+                var required = perToken.Count >= 3 ? perToken.Count - 1 : perToken.Count;
+                shouldClauses.Add(new JsonObject
+                {
+                    ["bool"] = new JsonObject
+                    {
+                        ["should"] = perToken,
+                        ["minimum_should_match"] = required,
+                        ["boost"] = 4.0
+                    }
+                });
+            }
         }
 
-        var searchBody = new JsonObject
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            var trimmedId = id.Trim();
+            shouldClauses.Add(new JsonObject { ["term"] = new JsonObject { ["entity_external_id.keyword"] = new JsonObject { ["value"] = trimmedId, ["case_insensitive"] = true, ["boost"] = 10.0 } } });
+            shouldClauses.Add(new JsonObject { ["term"] = new JsonObject { ["entity_external_id"] = new JsonObject { ["value"] = trimmedId, ["case_insensitive"] = true, ["boost"] = 10.0 } } });
+            shouldClauses.Add(new JsonObject { ["match_phrase"] = new JsonObject { ["designation_details"] = new JsonObject { ["query"] = trimmedId, ["boost"] = 5.0 } } });
+        }
+
+        return new JsonObject
         {
             ["size"] = maxResults,
             ["query"] = new JsonObject
@@ -116,6 +162,8 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
                 ["bool"] = new JsonObject
                 {
                     ["should"] = shouldClauses,
+                    // Without this, the filter clause makes every "should" optional and all active docs match.
+                    ["minimum_should_match"] = 1,
                     ["filter"] = new JsonArray
                     {
                         new JsonObject { ["term"] = new JsonObject { ["is_active"] = true } }
@@ -123,20 +171,35 @@ public sealed class OpenSearchWatchlistSearchEngine : IWatchlistSearchEngine
                 }
             }
         };
+    }
+
+    private async Task<IReadOnlyList<WatchlistEntity>> QueryAsync(string? name, string? idQuery, int maxResults, CancellationToken ct)
+    {
+        var searchBody = BuildSearchBody(name, idQuery, maxResults, _normalizer);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/{_options.WatchlistIndex}/_search")
         {
             Content = new StringContent(searchBody.ToJsonString(), Encoding.UTF8, "application/json")
         };
 
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_options.SearchTimeout);
+
         string json;
-        using var response = await _httpClient.SendAsync(request, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        try
         {
-            throw new InvalidOperationException($"OpenSearch index '{_options.WatchlistIndex}' not found.");
+            using var response = await _httpClient.SendAsync(request, timeoutCts.Token);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new InvalidOperationException($"OpenSearch index '{_options.WatchlistIndex}' not found.");
+            }
+            response.EnsureSuccessStatusCode();
+            json = await response.Content.ReadAsStringAsync(timeoutCts.Token);
         }
-        response.EnsureSuccessStatusCode();
-        json = await response.Content.ReadAsStringAsync(ct);
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"OpenSearch search exceeded {_options.SearchTimeout.TotalSeconds:F0}s.");
+        }
 
         using var doc = JsonDocument.Parse(json);
 

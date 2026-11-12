@@ -69,9 +69,8 @@ public sealed class NameSimilarityScorer : INameSimilarityScorer
         // Token-level phonetic evaluation
         var phoneticSim = EvaluateTokenPhonetics(tokens1, tokens2);
 
-        // If all query tokens match (e.g. middle name omitted in customer records), boost string similarity
-        var minTokens = Math.Min(tokens1.Length, tokens2.Length);
-        if (minTokens >= 2 && phoneticSim >= 0.85)
+        // If all query tokens match (e.g. middle name omitted or single surname query), boost string similarity
+        if (phoneticSim >= 0.80)
         {
             stringSim = Math.Max(stringSim, phoneticSim * 0.90);
         }
@@ -79,7 +78,7 @@ public sealed class NameSimilarityScorer : INameSimilarityScorer
         // Blended score calculation:
         // High string similarity with phonetic alignment gets strong boost
         double composite;
-        if (phoneticSim >= 0.85 && stringSim >= 0.70)
+        if (phoneticSim >= 0.80 && stringSim >= 0.70)
         {
             composite = (stringSim * 0.50) + (phoneticSim * 0.50);
         }
@@ -137,15 +136,20 @@ public sealed class NameSimilarityScorer : INameSimilarityScorer
             }
         }
 
-        var minTokens = Math.Min(tokens1.Length, tokens2.Length);
         var maxTokens = Math.Max(tokens1.Length, tokens2.Length);
 
-        var recall = totalScore / minTokens;
-        var precision = totalScore / maxTokens;
+        var queryRecall = Math.Min(1.0, totalScore / tokens1.Length);
+        var precision = Math.Min(1.0, totalScore / maxTokens);
 
-        if (recall >= 0.95 && minTokens >= 2)
+        if (queryRecall >= 0.85 && tokens1.Length >= 2)
         {
-            return (recall * 0.70) + (precision * 0.30);
+            return (queryRecall * 0.70) + (precision * 0.30);
+        }
+
+        // Single-token surname/mononym query (e.g. "BOUT" against "VIKTOR ANATOLYEVICH BOUT")
+        if (tokens1.Length == 1 && tokens1[0].Length >= 3 && queryRecall >= 0.85)
+        {
+            return (queryRecall * 0.75) + (precision * 0.25);
         }
 
         return precision;

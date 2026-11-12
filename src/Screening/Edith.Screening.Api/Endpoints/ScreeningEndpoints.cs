@@ -224,27 +224,15 @@ public static class ScreeningEndpoints
                 return Results.BadRequest(new { error = "Phonetic Name Match requires an entity or subject name to evaluate sound-alike similarity." });
             }
 
-            // Retrieve candidates from both PostgreSQL (watchlist_entities) and OpenSearch (edith_watchlist_v1)
-            var pgCandidates = await jobRepo.SearchWatchlistEntitiesAsync(
-                string.IsNullOrWhiteSpace(rawId) ? (string.IsNullOrWhiteSpace(rawName) ? null : rawName) : null,
+            // Retrieve candidates through the OpenSearch-primary engine (PostgreSQL fallback only if OpenSearch is unavailable)
+            var searchResult = await searchEngine.SearchAsync(
+                string.IsNullOrWhiteSpace(rawName) ? null : rawName,
                 string.IsNullOrWhiteSpace(rawId) ? null : rawId,
-                maxResults: 60,
+                maxResults: 100,
                 ct: ct);
 
-            IReadOnlyList<WatchlistEntity> osCandidates = [];
-            if (!string.IsNullOrWhiteSpace(normQuery))
-            {
-                osCandidates = await searchEngine.SearchCandidatesAsync(normQuery, maxResults: 60, ct: ct);
-            }
-
-            // Merge candidates by (EntityExternalId, FullName), preferring PG row when available for full IdDetails/AliasName
             var mergedMap = new Dictionary<string, WatchlistEntity>(StringComparer.OrdinalIgnoreCase);
-            foreach (var c in osCandidates)
-            {
-                var key = $"{c.EntityExternalId}:{normalizer.Normalize(c.FullName)}";
-                mergedMap[key] = c;
-            }
-            foreach (var c in pgCandidates)
+            foreach (var c in searchResult.Candidates)
             {
                 var key = $"{c.EntityExternalId}:{normalizer.Normalize(c.FullName)}";
                 mergedMap[key] = c;
@@ -396,7 +384,8 @@ public static class ScreeningEndpoints
                 SearchMode = mode,
                 TotalMatches = ordered.Count,
                 LatencyMs = Math.Round(sw.Elapsed.TotalMilliseconds, 2),
-                Matches = ordered
+                Matches = ordered,
+                SearchBackend = searchResult.Backend
             });
         });
 

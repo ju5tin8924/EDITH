@@ -1,4 +1,6 @@
+using Edith.Screening.Core.Normalization;
 using Edith.Screening.Core.Scoring;
+using Edith.Screening.Core.Search;
 
 namespace Edith.Screening.Tests;
 
@@ -59,5 +61,37 @@ public class PhoneticAlgorithmTests
         var result = scorer.Score("MOHAMMED AL-HASHIMI", "MOHAMED AL HASHMI");
 
         Assert.True(result.FinalScore >= 80.0, $"Expected score >= 80.0, got {result.FinalScore}");
+    }
+
+    [Fact]
+    public void NameSimilarityScorer_scores_single_surname_against_multi_token_name()
+    {
+        var scorer = new NameSimilarityScorer();
+        var result = scorer.Score("BOUT", "VIKTOR ANATOLYEVICH BOUT");
+
+        Assert.True(result.PhoneticSimilarity >= 0.80, $"Expected phonetic similarity >= 0.80, got {result.PhoneticSimilarity}");
+        Assert.True(result.FinalScore >= 75.0, $"Expected final score >= 75.0, got {result.FinalScore}");
+    }
+
+    [Fact]
+    public void NameSimilarityScorer_scores_inverted_phonetic_variant()
+    {
+        var scorer = new NameSimilarityScorer();
+        var result = scorer.Score("BAOUT VIKTOR", "VIKTOR ANATOLYEVICH BOUT");
+
+        Assert.True(result.PhoneticSimilarity >= 0.85, $"Expected phonetic similarity >= 0.85, got {result.PhoneticSimilarity}");
+        Assert.True(result.FinalScore >= 80.0, $"Expected final score >= 80.0, got {result.FinalScore}");
+    }
+
+    [Fact]
+    public void OpenSearch_BuildSearchBody_queries_keyword_subfield_and_requires_all_phonetic_tokens()
+    {
+        var json = OpenSearchWatchlistSearchEngine.BuildSearchBody("Baout Viktor", "OFAC-9812", 60, new TextNormalizer()).ToJsonString();
+
+        Assert.Contains("phonetic_tokens.keyword", json);
+        Assert.Contains("\"PT\"", json);
+        Assert.Contains("\"FKTR\"", json);
+        Assert.Contains("\"fuzziness\":\"AUTO\"", json);
+        Assert.Contains("entity_external_id.keyword", json);
     }
 }

@@ -216,6 +216,7 @@ public sealed record NameSearchResponse
     public required int TotalMatches { get; init; }
     public required double LatencyMs { get; init; }
     public required IReadOnlyList<NameSearchMatchDto> Matches { get; init; }
+    public string SearchBackend { get; init; } = "OPENSEARCH";
     public DateTimeOffset EvaluatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 

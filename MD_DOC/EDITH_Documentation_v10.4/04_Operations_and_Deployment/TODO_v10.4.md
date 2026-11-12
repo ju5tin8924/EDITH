@@ -34,6 +34,7 @@
 | **Phase 22** | Blacklist / Watchlist & Whitelist Governance Modernization ("Authorize New Blacklist/Watchlist" Workflow, Live `watchlist/sync` CRUD, 4-Eyes Maker-Checker, Blast-Radius Simulator, Soft Revocation & Cross-Module Escalation) | `COMPLETED` |
 | **Phase 23** | Architecture Hardening, Security Perimeter, Concurrency & Frontend Resilience (Disabled Anonymous Token Minting in Prod, Fail-Fast DB Persistence, Route-Based Code Splitting, Concurrency Conflict Handling, Active Lock Heartbeat & Expiration Warning) | `COMPLETED` |
 | **Phase 24** | Enterprise Error Handling Engine, General-Terms Messaging System & EdithLoader Modernization (RFC 7807/9457 ProblemDetails, End-to-End Correlation Tracking, Anti-Leak Redaction, Zero Blocking Alerts, Actionable Toasts & EdithLoader Telemetry) | `COMPLETED` |
+| **Phase 25** | Screening Search Engine Remediation (OpenSearch-Primary Retrieval, Phonetic Query Fix, Fast Visible PG Fallback, Single-Surname Scoring) | `COMPLETED` |
 
 ---
 
@@ -389,6 +390,15 @@
 - [x] **7. Full Verification & Test Validation**:
   - Frontend production build (`tsc -b && vite build`) passing with 0 errors.
   - Backend integration test suite (`dotnet test tests/Edith.Gateway.Tests/Edith.Gateway.Tests.csproj -c Release`) passing 9/9 integration tests.
+
+### [x] Phase 25: Screening Search Engine Remediation (v2.9.0 Target)
+Root cause (verified live): `edith_watchlist_v1` was auto-mapped, so `phonetic_tokens` is lowercased text and the uppercase `terms` clause matched 0 docs; `*.ngram` fields do not exist. Name-search also hit PostgreSQL `LIKE '%..%'` on every request (30s).
+- [x] **1. Phonetic query fix (no reindex)**: query `phonetic_tokens.keyword`, require all phonetic keys (n-1 for 3+ tokens) so common first names cannot flood the top-N; add `fuzziness: AUTO` name clause.
+- [x] **2. OpenSearch-primary retrieval**: name-search endpoint no longer queries PostgreSQL directly; ID lookup goes through OpenSearch (`entity_external_id`, `designation_details`).
+- [x] **3. Fast, visible fallback**: 3s OpenSearch timeout; PostgreSQL only on OpenSearch failure; fallback logged; response reports `searchBackend` (`OPENSEARCH` / `POSTGRES_FALLBACK` / `IN_MEMORY_FALLBACK`).
+- [x] **4. Single-surname scoring**: query-token recall credit so `Bout` matches `VIKTOR ANATOLYEVICH BOUT`.
+- [x] **5. Tests**: phonetic variant, single surname, fallback routing.
+- [ ] **6. Deferred**: `edith_watchlist_v2` reindex with intended mapping + alias swap; remove hardcoded OpenSearch default password; `analysis-phonetic` plugin.
 
 ---
 *Maintained by the EDITH Architecture & Compliance Engineering Team (v10.4).*

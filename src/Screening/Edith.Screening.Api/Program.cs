@@ -92,7 +92,8 @@ builder.Services.AddSingleton<IWatchlistSearchEngine>(sp =>
     var openSearch = sp.GetRequiredService<OpenSearchWatchlistSearchEngine>();
     var memSearch = sp.GetRequiredService<InMemoryWatchlistSearchEngine>();
     var jobRepo = sp.GetService<IBulkJobRepository>();
-    return new HybridWatchlistSearchEngine(openSearch, jobRepo, memSearch);
+    var logger = sp.GetService<ILogger<HybridWatchlistSearchEngine>>();
+    return new HybridWatchlistSearchEngine(openSearch, jobRepo, memSearch, logger: logger);
 });
 
 builder.Services.AddSingleton<IWatchlistOpenSearchSyncService>(sp =>

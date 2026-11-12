@@ -590,7 +590,7 @@ public sealed class ScreeningApiTests : IClassFixture<WebApplicationFactory<Prog
         // 3. PHONETIC NAME MATCH mode: matches sound-alike pronunciation via Double Metaphone
         var phoneticReq = new NameSearchRequest
         {
-            Name = "Victor Bout",
+            Name = "Baout Viktor",
             SearchMode = "PHONETIC NAME MATCH",
             MinScore = 70m
         };
@@ -600,5 +600,18 @@ public sealed class ScreeningApiTests : IClassFixture<WebApplicationFactory<Prog
         Assert.NotNull(phoneticBody);
         Assert.NotEmpty(phoneticBody.Matches);
         Assert.Contains(phoneticBody.Matches, m => m.ExternalId == "OFAC-9812");
+
+        // 4. Single-surname phonetic query against 3-token watchlist record without single-word alias
+        var surnameReq = new NameSearchRequest
+        {
+            Name = "Bout",
+            SearchMode = "PHONETIC NAME MATCH",
+            MinScore = 70m
+        };
+        var surnameRes = await _client.PostAsJsonAsync("/api/v1/screen/name-search", surnameReq);
+        Assert.Equal(HttpStatusCode.OK, surnameRes.StatusCode);
+        var surnameBody = await surnameRes.Content.ReadFromJsonAsync<NameSearchResponse>(JsonOptions);
+        Assert.NotNull(surnameBody);
+        Assert.Contains(surnameBody.Matches, m => m.ExternalId == "OFAC-9812");
     }
 }

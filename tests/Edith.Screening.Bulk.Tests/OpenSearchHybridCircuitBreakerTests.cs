@@ -14,9 +14,10 @@ public sealed class OpenSearchHybridCircuitBreakerTests
         var stubRepo = new TrackingBulkJobRepository();
         var engine = new HybridWatchlistSearchEngine(stubOpenSearch, stubRepo);
 
-        var results = await engine.SearchCandidatesAsync("Clean Counterparty", 100);
+        var results = await engine.SearchAsync("Clean Counterparty", null, 100);
 
-        Assert.Empty(results);
+        Assert.Empty(results.Candidates);
+        Assert.Equal("OPENSEARCH", results.Backend);
         Assert.False(stubRepo.WasSearchCalled, "PostgreSQL repository must NOT be called for clean transactions when OpenSearch is healthy!");
     }
 
@@ -36,10 +37,11 @@ public sealed class OpenSearchHybridCircuitBreakerTests
         var stubRepo = new TrackingBulkJobRepository([expectedEntity]);
         var engine = new HybridWatchlistSearchEngine(stubOpenSearch, stubRepo);
 
-        var results = await engine.SearchCandidatesAsync("SANCTIONED PERSON", 100);
+        var results = await engine.SearchAsync("SANCTIONED PERSON", null, 100);
 
-        Assert.Single(results);
-        Assert.Equal("SANCTIONED PERSON", results[0].FullName);
+        Assert.Single(results.Candidates);
+        Assert.Equal("POSTGRES_FALLBACK", results.Backend);
+        Assert.Equal("SANCTIONED PERSON", results.Candidates[0].FullName);
         Assert.True(stubRepo.WasSearchCalled, "PostgreSQL repository circuit breaker must engage when OpenSearch is offline!");
     }
 
